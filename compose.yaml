@@ -1,23 +1,82 @@
+# Profiles: "prod" runs the whole panel from one image; "dev" runs only the Rust service,
+# for a panel started from panel/ with PHP on the host. Set COMPOSE_PROFILES in .env.
+
+x-service-env: &service-env
+  MCPANEL_TOKEN: ${MCPANEL_TOKEN:?copy .env.example to .env and fill it in}
+  MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
+  MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+  MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+
+x-service-volumes: &service-volumes
+  - /var/run/docker.sock:/var/run/docker.sock
+  # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
+  - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+  # Outside the data folder, so the file manager can never reach the archives.
+  - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+  # Host worlds offered for import; read-only.
+  - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+
 services:
+  app:
+    profiles: [prod]
+    build: .
+    init: true
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      APP_KEY: ${APP_KEY:-}
+      APP_URL: ${APP_URL:-http://localhost}
+      APP_NAME: Minecraft Panel
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_DATABASE: panel
+      DB_USERNAME: panel
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:-mc.localhost}
+      PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
+      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+      # Only used on the first start, to create the first admin.
+      PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
+      PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}
+    ports:
+      - "${PANEL_PORT:-80}:80"
+    volumes: *service-volumes
+    networks:
+      - panel
+      - default
+
+  mysql:
+    profiles: [prod]
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: panel
+      MYSQL_USER: panel
+      MYSQL_PASSWORD: ${DB_PASSWORD:-}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u panel -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Minecraft containers are never on this network, so they cannot reach the database.
+    networks:
+      - panel
+
   service:
+    profiles: [dev]
     build: ./service
     init: true
     restart: unless-stopped
-    environment:
-      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?run "php artisan node:register" in panel/ and put the token in .env}
-      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
-      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+    environment: *service-env
     ports:
       - "127.0.0.1:8080:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
-      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
-      # Outside the data folder, so the file manager can never reach the archives.
-      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-      # Host worlds offered for import; read-only.
-      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+    volumes: *service-volumes
 
   # Players connect here; it forwards each connection to the server whose hostname they typed.
   router:
@@ -69,3 +128,8 @@ networks:
     name: minecraft
   socket:
     internal: true
+  panel:
+    internal: true
+
+volumes:
+  mysql:

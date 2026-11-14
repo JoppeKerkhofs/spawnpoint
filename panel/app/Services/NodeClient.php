@@ -106,7 +106,7 @@ class NodeClient
     {
         $token = self::token('console', $this->node->token, $server->slug, now()->getTimestamp() + 60, $write);
 
-        return preg_replace('/^http/', 'ws', $this->node->base_url)."/servers/{$server->slug}/console?token={$token}";
+        return preg_replace('/^http/', 'ws', $this->publicUrl())."/servers/{$server->slug}/console?token={$token}";
     }
 
     /**
@@ -118,7 +118,7 @@ class NodeClient
     {
         $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 300, $action === 'upload');
 
-        return "{$this->node->base_url}/servers/{$server->slug}/{$action}?token={$token}";
+        return "{$this->publicUrl()}/servers/{$server->slug}/{$action}?token={$token}";
     }
 
     /**
@@ -283,7 +283,7 @@ class NodeClient
     {
         $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 300, false);
 
-        return "{$this->node->base_url}/servers/{$server->slug}/backups/{$name}/download?token={$token}";
+        return "{$this->publicUrl()}/servers/{$server->slug}/backups/{$name}/download?token={$token}";
     }
 
     /**
@@ -310,6 +310,16 @@ class NodeClient
     public function importWorld(Server $server, string $source, string $path): void
     {
         $this->send('POST', "/servers/{$server->slug}/import", ['source' => $source, 'path' => $path]);
+    }
+
+    /**
+     * The address the browser uses for the node, which may differ from the one the panel uses.
+     */
+    private function publicUrl(): string
+    {
+        $public = config('panel.node_public_url');
+
+        return filled($public) ? rtrim(url($public), '/') : $this->node->base_url;
     }
 
     /**

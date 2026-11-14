@@ -1,0 +1,16 @@
+.git
+.env
+**/.env
+**/node_modules
+panel/vendor
+panel/public/build
+panel/public/hot
+panel/storage/logs/*
+panel/storage/framework/cache/data/*
+panel/storage/framework/sessions/*
+panel/storage/framework/views/*
+panel/database/*.sqlite
+panel/.claude
+panel/.junie
+panel/tests
+service/target

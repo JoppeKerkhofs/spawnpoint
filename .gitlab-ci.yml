@@ -1,0 +1,48 @@
+# Tests both halves, then builds the single app image. The image is pushed to this project's
+# container registry from the default branch only.
+
+stages:
+  - test
+  - build
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+panel:
+  stage: test
+  image: php:8.5-cli-bookworm
+  variables:
+    COMPOSER_ALLOW_SUPERUSER: "1"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git unzip
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y --no-install-recommends nodejs
+    - curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - cd panel
+  script:
+    - composer setup
+    - composer ci:check
+
+service:
+  stage: test
+  image: rust:1-slim-bookworm
+  script:
+    - cd service
+    - cargo test --locked
+
+image:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker build --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" --tag "$CI_REGISTRY_IMAGE:latest" .
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
