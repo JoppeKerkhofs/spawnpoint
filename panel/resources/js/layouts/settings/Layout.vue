@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import AppVersion from '@/components/AppVersion.vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -62,6 +63,7 @@ const { isCurrentOrParentUrl } = useCurrentUrl();
                         </Link>
                     </Button>
                 </nav>
+                <AppVersion class="mt-4 block px-4" />
             </aside>
 
             <Separator class="my-6 lg:hidden" />

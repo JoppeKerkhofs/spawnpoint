@@ -1,5 +1,5 @@
-# Tests both halves, then builds the single app image. The image is pushed to this project's
-# container registry from the default branch only.
+# Tests both halves, then builds the single app image. From the default branch the image is pushed
+# to this project's container registry, as "latest" and as the version in panel/composer.json.
 
 stages:
   - test
@@ -31,6 +31,19 @@ service:
     - cd service
     - cargo test --locked
 
+# Every merge publishes the image under the version in panel/composer.json, so a
+# merge request has to raise it.
+version:
+  stage: test
+  image:
+    name: alpine/git
+    entrypoint: [""]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - sh scripts/check-version.sh FETCH_HEAD
+
 image:
   stage: build
   image: docker:27
@@ -39,10 +52,12 @@ image:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   script:
-    - docker build --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" --tag "$CI_REGISTRY_IMAGE:latest" .
+    - |
+      VERSION=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' panel/composer.json | head -n 1)
+    - docker build --tag "$CI_REGISTRY_IMAGE:$VERSION" --tag "$CI_REGISTRY_IMAGE:latest" .
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
         echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-        docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+        docker push "$CI_REGISTRY_IMAGE:$VERSION"
         docker push "$CI_REGISTRY_IMAGE:latest"
       fi

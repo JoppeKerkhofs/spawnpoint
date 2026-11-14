@@ -30,7 +30,17 @@ The panel is on port 80 (`PANEL_PORT`), web maps on port 8100. Put a TLS proxy s
 in front of the panel and set `APP_URL` to its `https://` address.
 
 Server data lives in `/srv/mc`, backups in `/srv/mc-backups`, and worlds you want to import go in
-`/srv/mc-import`. Updating is `git pull`, then `docker compose up -d --build`.
+`/srv/mc-import`. Updating is `git pull`, then `docker compose up -d --build`, or see Versions below.
+
+## Versions
+
+The version is the `version` field of `panel/composer.json`. It is shown under the login form and
+in Settings, so you can see which release is running. Every merge to `main` publishes the image as
+`latest` and under that version, so every pull request has to raise it; the pipelines check that
+with `scripts/check-version.sh`.
+
+To run a fixed release instead of building from the checkout, set `PANEL_VERSION` in `.env` (for
+example `1.0.0`) and use `docker compose pull` before `docker compose up -d`.
 
 ## Work on it
 

@@ -49,7 +49,25 @@ jobs:
       - name: Tests
         run: cargo test --locked
 
-  # Builds on every run; pushes to the GitHub container registry only from main.
+  # Every merge publishes the image under the version in panel/composer.json, so a
+  # pull request has to raise it.
+  version:
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history, so the base branch is there to compare with.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check that the version is raised
+        run: sh scripts/check-version.sh "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
+  # Builds on every run; from main it publishes to the GitHub container registry,
+  # as "latest" and as the version in panel/composer.json.
   image:
     needs: [panel, service]
     runs-on: ubuntu-latest
@@ -61,25 +79,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         if: github.event_name == 'push'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Registry names must be lowercase; the repository owner's name may not be.
-      - id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Read the version
+        id: version
+        run: echo "version=$(jq -r .version panel/composer.json)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/build-push-action@v6
+      # Also lowercases the image name, which a registry requires.
+      - name: Work out image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
-          tags: |
-            ${{ steps.name.outputs.image }}:latest
-            ${{ steps.name.outputs.image }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

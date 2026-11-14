@@ -5,11 +5,18 @@ use App\Models\Server;
 use App\Models\User;
 use App\Services\NodeClient;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Testing\AssertableInertia as Assert;
 
 afterEach(function () {
     putenv('MCPANEL_TOKEN');
     putenv('PANEL_ADMIN_EMAIL');
     putenv('PANEL_ADMIN_PASSWORD');
+});
+
+test('every page carries the version from composer.json', function () {
+    expect(config('app.version'))->toMatch('/^\d+\.\d+\.\d+$/');
+
+    $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->where('appVersion', config('app.version')));
 });
 
 test('setup registers the node and creates the first admin once', function () {

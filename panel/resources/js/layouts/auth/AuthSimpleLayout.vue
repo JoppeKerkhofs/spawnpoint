@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
+import AppVersion from '@/components/AppVersion.vue';
 import { home } from '@/routes';
 
 defineProps<{
@@ -37,6 +38,7 @@ defineProps<{
                     </div>
                 </div>
                 <slot />
+                <AppVersion class="-mt-2 text-center" />
             </div>
         </div>
     </div>

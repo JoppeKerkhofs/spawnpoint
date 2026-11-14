@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // The release that is running; the pipelines publish the image under the same number.
+    'version' => json_decode((string) file_get_contents(base_path('composer.json')), true)['version'],
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

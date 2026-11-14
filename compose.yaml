@@ -19,6 +19,8 @@ x-service-volumes: &service-volumes
 services:
   app:
     profiles: [prod]
+    # Pulled from the registry when it is there, built from this checkout otherwise.
+    image: ghcr.io/joppekerkhofs/minecraft-panel:${PANEL_VERSION:-latest}
     build: .
     init: true
     restart: unless-stopped

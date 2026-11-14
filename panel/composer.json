@@ -1,8 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/vue-starter-kit",
+    "name": "joppekerkhofs/minecraft-panel",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "version": "1.0.0",
+    "description": "A self-hosted panel that runs Minecraft servers in Docker containers.",
     "keywords": [
         "laravel",
         "framework"
