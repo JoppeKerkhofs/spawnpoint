@@ -35,6 +35,7 @@ class CreateServer
                 'java_version' => $data['java_version'],
                 'memory_mb' => $data['memory_mb'],
                 'settings' => UpdateServer::settings($data),
+                'modpack' => UpdateServer::modpack($data),
                 'eula_accepted_at' => now(),
             ]);
 

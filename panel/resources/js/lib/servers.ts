@@ -1,3 +1,5 @@
+export type Modpack = { project: string; name: string; icon: string | null };
+
 export type Server = {
     id: number;
     name: string;
@@ -7,6 +9,7 @@ export type Server = {
     mc_version: string;
     java_version: number;
     memory_mb: number;
+    modpack: Modpack | null;
     settings: {
         motd: string;
         difficulty: string;
@@ -19,6 +22,7 @@ export type ServerOptions = {
     types: string[];
     mcVersions: string[];
     javaVersions: number[];
+    curseforge: boolean;
     difficulties: string[];
     modes: string[];
 };
@@ -35,8 +39,22 @@ export type PowerAction = 'start' | 'stop' | 'restart' | 'kill';
 export const title = (value: string): string =>
     value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 
+export const PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE'];
+
+export const typeLabels: Record<string, string> = {
+    VANILLA: 'Vanilla',
+    PAPER: 'Paper',
+    FABRIC: 'Fabric',
+    FORGE: 'Forge',
+    NEOFORGE: 'NeoForge',
+    MODRINTH: 'Modrinth modpack',
+    AUTO_CURSEFORGE: 'CurseForge modpack',
+};
+
 export const software = (server: Server): string =>
-    `${title(server.server_type)} ${server.mc_version === 'LATEST' ? 'latest' : server.mc_version} · Java ${server.java_version}`;
+    server.modpack
+        ? `${typeLabels[server.server_type]} · ${server.modpack.name} · Java ${server.java_version}`
+        : `${typeLabels[server.server_type]} ${server.mc_version === 'LATEST' ? 'latest' : server.mc_version} · Java ${server.java_version}`;
 
 // States the Rust service reports, plus two the panel adds: loading and unknown.
 export function serverState(

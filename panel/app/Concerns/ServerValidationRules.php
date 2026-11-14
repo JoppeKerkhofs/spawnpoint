@@ -3,7 +3,7 @@
 namespace App\Concerns;
 
 use App\Models\Server;
-use Illuminate\Contracts\Validation\ValidationRule;
+use Closure;
 use Illuminate\Validation\Rule;
 
 trait ServerValidationRules
@@ -11,7 +11,7 @@ trait ServerValidationRules
     /**
      * Get the rules for the settings that can change after a server is created.
      *
-     * @return array<string, array<int, ValidationRule|array<mixed>|string>>
+     * @return array<string, array<int, mixed>>
      */
     protected function serverRules(): array
     {
@@ -25,6 +25,25 @@ trait ServerValidationRules
             'difficulty' => ['required', Rule::in(Server::DIFFICULTIES)],
             'mode' => ['required', Rule::in(Server::MODES)],
             'max_players' => ['required', 'integer', 'between:1,1000'],
+            'modpack_project' => [
+                Rule::requiredIf(fn (): bool => in_array($this->input('server_type'), Server::PACK_TYPES, true)),
+                'nullable',
+                'string',
+                'max:200',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    $pattern = $this->input('server_type') === 'AUTO_CURSEFORGE'
+                        ? '/^[A-Za-z0-9-]+$/'
+                        : '/^(https:\/\/modrinth\.com\/)?[A-Za-z0-9._\/-]+$/';
+
+                    if (! preg_match($pattern, (string) $value)) {
+                        $fail(__('Pick a pack from the list, or paste a link to its Modrinth page.'));
+                    } elseif ($this->input('server_type') === 'AUTO_CURSEFORGE' && blank(config('panel.curseforge_key'))) {
+                        $fail(__('CurseForge packs need CURSEFORGE_API_KEY in the panel environment.'));
+                    }
+                },
+            ],
+            'modpack_name' => ['nullable', 'string', 'max:120'],
+            'modpack_icon' => ['nullable', 'string', 'max:500', 'starts_with:https://'],
         ];
     }
 }

@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // File contents from the editor must be saved exactly as typed, trailing newline included.
+        $middleware->trimStrings(except: ['content']);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,

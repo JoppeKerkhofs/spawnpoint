@@ -28,10 +28,30 @@ class UpdateServer
                 'java_version' => $data['java_version'],
                 'memory_mb' => $data['memory_mb'],
                 'settings' => self::settings($data),
+                'modpack' => self::modpack($data),
             ]);
 
             (new NodeClient($server->node))->apply($server);
         });
+    }
+
+    /**
+     * Pick the modpack out of validated form data; null for a plain loader.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{project: string, name: string, icon: string|null}|null
+     */
+    public static function modpack(array $data): ?array
+    {
+        if (! in_array($data['server_type'], Server::PACK_TYPES, true)) {
+            return null;
+        }
+
+        return [
+            'project' => $data['modpack_project'],
+            'name' => $data['modpack_name'] ?? $data['modpack_project'],
+            'icon' => $data['modpack_icon'] ?? null,
+        ];
     }
 
     /**

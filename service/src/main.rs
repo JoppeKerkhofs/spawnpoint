@@ -1,3 +1,5 @@
+mod files;
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -18,7 +20,7 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{get, options, post, put},
     Json, Router,
 };
 use bollard::{
@@ -67,11 +69,24 @@ enum Task {
 type Tasks = Arc<Mutex<HashMap<String, Task>>>;
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     docker: Docker,
-    token: Arc<[u8]>,
-    data_dir: Arc<str>,
+    pub token: Arc<[u8]>,
+    pub data_dir: Arc<str>,
     tasks: Tasks,
+}
+
+#[cfg(test)]
+impl AppState {
+    pub fn for_tests(data_dir: &str) -> Self {
+        Self {
+            // Never contacted: these tests only touch the filesystem.
+            docker: Docker::connect_with_http("http://127.0.0.1:1", 1, bollard::API_DEFAULT_VERSION).expect("docker client"),
+            token: Arc::from(&b"0123456789abcdef0123456789abcdef"[..]),
+            data_dir: data_dir.into(),
+            tasks: Tasks::default(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -87,8 +102,29 @@ struct ServerConfig {
     difficulty: String,
     mode: String,
     max_players: u16,
+    // The Modrinth or CurseForge pack to install, for the two modpack server types.
+    #[serde(default)]
+    modpack: Option<String>,
+    #[serde(default)]
+    cf_api_key: Option<String>,
     #[serde(default)]
     start: bool,
+}
+
+const LOADER_TYPES: [&str; 5] = ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE"];
+
+fn valid_modpack(server_type: &str, modpack: Option<&str>) -> bool {
+    let plain = |text: &str, extra: &[u8]| {
+        (1..=200).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric() || extra.contains(&b))
+    };
+
+    match (server_type, modpack) {
+        (loader, None) => LOADER_TYPES.contains(&loader),
+        // A project slug or id, or a link to a project or version page.
+        ("MODRINTH", Some(pack)) => plain(pack.strip_prefix("https://modrinth.com/").unwrap_or(pack), b"._-/"),
+        ("AUTO_CURSEFORGE", Some(pack)) => plain(pack, b"-"),
+        _ => false,
+    }
 }
 
 impl ServerConfig {
@@ -106,8 +142,12 @@ impl ServerConfig {
             Err("hostname")
         } else if !JAVA_VERSIONS.contains(&self.java_version) {
             Err("java_version")
-        } else if !["VANILLA", "PAPER"].contains(&self.server_type.as_str()) {
+        } else if !valid_modpack(&self.server_type, self.modpack.as_deref()) {
             Err("server_type")
+        } else if self.cf_api_key.as_deref().is_some_and(|key| key.len() > 200 || !key.bytes().all(|b| b.is_ascii_graphic())) {
+            Err("cf_api_key")
+        } else if self.server_type == "AUTO_CURSEFORGE" && self.cf_api_key.is_none() {
+            Err("cf_api_key")
         } else if !version_ok {
             Err("mc_version")
         } else if !(512..=65536).contains(&self.memory_mb) {
@@ -128,6 +168,21 @@ impl ServerConfig {
     }
 
     fn env(&self) -> Vec<String> {
+        let mut env = self.base_env();
+
+        match (self.server_type.as_str(), &self.modpack) {
+            ("MODRINTH", Some(pack)) => env.push(format!("MODRINTH_MODPACK={pack}")),
+            ("AUTO_CURSEFORGE", Some(pack)) => {
+                env.push(format!("CF_SLUG={pack}"));
+                env.push(format!("CF_API_KEY={}", self.cf_api_key.as_deref().unwrap_or_default()));
+            }
+            _ => {}
+        }
+
+        env
+    }
+
+    fn base_env(&self) -> Vec<String> {
         vec![
             "EULA=TRUE".into(),
             format!("TYPE={}", self.server_type),
@@ -143,7 +198,7 @@ impl ServerConfig {
 }
 
 // A slug names the container and the data folder, so it must never carry a path or option.
-fn valid_slug(slug: &str) -> bool {
+pub fn valid_slug(slug: &str) -> bool {
     (1..=63).contains(&slug.len())
         && slug.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         && !slug.starts_with('-')
@@ -380,26 +435,28 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     )))
 }
 
-fn unix_now() -> u64 {
+pub fn unix_now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs())
 }
 
 #[derive(Deserialize)]
-struct ConsoleClaims {
+pub struct Claims {
     slug: String,
     exp: u64,
-    write: bool,
+    pub write: bool,
 }
 
-// A console token is hex(json claims) + "." + hex(hmac of "console\n" + hex claims), minted by the panel.
-fn console_claims(key: &[u8], token: &str, slug: &str, now: u64) -> Option<ConsoleClaims> {
+// A browser token is hex(json claims) + "." + hex(hmac of purpose + "\n" + hex claims), minted by the panel.
+// The purpose ("console" or "files") keeps a token for one from working on the other.
+pub fn claims(key: &[u8], purpose: &str, token: &str, slug: &str, now: u64) -> Option<Claims> {
     let (payload, signature) = token.split_once('.')?;
     let mut mac = Hmac::<Sha256>::new_from_slice(key).ok()?;
-    mac.update(b"console\n");
+    mac.update(purpose.as_bytes());
+    mac.update(b"\n");
     mac.update(payload.as_bytes());
     mac.verify_slice(&hex::decode(signature).ok()?).ok()?;
 
-    let claims: ConsoleClaims = serde_json::from_slice(&hex::decode(payload).ok()?).ok()?;
+    let claims: Claims = serde_json::from_slice(&hex::decode(payload).ok()?).ok()?;
     (claims.slug == slug && claims.exp >= now).then_some(claims)
 }
 
@@ -531,7 +588,7 @@ async fn console(
     upgrade: WebSocketUpgrade,
 ) -> Response {
     let token = query.get("token").map(String::as_str).unwrap_or_default();
-    let Some(claims) = console_claims(&state.token, token, &slug, unix_now()) else {
+    let Some(claims) = claims(&state.token, "console", token, &slug, unix_now()) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
     if !valid_slug(&slug) {
@@ -671,9 +728,15 @@ async fn main() {
         .route("/servers/{slug}/{action}", post(power))
         .route("/servers/{slug}/logs", get(list_logs))
         .route("/servers/{slug}/logs/{name}", get(read_log))
+        .route("/servers/{slug}/files", get(files::list).delete(files::delete))
+        .route("/servers/{slug}/files/content", get(files::read_text).put(files::write_text))
+        .route("/servers/{slug}/files/mkdir", post(files::mkdir))
+        .route("/servers/{slug}/files/rename", post(files::rename))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_signature))
         // Authenticated by its console token instead of a signed request.
         .route("/servers/{slug}/console", get(console))
+        .route("/servers/{slug}/upload", put(files::upload).merge(options(files::upload_preflight)))
+        .route("/servers/{slug}/download", get(files::download))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
@@ -714,12 +777,13 @@ mod tests {
 
         // Same vector as tests/Feature/ConsoleTest.php.
         assert_eq!(valid.split_once('.').unwrap().1, "b909a93d1a9fdbd6306efa948ceecf684803eabbe576da1c82220feb435d7250");
-        assert!(console_claims(key, &valid, "survival", 2000).is_some_and(|claims| claims.write));
-        assert!(console_claims(key, &valid, "survival", 2001).is_none());
-        assert!(console_claims(key, &valid, "creative", 1000).is_none());
-        assert!(console_claims(b"another-token-another-token-0000", &valid, "survival", 1000).is_none());
-        assert!(console_claims(key, &valid.replace("7b", "7c"), "survival", 1000).is_none());
-        assert!(console_claims(key, "nonsense", "survival", 1000).is_none());
+        assert!(claims(key, "console", &valid, "survival", 2000).is_some_and(|claims| claims.write));
+        assert!(claims(key, "files", &valid, "survival", 2000).is_none());
+        assert!(claims(key, "console", &valid, "survival", 2001).is_none());
+        assert!(claims(key, "console", &valid, "creative", 1000).is_none());
+        assert!(claims(b"another-token-another-token-0000", "console", &valid, "survival", 1000).is_none());
+        assert!(claims(key, "console", &valid.replace("7b", "7c"), "survival", 1000).is_none());
+        assert!(claims(key, "console", "nonsense", "survival", 1000).is_none());
 
         assert!(valid_command("say hello"));
         assert!(!valid_command("--password x"));
@@ -759,6 +823,24 @@ mod tests {
         ] {
             assert_eq!(config(|value| value[field] = bad).unwrap().validate(), Err(field));
         }
+
+        let pack = |server_type: &str, modpack: Value| {
+            config(|value| {
+                value["server_type"] = json!(server_type);
+                value["modpack"] = modpack;
+                value["cf_api_key"] = json!("$2a$10$key");
+            })
+            .unwrap()
+        };
+        assert_eq!(pack("FABRIC", Value::Null).validate(), Ok(()));
+        assert_eq!(pack("MODRINTH", json!("https://modrinth.com/modpack/cobblemon-fabric/version/1.6")).validate(), Ok(()));
+        assert!(pack("MODRINTH", json!("cobblemon-fabric")).env().contains(&"MODRINTH_MODPACK=cobblemon-fabric".to_owned()));
+        assert!(pack("AUTO_CURSEFORGE", json!("all-the-mods-10")).env().contains(&"CF_API_KEY=$2a$10$key".to_owned()));
+        assert_eq!(pack("MODRINTH", Value::Null).validate(), Err("server_type"));
+        assert_eq!(pack("PAPER", json!("some-pack")).validate(), Err("server_type"));
+        assert_eq!(pack("MODRINTH", json!("https://evil.example/pack.mrpack")).validate(), Err("server_type"));
+        assert_eq!(pack("AUTO_CURSEFORGE", json!("pack name; rm -rf")).validate(), Err("server_type"));
+        assert_eq!(config(|value| { value["server_type"] = json!("AUTO_CURSEFORGE"); value["modpack"] = json!("atm10"); }).unwrap().validate(), Err("cf_api_key"));
 
         assert!(valid_slug("survival-2"));
         for bad in ["", "../etc", "a/b", "Upper", "-lead", "trail-", "a b"] {

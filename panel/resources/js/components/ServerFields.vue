@@ -4,8 +4,9 @@ import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ModpackPicker from '@/components/ModpackPicker.vue';
 import type { Server, ServerOptions } from '@/lib/servers';
-import { title } from '@/lib/servers';
+import { PACK_TYPES, title, typeLabels } from '@/lib/servers';
 
 const props = defineProps<{
     options: ServerOptions;
@@ -22,6 +23,20 @@ const mcVersions = computed(() => [
         ...props.options.mcVersions,
     ]),
 ]);
+
+// The type buttons show the loaders plus one "Modpack" choice; the platform picks which pack type is sent.
+const loaderTypes = computed(() =>
+    props.options.types.filter((type) => !PACK_TYPES.includes(type)),
+);
+const initialType = props.server?.server_type ?? 'PAPER';
+const isPack = ref(PACK_TYPES.includes(initialType));
+const loader = ref(isPack.value ? 'PAPER' : initialType);
+const platform = ref<'MODRINTH' | 'AUTO_CURSEFORGE'>(
+    initialType === 'AUTO_CURSEFORGE' ? 'AUTO_CURSEFORGE' : 'MODRINTH',
+);
+const typeButton =
+    'flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50';
+
 const memoryGb = ref((props.server?.memory_mb ?? 4096) / 1024);
 
 const selectClass =
@@ -38,28 +53,49 @@ const selectClass =
                     class="flex flex-wrap gap-2"
                 >
                     <label
-                        v-for="type in options.types"
+                        v-for="type in loaderTypes"
                         :key="type"
-                        class="flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
+                        :class="typeButton"
                     >
                         <input
                             type="radio"
-                            name="server_type"
-                            :value="type"
-                            :checked="
-                                type ===
-                                (server?.server_type ?? options.types[0])
-                            "
+                            :checked="!isPack && loader === type"
                             class="sr-only"
+                            @change="
+                                loader = type;
+                                isPack = false;
+                            "
                         />
-                        {{ title(type) }}
+                        {{ typeLabels[type] }}
+                    </label>
+                    <label :class="typeButton">
+                        <input
+                            type="radio"
+                            :checked="isPack"
+                            class="sr-only"
+                            @change="isPack = true"
+                        />
+                        Modpack
                     </label>
                 </div>
+                <input
+                    type="hidden"
+                    name="server_type"
+                    :value="isPack ? platform : loader"
+                />
                 <InputError :message="errors.server_type" />
             </div>
 
+            <ModpackPicker
+                v-if="isPack"
+                v-model:platform="platform"
+                :curseforge="options.curseforge"
+                :initial="server?.modpack"
+                :error="errors.modpack_project"
+            />
+
             <div class="grid gap-4 sm:grid-cols-2">
-                <div class="grid content-start gap-2">
+                <div v-if="!isPack" class="grid content-start gap-2">
                     <Label for="mc_version">Minecraft version</Label>
                     <select
                         id="mc_version"
@@ -112,7 +148,7 @@ const selectClass =
                         class="text-[0.8125rem] text-muted-foreground"
                     >
                         Minecraft 1.20.5 and newer needs Java 21; 26.1 and newer
-                        needs Java 25.
+                        needs Java 25. A modpack's page says which it needs.
                     </span>
                     <InputError :message="errors.java_version" />
                 </div>

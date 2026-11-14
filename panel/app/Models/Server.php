@@ -21,17 +21,21 @@ use Illuminate\Support\Carbon;
  * @property int $java_version
  * @property int $memory_mb
  * @property array{motd: string, difficulty: string, mode: string, max_players: int} $settings
+ * @property array{project: string, name: string, icon: string|null}|null $modpack
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'eula_accepted_at'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'eula_accepted_at'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
     use HasFactory;
 
     // These lists mirror the ones the Rust service accepts (service/src/main.rs).
-    public const array TYPES = ['VANILLA', 'PAPER'];
+    public const array TYPES = ['VANILLA', 'PAPER', 'FABRIC', 'FORGE', 'NEOFORGE', 'MODRINTH', 'AUTO_CURSEFORGE'];
+
+    // Server types that install a whole modpack instead of one loader.
+    public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE'];
 
     public const array JAVA_VERSIONS = [8, 17, 21, 25];
 
@@ -66,6 +70,7 @@ class Server extends Model
             'java_version' => 'integer',
             'memory_mb' => 'integer',
             'settings' => 'array',
+            'modpack' => 'array',
             'eula_accepted_at' => 'datetime',
         ];
     }

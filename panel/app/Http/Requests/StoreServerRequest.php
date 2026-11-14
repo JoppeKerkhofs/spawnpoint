@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use App\Concerns\ServerValidationRules;
 use App\Models\Node;
 use Closure;
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -16,7 +15,7 @@ class StoreServerRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, array<int, ValidationRule|array<mixed>|string>>
+     * @return array<string, array<int, mixed>>
      */
     public function rules(): array
     {

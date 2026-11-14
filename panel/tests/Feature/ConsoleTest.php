@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('console token matches the vector the rust service is tested against', function () {
-    expect(NodeClient::consoleToken('0123456789abcdef0123456789abcdef', 'survival', 2000, true))
+    expect(NodeClient::token('console', '0123456789abcdef0123456789abcdef', 'survival', 2000, true))
         ->toEndWith('.b909a93d1a9fdbd6306efa948ceecf684803eabbe576da1c82220feb435d7250');
 });
 
@@ -22,7 +22,7 @@ test('the console page hands out a short-lived token for that server only', func
         ->assertInertia(fn (Assert $page) => $page
             ->component('servers/Console')
             ->where('console.url', 'wss://node.test:8443/servers/survival/console?token='
-                .NodeClient::consoleToken($server->node->token, 'survival', now()->getTimestamp() + 60, true)),
+                .NodeClient::token('console', $server->node->token, 'survival', now()->getTimestamp() + 60, true)),
         );
 });
 

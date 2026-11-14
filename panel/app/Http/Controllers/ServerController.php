@@ -12,7 +12,6 @@ use App\Http\Requests\UpdateServerRequest;
 use App\Models\Server;
 use App\Services\MinecraftVersions;
 use App\Services\NodeClient;
-use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
@@ -152,37 +151,6 @@ class ServerController extends Controller
     }
 
     /**
-     * Run an action against the node and turn its failures into a toast.
-     */
-    private function attempt(Closure $action, ?string $success = null): mixed
-    {
-        try {
-            $result = $action();
-        } catch (ConnectionException) {
-            return $this->fail(__('The Rust service did not answer.'));
-        } catch (RequestException $exception) {
-            return $this->fail(match ($exception->response->status()) {
-                404 => __('This server has no container yet. Save its configuration to create it.'),
-                409 => __('The server is busy with another task.'),
-                default => __('The Rust service refused the request (:status).', ['status' => $exception->response->status()]),
-            });
-        }
-
-        if ($success !== null) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => $success]);
-        }
-
-        return $result;
-    }
-
-    private function fail(string $message): null
-    {
-        Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
-
-        return null;
-    }
-
-    /**
      * The choices the server forms offer.
      *
      * @return array<string, mixed>
@@ -195,6 +163,7 @@ class ServerController extends Controller
                 'types' => Server::TYPES,
                 'mcVersions' => MinecraftVersions::releases(),
                 'javaVersions' => Server::JAVA_VERSIONS,
+                'curseforge' => filled(config('panel.curseforge_key')),
                 'difficulties' => Server::DIFFICULTIES,
                 'modes' => Server::MODES,
             ],

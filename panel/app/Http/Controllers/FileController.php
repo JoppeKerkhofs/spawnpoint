@@ -1,0 +1,121 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\FileRequest;
+use App\Models\Server;
+use App\Services\NodeClient;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class FileController extends Controller
+{
+    /**
+     * Browse a folder of the server's data folder, optionally with one text file open in the editor.
+     */
+    public function index(FileRequest $request, Server $server): Response
+    {
+        $client = new NodeClient($server->node);
+        $path = $request->path();
+
+        try {
+            $entries = $client->files($server, $path);
+
+            if ($request->filled('edit')) {
+                $file = ['path' => $request->path('edit'), 'content' => $client->readFile($server, $request->path('edit'))];
+            }
+        } catch (ConnectionException) {
+            $error = __('The Rust service did not answer.');
+        } catch (RequestException $exception) {
+            $error = self::messages()[$exception->response->status()] ?? __('The Rust service refused the request.');
+        }
+
+        return Inertia::render('servers/Files', [
+            'server' => $server,
+            'states' => Inertia::defer(fn () => NodeClient::states()),
+            'path' => $path,
+            'entries' => $entries ?? [],
+            'file' => $file ?? null,
+            'error' => $error ?? null,
+            // A closure, so an upload can ask for a fresh token first.
+            'upload' => fn () => ['url' => $client->fileUrl($server, 'upload')],
+        ]);
+    }
+
+    /**
+     * Save a text file from the editor, or create an empty one.
+     */
+    public function save(FileRequest $request, Server $server): RedirectResponse
+    {
+        $this->attempt(
+            fn () => (new NodeClient($server->node))->writeFile($server, $request->path(), (string) $request->validated('content')),
+            __('Saved. Most files are read again on the next restart.'),
+            self::messages(),
+        );
+
+        return back();
+    }
+
+    /**
+     * Create a folder.
+     */
+    public function folder(FileRequest $request, Server $server): RedirectResponse
+    {
+        $this->attempt(fn () => (new NodeClient($server->node))->makeFolder($server, $request->path()), messages: self::messages());
+
+        return back();
+    }
+
+    /**
+     * Rename or move a file or folder.
+     */
+    public function rename(FileRequest $request, Server $server): RedirectResponse
+    {
+        $this->attempt(
+            fn () => (new NodeClient($server->node))->renameFile($server, $request->path('from'), $request->path('to')),
+            messages: self::messages(),
+        );
+
+        return back();
+    }
+
+    /**
+     * Delete a file, or a folder with everything in it.
+     */
+    public function destroy(FileRequest $request, Server $server): RedirectResponse
+    {
+        $this->attempt(fn () => (new NodeClient($server->node))->deleteFile($server, $request->path()), messages: self::messages());
+
+        return back();
+    }
+
+    /**
+     * Send the browser to the Rust service to download a file, with a fresh token.
+     */
+    public function download(FileRequest $request, Server $server): RedirectResponse
+    {
+        return redirect()->away(
+            (new NodeClient($server->node))->fileUrl($server, 'download').'&'.ltrim(NodeClient::query(['path' => $request->path()]), '?'),
+        );
+    }
+
+    /**
+     * What the Rust service's refusals mean for files.
+     *
+     * @return array<int, string>
+     */
+    private static function messages(): array
+    {
+        return [
+            400 => __('That name cannot be used.'),
+            403 => __('That path leads outside the server folder.'),
+            404 => __('That file or folder no longer exists.'),
+            409 => __('Something with that name already exists, or the folder is missing.'),
+            413 => __('That file is too large to edit here. Download it instead.'),
+            415 => __('That is not a text file. Download it instead.'),
+        ];
+    }
+}

@@ -74,6 +74,8 @@ class NodeClient
             'difficulty' => $server->settings['difficulty'],
             'mode' => $server->settings['mode'],
             'max_players' => $server->settings['max_players'],
+            'modpack' => $server->modpack['project'] ?? null,
+            'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? config('panel.curseforge_key') : null,
             'start' => $start,
         ]);
     }
@@ -101,19 +103,91 @@ class NodeClient
      */
     public function consoleUrl(Server $server, bool $write): string
     {
-        $token = self::consoleToken($this->node->token, $server->slug, now()->getTimestamp() + 60, $write);
+        $token = self::token('console', $this->node->token, $server->slug, now()->getTimestamp() + 60, $write);
 
         return preg_replace('/^http/', 'ws', $this->node->base_url)."/servers/{$server->slug}/console?token={$token}";
     }
 
     /**
-     * Mint a console token the way the Rust service verifies it (service/src/main.rs).
+     * Get the address the browser uploads to or downloads from, with a token that is valid for five minutes.
+     *
+     * @param  'upload'|'download'  $action
      */
-    public static function consoleToken(string $key, string $slug, int $expiresAt, bool $write): string
+    public function fileUrl(Server $server, string $action): string
+    {
+        $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 300, $action === 'upload');
+
+        return "{$this->node->base_url}/servers/{$server->slug}/{$action}?token={$token}";
+    }
+
+    /**
+     * Mint a browser token the way the Rust service verifies it (service/src/main.rs).
+     *
+     * @param  'console'|'files'  $purpose  A token for one purpose is refused for the other.
+     */
+    public static function token(string $purpose, string $key, string $slug, int $expiresAt, bool $write): string
     {
         $payload = bin2hex(json_encode(['slug' => $slug, 'exp' => $expiresAt, 'write' => $write], JSON_THROW_ON_ERROR));
 
-        return $payload.'.'.hash_hmac('sha256', "console\n".$payload, $key);
+        return $payload.'.'.hash_hmac('sha256', "{$purpose}\n".$payload, $key);
+    }
+
+    /**
+     * List a folder in the server's data folder, folders first.
+     *
+     * @return list<array{name: string, dir: bool, size: int, modified: int}>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function files(Server $server, string $path): array
+    {
+        return $this->send('GET', "/servers/{$server->slug}/files".self::query(['path' => $path]))->json();
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function readFile(Server $server, string $path): string
+    {
+        return $this->send('GET', "/servers/{$server->slug}/files/content".self::query(['path' => $path]))->body();
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function writeFile(Server $server, string $path, string $content): void
+    {
+        $this->send('PUT', "/servers/{$server->slug}/files/content".self::query(['path' => $path]), body: $content);
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function makeFolder(Server $server, string $path): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/files/mkdir", ['path' => $path]);
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function renameFile(Server $server, string $from, string $to): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/files/rename", ['from' => $from, 'to' => $to]);
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function deleteFile(Server $server, string $path): void
+    {
+        $this->send('DELETE', "/servers/{$server->slug}/files".self::query(['path' => $path]));
     }
 
     /**
@@ -137,7 +211,7 @@ class NodeClient
      */
     public function log(Server $server, string $name, string $search = ''): string
     {
-        $query = $search === '' ? '' : '?'.http_build_query(['q' => $search], encoding_type: PHP_QUERY_RFC3986);
+        $query = $search === '' ? '' : self::query(['q' => $search]);
 
         return $this->send('GET', "/servers/{$server->slug}/logs/{$name}{$query}")->body();
     }
@@ -151,14 +225,24 @@ class NodeClient
     }
 
     /**
-     * @param  array<string, mixed>|null  $data
+     * Build a query string that is signed exactly as it is sent.
+     *
+     * @param  array<string, string>  $parameters
+     */
+    public static function query(array $parameters): string
+    {
+        return '?'.http_build_query($parameters, encoding_type: PHP_QUERY_RFC3986);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $data  Sent as JSON, unless a raw body is given.
      *
      * @throws ConnectionException
      * @throws RequestException
      */
-    private function send(string $method, string $path, ?array $data = null): Response
+    private function send(string $method, string $path, ?array $data = null, string $body = ''): Response
     {
-        $body = $data === null ? '' : json_encode($data, JSON_THROW_ON_ERROR);
+        $body = $data === null ? $body : json_encode($data, JSON_THROW_ON_ERROR);
         $timestamp = now()->getTimestamp();
 
         return Http::baseUrl($this->node->base_url)

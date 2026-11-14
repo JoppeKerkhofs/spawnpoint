@@ -55,6 +55,8 @@ test('an admin creates a server and its node is told to create and start it', fu
             'difficulty' => 'normal',
             'mode' => 'survival',
             'max_players' => 20,
+            'modpack' => null,
+            'cf_api_key' => null,
             'start' => true,
         ]);
 });

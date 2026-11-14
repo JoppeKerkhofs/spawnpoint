@@ -6,12 +6,12 @@ import StatusPill from '@/components/StatusPill.vue';
 import type { Server, States } from '@/lib/servers';
 import { serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
-import { configuration, logs, show } from '@/routes/servers';
+import { configuration, files, logs, show } from '@/routes/servers';
 
 const props = defineProps<{
     server: Server;
     states?: States;
-    tab: 'console' | 'configuration' | 'logs';
+    tab: 'console' | 'configuration' | 'files' | 'logs';
 }>();
 
 usePoll(4000, { only: ['states'] });
@@ -28,6 +28,11 @@ const tabs = computed(() => [
         key: 'configuration',
         title: 'Configuration',
         href: configuration({ server: props.server.slug }),
+    },
+    {
+        key: 'files',
+        title: 'Files',
+        href: files({ server: props.server.slug }),
     },
     { key: 'logs', title: 'Logs', href: logs({ server: props.server.slug }) },
 ]);
