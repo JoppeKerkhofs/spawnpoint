@@ -5,7 +5,45 @@ services:
     restart: unless-stopped
     environment:
       MCPANEL_TOKEN: ${MCPANEL_TOKEN:?run "php artisan node:register" in panel/ and put the token in .env}
+      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
+      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+
+  # Players connect here; it forwards each connection to the server whose hostname they typed.
+  router:
+    image: itzg/mc-router
+    restart: unless-stopped
+    depends_on:
+      - socket-proxy
+    environment:
+      IN_DOCKER: "true"
+      DOCKER_SOCKET: tcp://socket-proxy:2375
+      DOCKER_NETWORK: minecraft
+    ports:
+      - "25565:25565"
+    networks:
+      - minecraft
+      - socket
+
+  # Gives the router read-only container discovery instead of the full Docker socket.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+
+networks:
+  # Fixed name: the Rust service attaches every Minecraft container to it.
+  minecraft:
+    name: minecraft
+  socket:
+    internal: true

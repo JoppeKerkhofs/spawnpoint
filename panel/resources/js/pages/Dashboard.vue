@@ -1,26 +1,18 @@
 <script setup lang="ts">
-import { Deferred, Head } from '@inertiajs/vue3';
+import { Head, Link, usePage, usePoll } from '@inertiajs/vue3';
+import { Plus } from '@lucide/vue';
+import { computed } from 'vue';
+import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
 import StatusPill from '@/components/StatusPill.vue';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import type { Server, States } from '@/lib/servers';
+import { serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
+import { create, show } from '@/routes/servers';
 
-type Container = {
-    id: string;
-    name: string | null;
-    image: string | null;
-    state: string | null;
-    status: string | null;
-};
-
-type Node = {
-    id: number;
-    name: string;
-    online: boolean;
-    containers: Container[];
-};
-
-defineProps<{
-    nodes?: Node[];
+const props = defineProps<{
+    servers: Server[];
+    states?: States;
 }>();
 
 defineOptions({
@@ -33,104 +25,163 @@ defineOptions({
         ],
     },
 });
+
+usePoll(4000, { only: ['states'] });
+
+const page = usePage();
+const canManage = computed(() => page.props.auth.user.role === 'admin');
+
+const cards = computed(() =>
+    props.servers.map((server) => ({
+        server,
+        current: serverState(props.states, server.slug),
+    })),
+);
+
+const runningCount = computed(
+    () => cards.value.filter((card) => card.current.state === 'running').length,
+);
+
+const memoryGb = computed(
+    () =>
+        props.servers.reduce((total, server) => total + server.memory_mb, 0) /
+        1024,
+);
 </script>
 
 <template>
     <Head title="Servers" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
-        <div>
-            <h1 class="text-2xl leading-[1.3] font-bold text-primary">
-                Servers
-            </h1>
-            <p class="mt-1 text-[0.9375rem] text-muted-foreground">
-                Every Minecraft server on this host, each in its own container.
-                Players join on port 25565 by hostname.
-            </p>
+        <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div class="flex-[1_1_320px]">
+                <h1 class="text-2xl leading-[1.3] font-bold text-primary">
+                    Servers
+                </h1>
+                <p class="mt-1 text-[0.9375rem] text-muted-foreground">
+                    Every Minecraft server on this host, each in its own
+                    container. Players join on port 25565 by hostname.
+                </p>
+            </div>
+            <Button v-if="canManage" as-child>
+                <Link :href="create()">
+                    <Plus aria-hidden="true" />
+                    New server
+                </Link>
+            </Button>
         </div>
 
-        <Deferred data="nodes">
-            <template #fallback>
-                <Skeleton class="h-32" />
-            </template>
+        <p
+            v-if="states && !states.online"
+            role="alert"
+            class="rounded-md border border-destructive bg-card px-4 py-3 text-sm text-destructive"
+        >
+            The Rust service did not answer, so server states are unknown and
+            controls will fail. Check that it is running and that a node is
+            registered (php artisan node:register).
+        </p>
 
-            <p
-                v-if="!nodes?.length"
-                class="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+        <div v-if="servers.length" class="flex flex-wrap gap-3">
+            <div
+                class="flex-[1_1_200px] rounded-md border border-border bg-card px-4 py-3.5"
             >
-                No node registered yet. Run
-                <code class="font-mono text-primary"
-                    >php artisan node:register local http://localhost:8080</code
-                >
-                and start the Rust service with the token it prints.
-            </p>
-
-            <div class="flex flex-col gap-3">
-                <article
-                    v-for="node in nodes"
-                    :key="node.id"
-                    class="overflow-hidden rounded-md border border-border bg-card"
-                >
-                    <div
-                        class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
+                <div class="text-[0.8125rem] text-muted-foreground">
+                    Running
+                </div>
+                <div class="text-2xl font-bold text-primary tabular-nums">
+                    {{ runningCount }}
+                    <span class="text-base font-normal text-muted-foreground"
+                        >of {{ servers.length }}</span
                     >
-                        <h2
-                            class="text-lg leading-[1.35] font-bold text-primary"
-                        >
-                            {{ node.name }}
-                        </h2>
-                        <StatusPill :tone="node.online ? 'ok' : 'error'">
-                            {{ node.online ? 'Online' : 'Offline' }}
-                        </StatusPill>
-                    </div>
-
-                    <p
-                        v-if="!node.containers.length"
-                        class="px-4 py-3 text-sm"
-                        :class="
-                            node.online
-                                ? 'text-muted-foreground'
-                                : 'text-destructive'
-                        "
-                    >
-                        {{
-                            node.online
-                                ? 'No managed containers yet.'
-                                : 'The Rust service did not answer.'
-                        }}
-                    </p>
-                    <div v-else class="overflow-x-auto px-4 py-1">
-                        <table class="w-full text-left">
-                            <thead
-                                class="text-[0.8125rem] text-muted-foreground"
-                            >
-                                <tr>
-                                    <th class="py-2 font-normal">Name</th>
-                                    <th class="py-2 font-normal">Image</th>
-                                    <th class="py-2 font-normal">State</th>
-                                    <th class="py-2 font-normal">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="container in node.containers"
-                                    :key="container.id"
-                                    class="border-t border-divider"
-                                >
-                                    <td class="py-2">{{ container.name }}</td>
-                                    <td class="py-2 font-mono text-sm">
-                                        {{ container.image }}
-                                    </td>
-                                    <td class="py-2">{{ container.state }}</td>
-                                    <td class="py-2 text-muted-foreground">
-                                        {{ container.status }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </article>
+                </div>
             </div>
-        </Deferred>
+            <div
+                class="flex-[1_1_200px] rounded-md border border-border bg-card px-4 py-3.5"
+            >
+                <div class="text-[0.8125rem] text-muted-foreground">
+                    Memory allocated
+                </div>
+                <div class="text-2xl font-bold text-primary tabular-nums">
+                    {{ memoryGb }} GB
+                </div>
+            </div>
+        </div>
+
+        <p
+            v-if="!servers.length"
+            class="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+        >
+            No servers yet.
+        </p>
+
+        <div class="flex flex-col gap-3">
+            <article
+                v-for="{ server, current } in cards"
+                :key="server.id"
+                class="overflow-hidden rounded-md border border-border bg-card"
+            >
+                <div
+                    class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
+                >
+                    <h2 class="text-lg leading-[1.35] font-bold text-primary">
+                        <Link :href="show({ server: server.slug })">
+                            {{ server.name }}
+                        </Link>
+                    </h2>
+                    <StatusPill :tone="toneOf(current.state)">
+                        {{ current.state }}
+                    </StatusPill>
+                    <span class="flex-1" />
+                    <span class="font-mono text-sm text-primary">
+                        {{ server.hostname }}
+                    </span>
+                </div>
+
+                <div
+                    class="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3"
+                >
+                    <div class="flex-[1_1_150px]">
+                        <div class="text-[0.8125rem] text-muted-foreground">
+                            Software
+                        </div>
+                        <div>{{ software(server) }}</div>
+                    </div>
+                    <div class="flex-[1_1_110px]">
+                        <div class="text-[0.8125rem] text-muted-foreground">
+                            Memory
+                        </div>
+                        <div class="tabular-nums">
+                            {{ server.memory_mb / 1024 }} GB
+                        </div>
+                    </div>
+                    <ServerPowerButtons
+                        :slug="server.slug"
+                        :state="current.state"
+                    >
+                        <Button
+                            variant="outline"
+                            class="border-primary"
+                            as-child
+                        >
+                            <Link :href="show({ server: server.slug })"
+                                >Open</Link
+                            >
+                        </Button>
+                    </ServerPowerButtons>
+                </div>
+
+                <div
+                    v-if="current.detail"
+                    class="border-t border-divider px-4 py-2.5 text-sm"
+                    :class="
+                        current.state === 'error'
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'
+                    "
+                >
+                    {{ current.detail }}
+                </div>
+            </article>
+        </div>
     </div>
 </template>

@@ -531,8 +531,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "bollard",
+ "futures-util",
  "hex",
  "hmac",
+ "serde",
  "serde_json",
  "sha2",
  "tokio",

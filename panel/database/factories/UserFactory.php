@@ -34,6 +34,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the model may change servers and settings.
+     */
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => 'admin',
+        ]);
+    }
+
+    /**
      * Indicate that the model has two-factor authentication enabled.
      */
     public function withTwoFactor(): static
