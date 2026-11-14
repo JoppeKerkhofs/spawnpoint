@@ -33,7 +33,7 @@ test('requests to a node are signed with its token over the exact body sent', fu
 test('dashboard shows each server with the state its node reports', function () {
     $server = Server::factory()->create(['slug' => 'survival']);
     Http::fake(['node.test:8080/servers' => Http::response([
-        ['slug' => 'survival', 'state' => 'running', 'detail' => null],
+        ['slug' => 'survival', 'state' => 'running', 'detail' => null, 'players' => ['online' => 3, 'max' => 20, 'names' => ['JoppeK']]],
     ])]);
 
     $this->actingAs(User::factory()->admin()->create())
@@ -44,7 +44,8 @@ test('dashboard shows each server with the state its node reports', function () 
             ->missing('states')
             ->loadDeferredProps(fn (Assert $reload) => $reload
                 ->where('states.online', true)
-                ->where('states.servers.survival.state', 'running'),
+                ->where('states.servers.survival.state', 'running')
+                ->where('states.servers.survival.players.online', 3),
             ),
         );
 });

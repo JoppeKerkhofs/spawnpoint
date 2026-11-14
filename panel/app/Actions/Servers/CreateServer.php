@@ -2,8 +2,10 @@
 
 namespace App\Actions\Servers;
 
+use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -29,7 +31,7 @@ class CreateServer
                 'owner_id' => $owner->id,
                 'name' => $data['name'],
                 'slug' => $data['slug'],
-                'hostname' => $data['slug'].'.'.config('panel.base_domain'),
+                'hostname' => $data['slug'].'.'.Setting::value('base_domain'),
                 'server_type' => $data['server_type'],
                 'mc_version' => $data['mc_version'],
                 'java_version' => $data['java_version'],
@@ -43,6 +45,7 @@ class CreateServer
 
             UpdateServer::demoteOtherDefaults($server);
             (new NodeClient($server->node))->apply($server, start: true);
+            ActivityLog::record('server.create', $server);
 
             return $server;
         });

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\FileRequest;
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -51,7 +52,10 @@ class FileController extends Controller
     public function save(FileRequest $request, Server $server): RedirectResponse
     {
         $this->attempt(
-            fn () => (new NodeClient($server->node))->writeFile($server, $request->path(), (string) $request->validated('content')),
+            function () use ($server, $request): void {
+                (new NodeClient($server->node))->writeFile($server, $request->path(), (string) $request->validated('content'));
+                ActivityLog::record('file.save', $server, ['path' => $request->path()]);
+            },
             __('Saved. Most files are read again on the next restart.'),
             self::messages(),
         );
@@ -64,7 +68,10 @@ class FileController extends Controller
      */
     public function folder(FileRequest $request, Server $server): RedirectResponse
     {
-        $this->attempt(fn () => (new NodeClient($server->node))->makeFolder($server, $request->path()), messages: self::messages());
+        $this->attempt(function () use ($server, $request): void {
+            (new NodeClient($server->node))->makeFolder($server, $request->path());
+            ActivityLog::record('file.folder', $server, ['path' => $request->path()]);
+        }, messages: self::messages());
 
         return back();
     }
@@ -75,7 +82,10 @@ class FileController extends Controller
     public function rename(FileRequest $request, Server $server): RedirectResponse
     {
         $this->attempt(
-            fn () => (new NodeClient($server->node))->renameFile($server, $request->path('from'), $request->path('to')),
+            function () use ($server, $request): void {
+                (new NodeClient($server->node))->renameFile($server, $request->path('from'), $request->path('to'));
+                ActivityLog::record('file.rename', $server, ['from' => $request->path('from'), 'to' => $request->path('to')]);
+            },
             messages: self::messages(),
         );
 
@@ -87,7 +97,10 @@ class FileController extends Controller
      */
     public function destroy(FileRequest $request, Server $server): RedirectResponse
     {
-        $this->attempt(fn () => (new NodeClient($server->node))->deleteFile($server, $request->path()), messages: self::messages());
+        $this->attempt(function () use ($server, $request): void {
+            (new NodeClient($server->node))->deleteFile($server, $request->path());
+            ActivityLog::record('file.delete', $server, ['path' => $request->path()]);
+        }, messages: self::messages());
 
         return back();
     }

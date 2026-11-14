@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -46,6 +47,7 @@ class UserController extends Controller
 
         $user = User::create(['name' => $data['name'], 'email' => $data['email'], 'password' => $data['password']]);
         $this->grant($user, $data);
+        ActivityLog::record('user.create', properties: ['email' => $user->email, 'role' => $data['role']]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('User created. Give them the password; they can change it after logging in.')]);
 
@@ -65,6 +67,7 @@ class UserController extends Controller
         }
 
         $this->grant($user, $data);
+        ActivityLog::record('user.update', properties: ['email' => $user->email, 'role' => $data['role']]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
@@ -82,6 +85,7 @@ class UserController extends Controller
 
         Server::query()->where('owner_id', $user->id)->update(['owner_id' => $request->user()->id]);
         $user->delete();
+        ActivityLog::record('user.delete', properties: ['email' => $user->email]);
 
         return back();
     }

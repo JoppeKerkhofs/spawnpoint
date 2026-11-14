@@ -60,6 +60,8 @@ const JAVA_VERSIONS: [u8; 4] = [8, 17, 21, 25];
 pub const STOP_TIMEOUT_SECS: i32 = 60;
 const MAX_SKEW_SECS: u64 = 60;
 const CONSOLE_BACKLOG_LINES: &str = "200";
+// How long a player count is reused before the server is asked again.
+const PLAYERS_MAX_AGE_SECS: u64 = 10;
 const MAX_COMMAND_CHARS: usize = 500;
 // Also bounds what a gzipped log may expand to.
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
@@ -82,6 +84,8 @@ pub struct AppState {
     pub backup_dir: Arc<str>,
     pub import_dir: Arc<str>,
     pub tasks: Tasks,
+    // Player counts by server, with the time they were read.
+    players: Arc<Mutex<HashMap<String, (u64, Value)>>>,
 }
 
 #[cfg(test)]
@@ -95,6 +99,7 @@ impl AppState {
             backup_dir: "/nonexistent".into(),
             import_dir: "/nonexistent".into(),
             tasks: Tasks::default(),
+            players: Default::default(),
         }
     }
 }
@@ -123,8 +128,27 @@ struct ServerConfig {
     // Makes the router send players here when they use a hostname no server has.
     #[serde(default)]
     is_default: bool,
+    // Player names. The lists replace what is on disk, so the panel's form is the truth.
+    #[serde(default)]
+    ops: Vec<String>,
+    #[serde(default)]
+    whitelist: Vec<String>,
+    #[serde(default)]
+    whitelist_on: bool,
+    #[serde(default)]
+    jvm_opts: String,
+    // In cores; none means no limit.
+    #[serde(default)]
+    cpu_limit: Option<f64>,
     #[serde(default)]
     start: bool,
+}
+
+fn valid_player_names(names: &[String]) -> bool {
+    names.len() <= 200
+        && names.iter().all(|name| {
+            (1..=16).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
 }
 
 const LOADER_TYPES: [&str; 5] = ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE"];
@@ -178,6 +202,14 @@ impl ServerConfig {
             Err("mode")
         } else if !(1..=1000).contains(&self.max_players) {
             Err("max_players")
+        } else if !valid_player_names(&self.ops) {
+            Err("ops")
+        } else if !valid_player_names(&self.whitelist) {
+            Err("whitelist")
+        } else if self.jvm_opts.len() > 500 || self.jvm_opts.chars().any(char::is_control) {
+            Err("jvm_opts")
+        } else if self.cpu_limit.is_some_and(|cores| !(0.25..=64.0).contains(&cores)) {
+            Err("cpu_limit")
         } else {
             Ok(())
         }
@@ -193,6 +225,17 @@ impl ServerConfig {
                 env.push(format!("CF_API_KEY={}", self.cf_api_key.as_deref().unwrap_or_default()));
             }
             _ => {}
+        }
+
+        // SYNCHRONIZE makes the image rewrite ops.json and whitelist.json from these lists on every start.
+        env.push(format!("OPS={}", self.ops.join(",")));
+        env.push("EXISTING_OPS_FILE=SYNCHRONIZE".into());
+        env.push(format!("WHITELIST={}", self.whitelist.join(",")));
+        env.push("EXISTING_WHITELIST_FILE=SYNCHRONIZE".into());
+        env.push(format!("ENABLE_WHITELIST={}", self.whitelist_on));
+        env.push(format!("ENFORCE_WHITELIST={}", self.whitelist_on));
+        if !self.jvm_opts.is_empty() {
+            env.push(format!("JVM_OPTS={}", self.jvm_opts));
         }
 
         env
@@ -387,6 +430,7 @@ async fn apply(docker: Docker, data_dir: Arc<str>, slug: String, config: ServerC
         host_config: Some(HostConfig {
             binds: Some(vec![format!("{data_dir}/{slug}:/data")]),
             memory: Some(i64::from(config.memory_mb) * 1024 * 1024),
+            nano_cpus: config.cpu_limit.map(|cores| (cores * 1e9) as i64),
             network_mode: Some(NETWORK.to_owned()),
             ..Default::default()
         }),
@@ -513,6 +557,7 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     })?;
 
     let mut servers: HashMap<String, (String, Option<String>)> = HashMap::new();
+    let mut player_counts: HashMap<String, Value> = HashMap::new();
     for container in containers {
         let names = container.names.unwrap_or_default();
         let Some(slug) = names.first().and_then(|name| name.strip_prefix("/mc-")) else {
@@ -521,6 +566,9 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
         // One inspect per server: the list call has no exit code or health.
         if let Ok(Some(inspected)) = managed(&state.docker, slug).await {
             let (label, detail) = describe(&inspected.state.unwrap_or_default());
+            if label == "running" {
+                player_counts.insert(slug.to_owned(), players(&state, slug).await);
+            }
             servers.insert(slug.to_owned(), (label.to_owned(), detail));
         }
     }
@@ -536,7 +584,11 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     Ok(Json(Value::Array(
         servers
             .into_iter()
-            .map(|(slug, (state, detail))| json!({ "slug": slug, "state": state, "detail": detail }))
+            .map(|(slug, (state, detail))| {
+                // A busy server (backing up, restarting) reports no players, even if it had some a moment ago.
+                let players = if state == "running" { player_counts.remove(&slug) } else { None };
+                json!({ "slug": slug, "state": state, "detail": detail, "players": players })
+            })
             .collect(),
     )))
 }
@@ -601,31 +653,59 @@ pub async fn run_command(docker: &Docker, name: &str, command: &str) -> String {
         return "That command cannot be sent.\n".into();
     }
 
-    let exec = CreateExecOptions {
-        cmd: Some(vec!["rcon-cli", command]),
+    exec(docker, name, vec!["rcon-cli", command])
+        .await
+        .unwrap_or_else(|_| "The command could not be run. Is the server running?\n".into())
+}
+
+// Runs a program inside the server's container and returns what it printed.
+async fn exec(docker: &Docker, name: &str, command: Vec<&str>) -> Result<String, DockerError> {
+    let options = CreateExecOptions {
+        cmd: Some(command),
         attach_stdout: Some(true),
         attach_stderr: Some(true),
         ..Default::default()
     };
-    let started = match docker.create_exec(name, exec).await {
-        Ok(created) => docker.start_exec(&created.id, None).await,
-        Err(error) => Err(error),
-    };
+    let created = docker.create_exec(name, options).await?;
+    let mut text = String::new();
 
-    match started {
-        Ok(StartExecResults::Attached { mut output, .. }) => {
-            let mut text = String::new();
-            while let Some(Ok(chunk)) = output.next().await {
-                text.push_str(&chunk.to_string());
-            }
-            text
+    if let StartExecResults::Attached { mut output, .. } = docker.start_exec(&created.id, None).await? {
+        while let Some(Ok(chunk)) = output.next().await {
+            text.push_str(&chunk.to_string());
         }
-        Ok(StartExecResults::Detached) => String::new(),
-        Err(_) => "The command could not be run. Is the server running?\n".into(),
     }
+
+    Ok(text)
 }
 
-async fn console_session(docker: Docker, slug: String, write: bool, mut socket: WebSocket) {
+// Who is online, from the same status ping a Minecraft client's server list uses. Unlike the
+// "list" command it leaves nothing in the server log. Null while the server is not answering.
+async fn players(state: &AppState, slug: &str) -> Value {
+    let now = unix_now();
+    if let Some((read_at, cached)) = state.players.lock().unwrap().get(slug) {
+        if now.saturating_sub(*read_at) < PLAYERS_MAX_AGE_SECS {
+            return cached.clone();
+        }
+    }
+
+    let status = exec(&state.docker, &container_name(slug), vec!["mc-monitor", "status", "-json", "-timeout", "3s"]).await;
+    let info = status.ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let value = match info.as_ref().map(|info| &info["server_info"]["players"]) {
+        Some(found) if found["max"].is_u64() => json!({
+            "online": found["online"],
+            "max": found["max"],
+            // The server sends at most a dozen names.
+            "names": found["Sample"].as_array().map(|sample| sample.iter().map(|player| player["name"].clone()).collect::<Vec<_>>()).unwrap_or_default(),
+        }),
+        _ => Value::Null,
+    };
+
+    state.players.lock().unwrap().insert(slug.to_owned(), (now, value.clone()));
+    value
+}
+
+async fn console_session(state: AppState, slug: String, write: bool, mut socket: WebSocket) {
+    let docker = state.docker.clone();
     let name = container_name(&slug);
     let mut logs = reattaching({
         let (docker, name) = (docker.clone(), name.clone());
@@ -645,6 +725,7 @@ async fn console_session(docker: Docker, slug: String, write: bool, mut socket: 
         move |_| Box::pin(docker.stats(&name, Some(StatsOptionsBuilder::default().stream(true).build())))
     });
     let mut previous_cpu: Option<(u64, u64)> = None;
+    let mut player_check = tokio::time::interval(Duration::from_secs(PLAYERS_MAX_AGE_SECS));
 
     loop {
         let frame = tokio::select! {
@@ -656,6 +737,7 @@ async fn console_session(docker: Docker, slug: String, write: bool, mut socket: 
                 Some(Ok(_)) => continue,
             },
             Some(chunk) = logs.next() => json!({ "t": "log", "d": chunk.to_string() }),
+            _ = player_check.tick() => json!({ "t": "players", "d": players(&state, &slug).await }),
             Some(sample) = stats.next() => {
                 let cpu = sample.cpu_stats.unwrap_or_default();
                 let now = (cpu.cpu_usage.and_then(|usage| usage.total_usage).unwrap_or(0), cpu.system_cpu_usage.unwrap_or(0));
@@ -704,7 +786,7 @@ async fn console(
         return status.into_response();
     }
 
-    upgrade.on_upgrade(move |socket| console_session(state.docker, slug, claims.write, socket))
+    upgrade.on_upgrade(move |socket| console_session(state, slug, claims.write, socket))
 }
 
 fn valid_log_name(name: &str) -> bool {
@@ -839,6 +921,7 @@ async fn main() {
         backup_dir: backup_dir.into(),
         import_dir: import_dir.into(),
         tasks: Tasks::default(),
+        players: Default::default(),
     };
     let app = Router::new()
         .route("/servers", get(list_servers))
@@ -948,6 +1031,28 @@ mod tests {
             ("difficulty", json!("brutal")),
             ("mode", json!("god")),
             ("max_players", json!(0)),
+        ] {
+            assert_eq!(config(|value| value[field] = bad).unwrap().validate(), Err(field));
+        }
+
+        let players = config(|value| {
+            value["ops"] = json!(["JoppeK"]);
+            value["whitelist"] = json!(["JoppeK", "Lien_B"]);
+            value["whitelist_on"] = json!(true);
+            value["jvm_opts"] = json!("-XX:+UseZGC");
+            value["cpu_limit"] = json!(2.5);
+        })
+        .unwrap();
+        assert_eq!(players.validate(), Ok(()));
+        for expected in ["OPS=JoppeK", "WHITELIST=JoppeK,Lien_B", "ENABLE_WHITELIST=true", "JVM_OPTS=-XX:+UseZGC"] {
+            assert!(players.env().contains(&expected.to_owned()), "{expected}");
+        }
+        assert!(valid.env().contains(&"ENABLE_WHITELIST=false".to_owned()));
+        for (field, bad) in [
+            ("ops", json!(["name with space"])),
+            ("whitelist", json!(["a,b"])),
+            ("jvm_opts", json!("-Xmx1G\n-evil")),
+            ("cpu_limit", json!(0.01)),
         ] {
             assert_eq!(config(|value| value[field] = bad).unwrap().validate(), Err(field));
         }

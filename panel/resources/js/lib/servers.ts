@@ -19,6 +19,12 @@ export type Server = {
         difficulty: string;
         mode: string;
         max_players: number;
+        // Missing on servers saved before these options existed.
+        ops?: string[];
+        whitelist?: boolean;
+        whitelist_names?: string[];
+        jvm_opts?: string;
+        cpu_limit?: number | null;
     };
 };
 
@@ -34,7 +40,13 @@ export type ServerOptions = {
 // Both are null when the host's memory could not be read and no limit is configured.
 export type MemoryBudget = { limitMb: number | null; freeMb: number | null };
 
-export type ServerState = { state: string; detail: string | null };
+export type Players = { online: number; max: number; names: string[] };
+
+export type ServerState = {
+    state: string;
+    detail: string | null;
+    players?: Players | null;
+};
 
 export type States = {
     online: boolean;

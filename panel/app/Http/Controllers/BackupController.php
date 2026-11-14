@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\FileRequest;
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -44,7 +45,10 @@ class BackupController extends Controller
      */
     public function store(Server $server): RedirectResponse
     {
-        $this->attempt(fn () => (new NodeClient($server->node))->createBackup($server), __('Backup started.'));
+        $this->attempt(function () use ($server): void {
+            (new NodeClient($server->node))->createBackup($server);
+            ActivityLog::record('backup.create', $server);
+        }, __('Backup started.'));
 
         return back();
     }
@@ -55,7 +59,10 @@ class BackupController extends Controller
     public function restore(Server $server, string $backup): RedirectResponse
     {
         $this->attempt(
-            fn () => (new NodeClient($server->node))->restoreBackup($server, $backup),
+            function () use ($server, $backup): void {
+                (new NodeClient($server->node))->restoreBackup($server, $backup);
+                ActivityLog::record('backup.restore', $server, ['backup' => $backup]);
+            },
             __('Restore started. The current state is backed up first.'),
             self::messages(),
         );
@@ -80,7 +87,10 @@ class BackupController extends Controller
      */
     public function destroy(Server $server, string $backup): RedirectResponse
     {
-        $this->attempt(fn () => (new NodeClient($server->node))->deleteBackup($server, $backup), messages: self::messages());
+        $this->attempt(function () use ($server, $backup): void {
+            (new NodeClient($server->node))->deleteBackup($server, $backup);
+            ActivityLog::record('backup.delete', $server, ['backup' => $backup]);
+        }, messages: self::messages());
 
         return back();
     }
@@ -103,6 +113,7 @@ class BackupController extends Controller
             'backup_keep' => ['required', 'integer', 'between:1,365'],
         ]));
 
+        ActivityLog::record('backup.schedule', $server, $server->only('backup_at', 'backup_keep'));
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Backup schedule saved.')]);
 
         return back();
@@ -116,7 +127,10 @@ class BackupController extends Controller
         $source = $request->validate(['source' => ['required', Rule::in(['zip', 'host'])]])['source'];
 
         $this->attempt(
-            fn () => (new NodeClient($server->node))->importWorld($server, $source, $request->path()),
+            function () use ($server, $source, $request): void {
+                (new NodeClient($server->node))->importWorld($server, $source, $request->path());
+                ActivityLog::record('world.import', $server, ['source' => $source, 'path' => $request->path()]);
+            },
             __('Import started. The current world is backed up first.'),
             [404 => __('That world was not found. A zip must be in this server\'s files and end in .zip.'), ...self::messages()],
         );

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Console\Attributes\Description;
@@ -23,6 +24,7 @@ class RunBackups extends Command
         foreach (Server::query()->where('backup_at', now()->format('H:i'))->with('node')->get() as $server) {
             try {
                 (new NodeClient($server->node))->createBackup($server);
+                ActivityLog::record('backup.create', $server, ['scheduled' => true]);
                 $this->info("Backup started for {$server->slug}.");
             } catch (ConnectionException|RequestException $exception) {
                 report($exception);

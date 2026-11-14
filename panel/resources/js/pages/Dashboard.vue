@@ -43,6 +43,13 @@ const runningCount = computed(
     () => cards.value.filter((card) => card.current.state === 'running').length,
 );
 
+const playersOnline = computed(() =>
+    cards.value.reduce(
+        (total, card) => total + (card.current.players?.online ?? 0),
+        0,
+    ),
+);
+
 const memoryGb = computed(
     () =>
         props.servers.reduce((total, server) => total + server.memory_mb, 0) /
@@ -96,6 +103,16 @@ const memoryGb = computed(
                     <span class="text-base font-normal text-muted-foreground"
                         >of {{ servers.length }}</span
                     >
+                </div>
+            </div>
+            <div
+                class="flex-[1_1_200px] rounded-md border border-border bg-card px-4 py-3.5"
+            >
+                <div class="text-[0.8125rem] text-muted-foreground">
+                    Players online
+                </div>
+                <div class="text-2xl font-bold text-primary tabular-nums">
+                    {{ playersOnline }}
                 </div>
             </div>
             <div
@@ -179,6 +196,16 @@ const memoryGb = computed(
                             Software
                         </div>
                         <div>{{ software(server) }}</div>
+                    </div>
+                    <div class="flex-[1_1_110px]">
+                        <div class="text-[0.8125rem] text-muted-foreground">
+                            Players
+                        </div>
+                        <div v-if="current.players" class="tabular-nums">
+                            {{ current.players.online }} /
+                            {{ current.players.max }}
+                        </div>
+                        <div v-else class="text-muted-foreground">—</div>
                     </div>
                     <div class="flex-[1_1_110px]">
                         <div class="text-[0.8125rem] text-muted-foreground">

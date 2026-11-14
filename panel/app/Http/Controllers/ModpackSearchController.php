@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
+use App\Models\Setting;
 use App\Services\Modpacks;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -22,7 +23,7 @@ class ModpackSearchController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
         ]);
 
-        if ($input['platform'] === 'AUTO_CURSEFORGE' && blank(config('panel.curseforge_key'))) {
+        if ($input['platform'] === 'AUTO_CURSEFORGE' && blank(Setting::value('curseforge_key'))) {
             return response()->json(['message' => __('CurseForge needs CURSEFORGE_API_KEY in the panel environment.')], 422);
         }
 

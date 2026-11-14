@@ -202,6 +202,93 @@ const selectClass =
                 The container limit. Minecraft's heap gets three quarters of it.
             </span>
             <InputError :message="errors.memory_mb" />
+
+            <Label for="cpu_limit" class="mt-2">CPU limit (cores)</Label>
+            <Input
+                id="cpu_limit"
+                name="cpu_limit"
+                type="number"
+                min="0.25"
+                max="64"
+                step="0.25"
+                class="max-w-32"
+                placeholder="None"
+                :default-value="server?.settings.cpu_limit ?? ''"
+                aria-describedby="cpu_limit_hint"
+            />
+            <span
+                id="cpu_limit_hint"
+                class="text-[0.8125rem] text-muted-foreground"
+            >
+                Leave empty for no limit.
+            </span>
+            <InputError :message="errors.cpu_limit" />
+        </div>
+    </SectionCard>
+
+    <SectionCard title="Players and Java">
+        <div class="flex flex-col gap-4">
+            <div class="grid gap-2">
+                <Label for="ops">Operators</Label>
+                <Input
+                    id="ops"
+                    name="ops"
+                    spellcheck="false"
+                    placeholder="Player names, separated by commas"
+                    :default-value="(server?.settings.ops ?? []).join(', ')"
+                />
+                <InputError :message="errors.ops" />
+            </div>
+
+            <div class="grid gap-2">
+                <label class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        name="whitelist"
+                        value="1"
+                        :checked="server?.settings.whitelist"
+                        class="size-4 accent-primary"
+                    />
+                    Whitelist on: only these players can join
+                </label>
+                <Label for="whitelist_names" class="sr-only"
+                    >Whitelisted players</Label
+                >
+                <Input
+                    id="whitelist_names"
+                    name="whitelist_names"
+                    spellcheck="false"
+                    placeholder="Player names, separated by commas"
+                    :default-value="
+                        (server?.settings.whitelist_names ?? []).join(', ')
+                    "
+                    aria-describedby="players_hint"
+                />
+                <span
+                    id="players_hint"
+                    class="text-[0.8125rem] text-muted-foreground"
+                >
+                    Both lists replace ops.json and whitelist.json on every
+                    start, so change them here, not in Files or with /op.
+                </span>
+                <InputError
+                    :message="errors.whitelist_names || errors.whitelist"
+                />
+            </div>
+
+            <div class="grid gap-2">
+                <Label for="jvm_opts">Extra JVM flags</Label>
+                <Input
+                    id="jvm_opts"
+                    name="jvm_opts"
+                    spellcheck="false"
+                    maxlength="500"
+                    class="font-mono"
+                    placeholder="-XX:+UseZGC"
+                    :default-value="server?.settings.jvm_opts ?? ''"
+                />
+                <InputError :message="errors.jvm_opts" />
+            </div>
         </div>
     </SectionCard>
 

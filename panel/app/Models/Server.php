@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $mc_version
  * @property int $java_version
  * @property int $memory_mb
- * @property array{motd: string, difficulty: string, mode: string, max_players: int} $settings
+ * @property array<string, mixed> $settings Game settings; servers saved before a setting existed lack its key.
  * @property array{project: string, name: string, icon: string|null}|null $modpack
  * @property bool $bluemap_enabled
  * @property bool $is_default

@@ -12,6 +12,8 @@ import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard, serviceStatus } from '@/routes';
+import { index as activity } from '@/routes/activity';
+import { edit as panelSettings } from '@/routes/panel-settings';
 import { index as users } from '@/routes/users';
 import type { BreadcrumbItem, NavItem } from '@/types';
 
@@ -77,7 +79,11 @@ const mainNavItems = computed<NavItem[]>(() => [
         href: dashboard(),
     },
     ...(auth.value.user.role === 'admin'
-        ? [{ title: 'Users', href: users() }]
+        ? [
+              { title: 'Users', href: users() },
+              { title: 'Activity', href: activity() },
+              { title: 'Settings', href: panelSettings() },
+          ]
         : []),
 ]);
 </script>

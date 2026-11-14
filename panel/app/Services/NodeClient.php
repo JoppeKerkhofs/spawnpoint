@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Node;
 use App\Models\Server;
+use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -16,7 +17,7 @@ class NodeClient
     /**
      * Get the live state of every server on every node, keyed by slug.
      *
-     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null}>}
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array{online: int, max: int, names: list<string>}|null}>}
      */
     public static function states(): array
     {
@@ -39,7 +40,7 @@ class NodeClient
     /**
      * Get the live state of the servers on this node, keyed by slug.
      *
-     * @return array<string, array{state: string, detail: string|null}>
+     * @return array<string, array{state: string, detail: string|null, players: array{online: int, max: int, names: list<string>}|null}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -49,7 +50,12 @@ class NodeClient
         $servers = [];
 
         foreach ($this->send('GET', '/servers')->json() as $server) {
-            $servers[$server['slug']] = ['state' => $server['state'], 'detail' => $server['detail']];
+            $servers[$server['slug']] = [
+                'state' => $server['state'],
+                'detail' => $server['detail'],
+                // Only for a running server that answers: online, max and up to a dozen names.
+                'players' => $server['players'] ?? null,
+            ];
         }
 
         return $servers;
@@ -75,8 +81,13 @@ class NodeClient
             'mode' => $server->settings['mode'],
             'max_players' => $server->settings['max_players'],
             'modpack' => $server->modpack['project'] ?? null,
-            'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? config('panel.curseforge_key') : null,
+            'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? Setting::value('curseforge_key') : null,
             'bluemap' => $server->bluemap_enabled,
+            'ops' => $server->settings['ops'] ?? [],
+            'whitelist' => $server->settings['whitelist_names'] ?? [],
+            'whitelist_on' => (bool) ($server->settings['whitelist'] ?? false),
+            'jvm_opts' => $server->settings['jvm_opts'] ?? '',
+            'cpu_limit' => $server->settings['cpu_limit'] ?? null,
             'is_default' => $server->is_default,
             'start' => $start,
         ]);

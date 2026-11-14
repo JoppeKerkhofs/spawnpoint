@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -63,7 +64,7 @@ class Modpacks
     private static function curseforge(string $query): array
     {
         $mods = Http::connectTimeout(2)->timeout(5)
-            ->withHeaders(['x-api-key' => (string) config('panel.curseforge_key')])
+            ->withHeaders(['x-api-key' => (string) Setting::value('curseforge_key')])
             ->get('https://api.curseforge.com/v1/mods/search', [
                 'gameId' => self::CURSEFORGE_MINECRAFT,
                 'classId' => self::CURSEFORGE_MODPACKS,

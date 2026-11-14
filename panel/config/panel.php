@@ -1,9 +1,14 @@
 <?php
 
+// Defaults from the environment. An admin can override the first five on the panel's Settings page.
+
 return [
 
     // Every server hostname is one label under this domain, covered by a wildcard DNS record.
     'base_domain' => env('PANEL_BASE_DOMAIN', 'mc.localhost'),
+
+    // Send every user without two-factor authentication to set it up before anything else.
+    'require_two_factor' => env('PANEL_REQUIRE_TWO_FACTOR', false),
 
     // The most memory, in MB, all servers together may be given. Empty means 90% of the host's memory.
     'memory_limit_mb' => env('PANEL_MEMORY_LIMIT_MB'),

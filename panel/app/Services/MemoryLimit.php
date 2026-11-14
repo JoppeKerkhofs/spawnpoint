@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Node;
 use App\Models\Server;
+use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
@@ -19,8 +20,10 @@ class MemoryLimit
      */
     public static function mb(): ?int
     {
-        if (filled(config('panel.memory_limit_mb'))) {
-            return (int) config('panel.memory_limit_mb');
+        $configured = Setting::value('memory_limit_mb');
+
+        if (filled($configured)) {
+            return (int) $configured;
         }
 
         $node = Node::query()->first();

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Servers;
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,5 +21,6 @@ class PowerServer
     public function __invoke(Server $server, string $action): void
     {
         (new NodeClient($server->node))->power($server, $action);
+        ActivityLog::record("server.{$action}", $server);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Servers;
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -18,6 +19,7 @@ class DeleteServer
     public function __invoke(Server $server): void
     {
         (new NodeClient($server->node))->delete($server);
+        ActivityLog::record('server.delete', $server);
 
         $server->delete();
     }

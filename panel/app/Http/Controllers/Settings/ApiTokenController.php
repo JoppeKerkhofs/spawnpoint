@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -45,6 +46,7 @@ class ApiTokenController extends Controller
         ]);
 
         $token = $request->user()->createToken($data['name'], $data['abilities']);
+        ActivityLog::record('token.create', properties: ['name' => $data['name'], 'abilities' => $data['abilities']]);
 
         return back()->with('new_token', $token->plainTextToken);
     }
@@ -54,7 +56,9 @@ class ApiTokenController extends Controller
      */
     public function destroy(Request $request, int $token): RedirectResponse
     {
-        $request->user()->tokens()->whereKey($token)->delete();
+        if ($request->user()->tokens()->whereKey($token)->delete()) {
+            ActivityLog::record('token.revoke');
+        }
 
         return back();
     }

@@ -10,6 +10,7 @@ use App\Http\Requests\LogRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Services\MemoryLimit;
 use App\Services\MinecraftVersions;
 use App\Services\NodeClient;
@@ -54,7 +55,7 @@ class ServerController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::states()),
             // A closure, so a reconnect can ask for a fresh token on its own.
             'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: true)],
-            'bluemapUrl' => $server->bluemap_enabled ? rtrim(config('panel.bluemap_url'), '/')."/{$server->slug}/" : null,
+            'bluemapUrl' => $server->bluemap_enabled ? rtrim(Setting::value('bluemap_url'), '/')."/{$server->slug}/" : null,
         ]);
     }
 
@@ -160,14 +161,14 @@ class ServerController extends Controller
     private function options(?Server $server = null): array
     {
         return [
-            'baseDomain' => config('panel.base_domain'),
+            'baseDomain' => Setting::value('base_domain'),
             // What this server may still be given: the limit minus what the other servers have.
             'memory' => ['limitMb' => MemoryLimit::mb(), 'freeMb' => MemoryLimit::freeMb($server)],
             'options' => [
                 'types' => Server::TYPES,
                 'mcVersions' => MinecraftVersions::releases(),
                 'javaVersions' => Server::JAVA_VERSIONS,
-                'curseforge' => filled(config('panel.curseforge_key')),
+                'curseforge' => filled(Setting::value('curseforge_key')),
                 'difficulties' => Server::DIFFICULTIES,
                 'modes' => Server::MODES,
             ],

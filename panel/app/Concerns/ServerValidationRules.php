@@ -2,7 +2,9 @@
 
 namespace App\Concerns;
 
+use App\Actions\Servers\UpdateServer;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Services\MemoryLimit;
 use Closure;
 use Illuminate\Validation\Rule;
@@ -53,15 +55,42 @@ trait ServerValidationRules
 
                     if (! preg_match($pattern, (string) $value)) {
                         $fail(__('Pick a pack from the list, or paste a link to its Modrinth page.'));
-                    } elseif ($this->input('server_type') === 'AUTO_CURSEFORGE' && blank(config('panel.curseforge_key'))) {
+                    } elseif ($this->input('server_type') === 'AUTO_CURSEFORGE' && blank(Setting::value('curseforge_key'))) {
                         $fail(__('CurseForge packs need CURSEFORGE_API_KEY in the panel environment.'));
                     }
                 },
             ],
             'bluemap' => ['nullable', 'boolean'],
+            'ops' => ['nullable', 'string', 'max:3400', $this->playerNames()],
+            'whitelist' => ['nullable', 'boolean'],
+            'whitelist_names' => ['nullable', 'string', 'max:3400', $this->playerNames()],
+            'jvm_opts' => ['nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1F\x7F]*$/'],
+            'cpu_limit' => ['nullable', 'numeric', 'between:0.25,64'],
             'is_default' => ['nullable', 'boolean'],
             'modpack_name' => ['nullable', 'string', 'max:120'],
             'modpack_icon' => ['nullable', 'string', 'max:500', 'starts_with:https://'],
         ];
+    }
+
+    /**
+     * A rule for a list of Minecraft player names separated by commas or whitespace.
+     */
+    private function playerNames(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            $names = UpdateServer::names((string) $value);
+
+            if (count($names) > 200) {
+                $fail(__('At most 200 names.'));
+            }
+
+            foreach ($names as $name) {
+                if (! preg_match('/^[A-Za-z0-9_]{1,16}$/', $name)) {
+                    $fail(__('":name" is not a Minecraft player name.', ['name' => $name]));
+
+                    return;
+                }
+            }
+        };
     }
 }

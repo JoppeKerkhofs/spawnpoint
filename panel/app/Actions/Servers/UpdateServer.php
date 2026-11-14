@@ -2,6 +2,7 @@
 
 namespace App\Actions\Servers;
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -35,6 +36,7 @@ class UpdateServer
 
             self::demoteOtherDefaults($server);
             (new NodeClient($server->node))->apply($server);
+            ActivityLog::record('server.update', $server);
         });
     }
 
@@ -80,7 +82,7 @@ class UpdateServer
      * Pick the game settings out of validated form data.
      *
      * @param  array<string, mixed>  $data
-     * @return array{motd: string, difficulty: string, mode: string, max_players: int}
+     * @return array<string, mixed>
      */
     public static function settings(array $data): array
     {
@@ -89,6 +91,21 @@ class UpdateServer
             'difficulty' => $data['difficulty'],
             'mode' => $data['mode'],
             'max_players' => (int) $data['max_players'],
+            'ops' => self::names((string) ($data['ops'] ?? '')),
+            'whitelist' => (bool) ($data['whitelist'] ?? false),
+            'whitelist_names' => self::names((string) ($data['whitelist_names'] ?? '')),
+            'jvm_opts' => (string) ($data['jvm_opts'] ?? ''),
+            'cpu_limit' => filled($data['cpu_limit'] ?? null) ? (float) $data['cpu_limit'] : null,
         ];
+    }
+
+    /**
+     * Split a list of player names typed with commas, spaces or line breaks.
+     *
+     * @return list<string>
+     */
+    public static function names(string $typed): array
+    {
+        return array_values(array_unique(preg_split('/[\s,]+/', $typed, flags: PREG_SPLIT_NO_EMPTY) ?: []));
     }
 }

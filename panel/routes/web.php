@@ -1,18 +1,21 @@
 <?php
 
 use App\Actions\Servers\PowerServer;
+use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ModpackSearchController;
+use App\Http\Controllers\PanelSettingsController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServiceStatusController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('service-status', ServiceStatusController::class)->name('service-status');
 
@@ -49,7 +52,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-Route::middleware(['auth', 'verified', 'can:manage-users'])->group(function () {
+Route::middleware(['auth', 'verified', RequireTwoFactor::class, 'can:manage-users'])->group(function () {
+    Route::get('activity', [ActivityController::class, 'index'])->name('activity.index');
+    Route::get('panel-settings', [PanelSettingsController::class, 'edit'])->name('panel-settings.edit');
+    Route::put('panel-settings', [PanelSettingsController::class, 'update'])->name('panel-settings.update');
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::post('users', [UserController::class, 'store'])->name('users.store');
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');

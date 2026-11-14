@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import Sparkline from '@/components/Sparkline.vue';
-import type { Server, States } from '@/lib/servers';
+import type { Players, Server, States } from '@/lib/servers';
 
 type Line = { id: number; text: string; kind: 'log' | 'command' | 'reply' };
 type Sample = { cpu: number; memory: number; memory_limit: number };
@@ -26,6 +26,7 @@ const MAX_SAMPLES = 600;
 
 const lines = ref<Line[]>([]);
 const samples = ref<Sample[]>([]);
+const players = ref<Players | null>(null);
 const connected = ref(false);
 const paused = ref(false);
 const command = ref('');
@@ -64,7 +65,9 @@ const append = (text: string, kind: Line['kind']) => {
 const receive = (event: MessageEvent<string>) => {
     const frame = JSON.parse(event.data);
 
-    if (frame.t === 'stats') {
+    if (frame.t === 'players') {
+        players.value = frame.d;
+    } else if (frame.t === 'stats') {
         samples.value.push(frame);
         samples.value.splice(0, samples.value.length - MAX_SAMPLES);
     } else if (frame.t === 'log') {
@@ -317,6 +320,32 @@ onBeforeUnmount(() => {
                             minutes.
                         </p>
                     </div>
+                </SectionCard>
+
+                <SectionCard title="Players">
+                    <p v-if="!players" class="text-sm text-muted-foreground">
+                        The server is not answering, so nobody can be online.
+                    </p>
+                    <template v-else>
+                        <p class="text-sm text-muted-foreground tabular-nums">
+                            {{ players.online }} of {{ players.max }} online
+                        </p>
+                        <ul v-if="players.names.length" class="mt-2">
+                            <li
+                                v-for="name in players.names"
+                                :key="name"
+                                class="border-t border-divider py-1.5 first:border-t-0"
+                            >
+                                {{ name }}
+                            </li>
+                        </ul>
+                        <p
+                            v-if="players.online > players.names.length"
+                            class="mt-2 text-[0.8125rem] text-muted-foreground"
+                        >
+                            The server reports at most a dozen names.
+                        </p>
+                    </template>
                 </SectionCard>
             </aside>
         </div>
