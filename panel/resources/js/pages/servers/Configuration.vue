@@ -1,18 +1,15 @@
 <script setup lang="ts">
-import { Form, Head, Link, router, usePoll } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Form, Head, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerFields from '@/components/ServerFields.vue';
-import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
-import StatusPill from '@/components/StatusPill.vue';
+import ServerHeader from '@/components/ServerHeader.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import type { Server, ServerOptions, States } from '@/lib/servers';
-import { serverState, software, toneOf } from '@/lib/servers';
-import { dashboard } from '@/routes';
 import { destroy, update } from '@/routes/servers';
 
 const props = defineProps<{
@@ -22,9 +19,6 @@ const props = defineProps<{
     states?: States;
 }>();
 
-usePoll(4000, { only: ['states'] });
-
-const current = computed(() => serverState(props.states, props.server.slug));
 const javaVersion = ref(props.server.java_version);
 
 const remove = () => {
@@ -39,45 +33,10 @@ const remove = () => {
 </script>
 
 <template>
-    <Head :title="server.name" />
+    <Head :title="`${server.name} configuration`" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
-        <div class="flex flex-col gap-3">
-            <nav
-                aria-label="Breadcrumb"
-                class="text-[0.8125rem] text-muted-foreground"
-            >
-                <Link :href="dashboard()" class="underline">Servers</Link>
-                / {{ server.name }}
-            </nav>
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
-                <h1 class="text-2xl leading-[1.3] font-bold text-primary">
-                    {{ server.name }}
-                </h1>
-                <StatusPill :tone="toneOf(current.state)">
-                    {{ current.state }}
-                </StatusPill>
-                <span class="text-sm text-muted-foreground">
-                    {{ software(server) }}
-                </span>
-                <span class="flex-1" />
-                <ServerPowerButtons
-                    :slug="server.slug"
-                    :state="current.state"
-                />
-            </div>
-            <p
-                v-if="current.detail"
-                class="text-sm"
-                :class="
-                    current.state === 'error'
-                        ? 'text-destructive'
-                        : 'text-muted-foreground'
-                "
-            >
-                {{ current.detail }}
-            </p>
-        </div>
+        <ServerHeader :server="server" :states="states" tab="configuration" />
 
         <div class="flex flex-wrap items-start gap-5">
             <Form
@@ -123,15 +82,6 @@ const remove = () => {
             </Form>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <SectionCard title="Join">
-                    <div class="text-[0.8125rem] text-muted-foreground">
-                        Server address
-                    </div>
-                    <div class="font-mono text-sm break-all text-primary">
-                        {{ server.hostname }}
-                    </div>
-                </SectionCard>
-
                 <SectionCard title="Delete server">
                     <p class="mb-3 text-sm text-muted-foreground">
                         Removes the container and this entry. The data folder

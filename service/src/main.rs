@@ -1,34 +1,42 @@
 use std::{
     collections::HashMap,
+    fs::File,
     future::Future,
-    path::Path as FsPath,
+    io::Read,
+    path::{Path as FsPath, PathBuf},
+    pin::Pin,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     body::{to_bytes, Body},
-    extract::{Path, Request, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, Request, State,
+    },
     http::StatusCode,
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
 };
 use bollard::{
     errors::Error as DockerError,
+    exec::{CreateExecOptions, StartExecResults},
     models::{
         ContainerCreateBody, ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, HealthStatusEnum,
         HostConfig,
     },
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptions, KillContainerOptions,
-        ListContainersOptionsBuilder, RemoveContainerOptions, RestartContainerOptionsBuilder, StartContainerOptions,
-        StopContainerOptionsBuilder,
+        ListContainersOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptions, RestartContainerOptionsBuilder,
+        StartContainerOptions, StatsOptionsBuilder, StopContainerOptionsBuilder,
     },
     Docker,
 };
-use futures_util::StreamExt;
+use flate2::read::GzDecoder;
+use futures_util::{stream, Stream, StreamExt};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -43,6 +51,10 @@ const JAVA_VERSIONS: [u8; 4] = [8, 17, 21, 25];
 // Long enough for the server to save the world on SIGTERM.
 const STOP_TIMEOUT_SECS: i32 = 60;
 const MAX_SKEW_SECS: u64 = 60;
+const CONSOLE_BACKLOG_LINES: &str = "200";
+const MAX_COMMAND_CHARS: usize = 500;
+// Also bounds what a gzipped log may expand to.
+const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 // ponytail: bodies are buffered to verify the signature; file uploads will need a streamed scheme.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
@@ -368,6 +380,244 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     )))
 }
 
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs())
+}
+
+#[derive(Deserialize)]
+struct ConsoleClaims {
+    slug: String,
+    exp: u64,
+    write: bool,
+}
+
+// A console token is hex(json claims) + "." + hex(hmac of "console\n" + hex claims), minted by the panel.
+fn console_claims(key: &[u8], token: &str, slug: &str, now: u64) -> Option<ConsoleClaims> {
+    let (payload, signature) = token.split_once('.')?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).ok()?;
+    mac.update(b"console\n");
+    mac.update(payload.as_bytes());
+    mac.verify_slice(&hex::decode(signature).ok()?).ok()?;
+
+    let claims: ConsoleClaims = serde_json::from_slice(&hex::decode(payload).ok()?).ok()?;
+    (claims.slug == slug && claims.exp >= now).then_some(claims)
+}
+
+type DockerStream<T> = Pin<Box<dyn Stream<Item = Result<T, DockerError>> + Send>>;
+
+// Docker ends log and stats streams when the container stops; this attaches again so a session survives restarts.
+fn reattaching<T: Send + 'static>(
+    attach: impl Fn(bool) -> DockerStream<T> + Send + 'static,
+) -> Pin<Box<dyn Stream<Item = T> + Send>> {
+    Box::pin(stream::unfold((attach, None::<DockerStream<T>>, true), |(attach, mut current, mut first)| async move {
+        loop {
+            let source = current.get_or_insert_with(|| attach(first));
+            first = false;
+            match source.next().await {
+                Some(Ok(item)) => return Some((item, (attach, current, first))),
+                _ => {
+                    current = None;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
+        }
+    }))
+}
+
+fn valid_command(command: &str) -> bool {
+    // A leading dash would be read as an option by rcon-cli.
+    !command.is_empty()
+        && !command.starts_with('-')
+        && command.chars().count() <= MAX_COMMAND_CHARS
+        && !command.chars().any(char::is_control)
+}
+
+async fn run_command(docker: &Docker, name: &str, command: &str) -> String {
+    let command = command.trim().trim_start_matches('/');
+    if !valid_command(command) {
+        return "That command cannot be sent.\n".into();
+    }
+
+    let exec = CreateExecOptions {
+        cmd: Some(vec!["rcon-cli", command]),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        ..Default::default()
+    };
+    let started = match docker.create_exec(name, exec).await {
+        Ok(created) => docker.start_exec(&created.id, None).await,
+        Err(error) => Err(error),
+    };
+
+    match started {
+        Ok(StartExecResults::Attached { mut output, .. }) => {
+            let mut text = String::new();
+            while let Some(Ok(chunk)) = output.next().await {
+                text.push_str(&chunk.to_string());
+            }
+            text
+        }
+        Ok(StartExecResults::Detached) => String::new(),
+        Err(_) => "The command could not be run. Is the server running?\n".into(),
+    }
+}
+
+async fn console_session(docker: Docker, slug: String, write: bool, mut socket: WebSocket) {
+    let name = container_name(&slug);
+    let mut logs = reattaching({
+        let (docker, name) = (docker.clone(), name.clone());
+        move |first| {
+            let options = LogsOptionsBuilder::default().follow(true).stdout(true).stderr(true);
+            let options = if first {
+                options.tail(CONSOLE_BACKLOG_LINES)
+            } else {
+                // Two seconds back covers the pause before attaching again.
+                options.since(i32::try_from(unix_now()).unwrap_or(i32::MAX) - 2)
+            };
+            Box::pin(docker.logs(&name, Some(options.build())))
+        }
+    });
+    let mut stats = reattaching({
+        let (docker, name) = (docker.clone(), name.clone());
+        move |_| Box::pin(docker.stats(&name, Some(StatsOptionsBuilder::default().stream(true).build())))
+    });
+    let mut previous_cpu: Option<(u64, u64)> = None;
+
+    loop {
+        let frame = tokio::select! {
+            message = socket.recv() => match message {
+                Some(Ok(Message::Text(command))) if write => {
+                    json!({ "t": "out", "d": run_command(&docker, &name, command.as_str()).await })
+                }
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(_)) => continue,
+            },
+            Some(chunk) = logs.next() => json!({ "t": "log", "d": chunk.to_string() }),
+            Some(sample) = stats.next() => {
+                let cpu = sample.cpu_stats.unwrap_or_default();
+                let now = (cpu.cpu_usage.and_then(|usage| usage.total_usage).unwrap_or(0), cpu.system_cpu_usage.unwrap_or(0));
+                let percent = match previous_cpu.replace(now) {
+                    Some((total, system)) if now.1 > system => {
+                        now.0.saturating_sub(total) as f64 / (now.1 - system) as f64
+                            * f64::from(cpu.online_cpus.unwrap_or(1))
+                            * 100.0
+                    }
+                    _ => 0.0,
+                };
+                let memory = sample.memory_stats.unwrap_or_default();
+                // Like "docker stats": file cache the kernel can drop is not counted as used.
+                let cache = memory.stats.as_ref().and_then(|stats| stats.get("inactive_file")).copied().unwrap_or(0);
+
+                json!({
+                    "t": "stats",
+                    "cpu": (percent * 10.0).round() / 10.0,
+                    "memory": memory.usage.unwrap_or(0).saturating_sub(cache),
+                    "memory_limit": memory.limit.unwrap_or(0),
+                })
+            }
+        };
+
+        if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+            break;
+        }
+    }
+}
+
+// The token in the query is the credential: browsers cannot set headers on a WebSocket.
+async fn console(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let token = query.get("token").map(String::as_str).unwrap_or_default();
+    let Some(claims) = console_claims(&state.token, token, &slug, unix_now()) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !valid_slug(&slug) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(status) = managed(&state.docker, &slug).await {
+        return status.into_response();
+    }
+
+    upgrade.on_upgrade(move |socket| console_session(state.docker, slug, claims.write, socket))
+}
+
+fn valid_log_name(name: &str) -> bool {
+    (1..=120).contains(&name.len())
+        && !name.starts_with('.')
+        && (name.ends_with(".log") || name.ends_with(".log.gz"))
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_')
+}
+
+fn logs_dir(state: &AppState, slug: &str) -> PathBuf {
+    FsPath::new(&*state.data_dir).join(slug).join("logs")
+}
+
+async fn list_logs(State(state): State<AppState>, Path(slug): Path<String>) -> Result<Json<Value>, StatusCode> {
+    if !valid_slug(&slug) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut files = Vec::new();
+    // A server that never started has no logs folder yet.
+    for entry in std::fs::read_dir(logs_dir(&state, &slug)).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // DirEntry metadata does not follow symlinks, so links are left out.
+        let Ok(metadata) = entry.metadata() else { continue };
+        if metadata.is_file() && valid_log_name(&name) {
+            let modified = metadata.modified().ok().and_then(|time| time.duration_since(UNIX_EPOCH).ok());
+            files.push((modified.map_or(0, |elapsed| elapsed.as_secs()), name, metadata.len()));
+        }
+    }
+    files.sort_by(|a, b| b.cmp(a));
+
+    Ok(Json(Value::Array(
+        files
+            .into_iter()
+            .map(|(modified, name, size)| json!({ "name": name, "size": size, "modified": modified }))
+            .collect(),
+    )))
+}
+
+// ponytail: reads the whole file in the request task; fine for logs, stream it if they grow past MAX_LOG_BYTES.
+async fn read_log(
+    State(state): State<AppState>,
+    Path((slug, name)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<String, StatusCode> {
+    if !valid_slug(&slug) || !valid_log_name(&name) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Resolving both paths refuses symlinks that point out of the server's own folder.
+    let server_dir = FsPath::new(&*state.data_dir).join(&slug).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+    let path = logs_dir(&state, &slug).join(&name).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+    if !path.starts_with(&server_dir) || !path.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let file = File::open(&path).map_err(|_| StatusCode::NOT_FOUND)?;
+    let mut bytes = Vec::new();
+    let read = if name.ends_with(".gz") {
+        GzDecoder::new(file).take(MAX_LOG_BYTES).read_to_end(&mut bytes)
+    } else {
+        file.take(MAX_LOG_BYTES).read_to_end(&mut bytes)
+    };
+    read.map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(match query.get("q").map(|q| q.to_lowercase()).filter(|q| !q.is_empty()) {
+        Some(needle) => text.lines().filter(|line| line.to_lowercase().contains(&needle)).fold(String::new(), |mut found, line| {
+            found.push_str(line);
+            found.push('\n');
+            found
+        }),
+        None => text.into_owned(),
+    })
+}
+
 fn mac(token: &[u8], timestamp: &str, method: &str, path: &str, body: &[u8]) -> Hmac<Sha256> {
     let mut mac = Hmac::<Sha256>::new_from_slice(token).expect("hmac accepts any key length");
     mac.update(format!("{timestamp}\n{method}\n{path}\n").as_bytes());
@@ -392,9 +642,8 @@ async fn require_signature(State(state): State<AppState>, request: Request, next
     let body = to_bytes(body, MAX_BODY_BYTES).await.map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
     let header = |name: &str| parts.headers.get(name).and_then(|value| value.to_str().ok()).unwrap_or_default();
     let path = parts.uri.path_and_query().map_or("/", |path| path.as_str());
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs());
 
-    if !verify(&state.token, header("x-timestamp"), parts.method.as_str(), path, &body, header("x-signature"), now) {
+    if !verify(&state.token, header("x-timestamp"), parts.method.as_str(), path, &body, header("x-signature"), unix_now()) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -420,7 +669,11 @@ async fn main() {
         .route("/servers", get(list_servers))
         .route("/servers/{slug}", put(put_server).delete(delete_server))
         .route("/servers/{slug}/{action}", post(power))
-        .layer(middleware::from_fn_with_state(state.clone(), require_signature))
+        .route("/servers/{slug}/logs", get(list_logs))
+        .route("/servers/{slug}/logs/{name}", get(read_log))
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_signature))
+        // Authenticated by its console token instead of a signed request.
+        .route("/servers/{slug}/console", get(console))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
@@ -445,6 +698,34 @@ mod tests {
         assert!(!verify(token, "1000", "POST", "/servers?x=1", b"{ }", &signature, 1000));
         assert!(!verify(b"another-token-another-token-0000", "1000", "POST", "/servers?x=1", b"{}", &signature, 1000));
         assert!(!verify(token, "soon", "POST", "/servers?x=1", b"{}", "not-hex", 1000));
+    }
+
+    #[test]
+    fn console_tokens_are_bound_to_one_server_and_expire() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let token = |key: &[u8], claims: &str| {
+            let payload = hex::encode(claims);
+            let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+            mac.update(b"console\n");
+            mac.update(payload.as_bytes());
+            format!("{payload}.{}", hex::encode(mac.finalize().into_bytes()))
+        };
+        let valid = token(key, r#"{"slug":"survival","exp":2000,"write":true}"#);
+
+        // Same vector as tests/Feature/ConsoleTest.php.
+        assert_eq!(valid.split_once('.').unwrap().1, "b909a93d1a9fdbd6306efa948ceecf684803eabbe576da1c82220feb435d7250");
+        assert!(console_claims(key, &valid, "survival", 2000).is_some_and(|claims| claims.write));
+        assert!(console_claims(key, &valid, "survival", 2001).is_none());
+        assert!(console_claims(key, &valid, "creative", 1000).is_none());
+        assert!(console_claims(b"another-token-another-token-0000", &valid, "survival", 1000).is_none());
+        assert!(console_claims(key, &valid.replace("7b", "7c"), "survival", 1000).is_none());
+        assert!(console_claims(key, "nonsense", "survival", 1000).is_none());
+
+        assert!(valid_command("say hello"));
+        assert!(!valid_command("--password x"));
+        assert!(!valid_command("say a\nstop"));
+        assert!(valid_log_name("latest.log") && valid_log_name("2026-11-14-1.log.gz"));
+        assert!(!valid_log_name("../server.properties") && !valid_log_name("ops.json") && !valid_log_name(".log"));
     }
 
     fn config(change: impl FnOnce(&mut Value)) -> Result<ServerConfig, serde_json::Error> {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import {
@@ -11,7 +11,7 @@ import {
 import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
-import { dashboard } from '@/routes';
+import { dashboard, serviceStatus } from '@/routes';
 import type { BreadcrumbItem, NavItem } from '@/types';
 
 type Props = {
@@ -25,6 +25,50 @@ const props = withDefaults(defineProps<Props>(), {
 const page = usePage();
 const auth = computed(() => page.props.auth);
 const { isCurrentUrl } = useCurrentUrl();
+
+const service = ref<{ online: boolean; last_seen_at: string | null }>();
+const now = ref(Date.now());
+
+const lastContact = computed(() => {
+    if (!service.value?.last_seen_at) {
+        return 'never';
+    }
+
+    const seconds = Math.max(
+        0,
+        Math.round((now.value - Date.parse(service.value.last_seen_at)) / 1000),
+    );
+
+    return seconds < 120
+        ? `${seconds} s ago`
+        : `${Math.round(seconds / 60)} min ago`;
+});
+
+const checkService = async () => {
+    try {
+        const response = await fetch(serviceStatus.url(), {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (response.ok) {
+            service.value = await response.json();
+        }
+    } catch {
+        // The panel itself is unreachable; the next check tries again.
+    }
+};
+
+let timers: ReturnType<typeof setInterval>[] = [];
+
+onMounted(() => {
+    void checkService();
+    timers = [
+        setInterval(checkService, 10000),
+        setInterval(() => (now.value = Date.now()), 1000),
+    ];
+});
+
+onBeforeUnmount(() => timers.forEach(clearInterval));
 
 const mainNavItems: NavItem[] = [
     {
@@ -68,6 +112,29 @@ const mainNavItems: NavItem[] = [
                 </nav>
 
                 <div class="flex-1" />
+
+                <div
+                    v-if="service"
+                    role="status"
+                    class="flex items-center gap-2 py-2 text-[0.8125rem] text-white/85"
+                >
+                    <span
+                        aria-hidden="true"
+                        class="size-2 rounded-full"
+                        :class="
+                            service.online
+                                ? 'bg-brand-bright ring-[3px] ring-brand-bright/25'
+                                : 'bg-[#ff9a9a] ring-[3px] ring-[#ff9a9a]/25'
+                        "
+                    />
+                    <span
+                        >Rust service
+                        {{ service.online ? 'online' : 'offline' }}</span
+                    >
+                    <span class="text-white/60 tabular-nums"
+                        >· last contact {{ lastContact }}</span
+                    >
+                </div>
 
                 <DropdownMenu>
                     <DropdownMenuTrigger as-child>

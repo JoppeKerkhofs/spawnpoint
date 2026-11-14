@@ -72,7 +72,7 @@ const javaVersion = ref(25);
                                     name="slug"
                                     required
                                     maxlength="63"
-                                    pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+                                    pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
                                     autocapitalize="none"
                                     spellcheck="false"
                                     aria-describedby="slug_hint"

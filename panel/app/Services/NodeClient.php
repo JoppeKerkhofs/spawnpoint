@@ -27,6 +27,7 @@ class NodeClient
         foreach ($nodes as $node) {
             try {
                 $servers += (new self($node))->servers();
+                $node->forceFill(['last_seen_at' => now()])->save();
             } catch (ConnectionException|RequestException) {
                 $online = false;
             }
@@ -93,6 +94,52 @@ class NodeClient
     public function delete(Server $server): void
     {
         $this->send('DELETE', "/servers/{$server->slug}");
+    }
+
+    /**
+     * Get the WebSocket address of a server's live console, with a token that is valid for one minute.
+     */
+    public function consoleUrl(Server $server, bool $write): string
+    {
+        $token = self::consoleToken($this->node->token, $server->slug, now()->getTimestamp() + 60, $write);
+
+        return preg_replace('/^http/', 'ws', $this->node->base_url)."/servers/{$server->slug}/console?token={$token}";
+    }
+
+    /**
+     * Mint a console token the way the Rust service verifies it (service/src/main.rs).
+     */
+    public static function consoleToken(string $key, string $slug, int $expiresAt, bool $write): string
+    {
+        $payload = bin2hex(json_encode(['slug' => $slug, 'exp' => $expiresAt, 'write' => $write], JSON_THROW_ON_ERROR));
+
+        return $payload.'.'.hash_hmac('sha256', "console\n".$payload, $key);
+    }
+
+    /**
+     * List a server's log files, newest first.
+     *
+     * @return list<array{name: string, size: int, modified: int}>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function logs(Server $server): array
+    {
+        return $this->send('GET', "/servers/{$server->slug}/logs")->json();
+    }
+
+    /**
+     * Read a log file, optionally only the lines that contain the search text.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function log(Server $server, string $name, string $search = ''): string
+    {
+        $query = $search === '' ? '' : '?'.http_build_query(['q' => $search], encoding_type: PHP_QUERY_RFC3986);
+
+        return $this->send('GET', "/servers/{$server->slug}/logs/{$name}{$query}")->body();
     }
 
     /**

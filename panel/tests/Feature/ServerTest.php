@@ -74,7 +74,7 @@ test('the forms offer the releases from the mojang manifest, newest first', func
 
     $this->get(route('servers.create'))
         ->assertInertia(fn (Assert $page) => $page->where('options.mcVersions', ['1.21.10', '1.21.9']));
-    $this->get(route('servers.show', $server))
+    $this->get(route('servers.configuration', $server))
         ->assertInertia(fn (Assert $page) => $page->where('options.mcVersions', ['1.21.10', '1.21.9']));
 });
 
