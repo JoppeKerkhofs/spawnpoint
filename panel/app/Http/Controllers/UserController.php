@@ -7,6 +7,7 @@ use App\Models\Server;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password as PasswordBroker;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -23,14 +24,17 @@ class UserController extends Controller
     public function index(): Response
     {
         return Inertia::render('users/Index', [
-            'users' => User::query()->with('servers:id')->orderBy('name')->get()->map(fn (User $user): array => [
+            'users' => User::query()->orderBy('name')->get()->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
-                'servers' => $user->servers->pluck('id'),
+                // Server id to the permissions of that share; an empty list is "may see it".
+                'shares' => (object) DB::table('server_user')->where('user_id', $user->id)->pluck('permissions', 'server_id')
+                    ->map(fn (?string $permissions): array => json_decode((string) $permissions, true) ?? [])->all(),
             ]),
             'servers' => Server::query()->orderBy('name')->get(['id', 'name']),
+            'permissions' => Server::PERMISSIONS,
             'passwordRules' => Password::defaults()->toPasswordRulesString(),
         ]);
     }
@@ -108,8 +112,12 @@ class UserController extends Controller
     {
         return [
             'role' => ['required', Rule::in(['admin', 'viewer'])],
-            'servers' => ['nullable', 'array'],
-            'servers.*' => ['integer', 'exists:servers,id'],
+            // The servers shared with a viewer, and per server what they may do there.
+            'shared' => ['nullable', 'array'],
+            'shared.*' => ['integer', 'exists:servers,id'],
+            'permissions' => ['nullable', 'array'],
+            // One entry per ticked box, as "server id:permission".
+            'permissions.*' => ['string', 'regex:/^\d+:('.implode('|', Server::PERMISSIONS).')$/'],
         ];
     }
 
@@ -121,6 +129,16 @@ class UserController extends Controller
         // The role is not mass assignable, so a profile form can never change it.
         $user->forceFill(['role' => $data['role']])->save();
         // Admins see every server, so sharing only means something for viewers.
-        $user->servers()->sync($data['role'] === 'viewer' ? ($data['servers'] ?? []) : []);
+        $shares = [];
+        foreach ($data['role'] === 'viewer' ? ($data['shared'] ?? []) : [] as $serverId) {
+            $shares[(int) $serverId] = [];
+        }
+        foreach ($data['permissions'] ?? [] as $entry) {
+            [$serverId, $permission] = explode(':', $entry);
+            if (isset($shares[(int) $serverId])) {
+                $shares[(int) $serverId][] = $permission;
+            }
+        }
+        $user->servers()->sync(array_map(fn (array $permissions): array => ['permissions' => json_encode($permissions)], $shares));
     }
 }

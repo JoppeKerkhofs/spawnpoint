@@ -383,7 +383,10 @@ const selectClass =
                 <InputError :message="errors.bluemap" />
             </div>
 
-            <div class="grid content-start gap-1 sm:col-span-3">
+            <div
+                v-if="!server || server.can.includes('admin')"
+                class="grid content-start gap-1 sm:col-span-3"
+            >
                 <label class="flex items-center gap-2">
                     <input
                         type="checkbox"

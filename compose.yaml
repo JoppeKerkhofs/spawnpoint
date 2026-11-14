@@ -40,6 +40,8 @@ services:
       PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:-mc.localhost}
       PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
       CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
       # Only used on the first start, to create the first admin.
       PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
       PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}

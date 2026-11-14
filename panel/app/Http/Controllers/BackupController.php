@@ -19,7 +19,7 @@ class BackupController extends Controller
     /**
      * Show a server's backups, its backup schedule and the worlds that can be imported.
      */
-    public function index(Server $server): Response
+    public function index(Request $request, Server $server): Response
     {
         $client = new NodeClient($server->node);
 
@@ -31,7 +31,8 @@ class BackupController extends Controller
         }
 
         return Inertia::render('servers/Backups', [
-            'server' => $server,
+            'server' => $server->forUser($request->user()),
+            'autoBackupAt' => $server->schedules()->where(['action' => 'backup', 'is_active' => true])->whereNull('weekday')->value('time'),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'backups' => $backups ?? [],
             'imports' => $imports ?? [],
@@ -120,13 +121,31 @@ class BackupController extends Controller
     }
 
     /**
-     * Save how many backups to keep.
+     * Save the automatic daily backup and how long backups are kept.
      */
     public function retention(Request $request, Server $server): RedirectResponse
     {
-        $server->update($request->validate(['backup_keep' => ['required', 'integer', 'between:1,365']]));
+        $data = $request->validate([
+            'backup_keep' => ['required', 'integer', 'between:1,365'],
+            'backup_retention_days' => ['nullable', 'integer', 'between:1,3650'],
+            'auto_backup' => ['nullable', 'boolean'],
+            'auto_backup_at' => ['nullable', 'required_if_accepted:auto_backup', 'date_format:H:i'],
+        ]);
 
-        ActivityLog::record('backup.retention', $server, $server->only('backup_keep'));
+        $server->update(['backup_keep' => $data['backup_keep'], 'backup_retention_days' => $data['backup_retention_days'] ?? null]);
+
+        // The automatic backup is an ordinary daily schedule, so it also shows in the list of schedules.
+        $daily = $server->schedules()->where('action', 'backup')->whereNull('weekday');
+        if ($data['auto_backup'] ?? false) {
+            $existing = $daily->first();
+            $existing === null
+                ? $server->schedules()->create(['action' => 'backup', 'time' => $data['auto_backup_at']])
+                : $existing->update(['time' => $data['auto_backup_at'], 'is_active' => true]);
+        } else {
+            $daily->update(['is_active' => false]);
+        }
+
+        ActivityLog::record('backup.retention', $server, [...$server->only('backup_keep', 'backup_retention_days'), 'auto_backup' => (bool) ($data['auto_backup'] ?? false)]);
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
         return back();

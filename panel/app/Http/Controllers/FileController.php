@@ -35,7 +35,7 @@ class FileController extends Controller
         }
 
         return Inertia::render('servers/Files', [
-            'server' => $server,
+            'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'path' => $path,
             'entries' => $entries ?? [],

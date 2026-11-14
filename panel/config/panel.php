@@ -7,6 +7,10 @@ return [
     // Every server hostname is one label under this domain, covered by a wildcard DNS record.
     'base_domain' => env('PANEL_BASE_DOMAIN', 'mc.localhost'),
 
+    // With both filled in, a DNS record is added in Cloudflare for every new server and removed with it.
+    'cloudflare_token' => env('CLOUDFLARE_API_TOKEN'),
+    'dns_target' => env('PANEL_DNS_TARGET'),
+
     // Send every user without two-factor authentication to set it up before anything else.
     'require_two_factor' => env('PANEL_REQUIRE_TWO_FACTOR', false),
 

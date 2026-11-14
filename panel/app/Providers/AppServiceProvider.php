@@ -39,6 +39,9 @@ class AppServiceProvider extends ServiceProvider
         // Every write route and API call goes through this gate, not only the UI.
         Gate::define('manage-servers', fn (User $user): bool => $user->isAdmin());
         Gate::define('manage-users', fn (User $user): bool => $user->isAdmin());
+        // The modpack search belongs to the configuration form, so whoever may configure a server may use it.
+        Gate::define('search-modpacks', fn (User $user): bool => $user->isAdmin()
+            || $user->servers()->whereJsonContains('server_user.permissions', 'configure')->exists());
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)->by($request->user()?->id ?: $request->ip()));
     }

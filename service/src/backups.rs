@@ -161,7 +161,29 @@ async fn tar(arguments: &[&OsStr], cancel: &Notify) -> Result<(), String> {
     Err(format!("tar failed: {}", reason.trim()))
 }
 
-async fn archive(state: &AppState, slug: &str, keep: Option<usize>, by: Option<&str>) -> Result<(), String> {
+// What to delete after a backup: all but the newest few, and any older than a number of days.
+// Locked backups are never deleted.
+#[derive(Clone, Copy, Default)]
+struct Retention {
+    keep: Option<usize>,
+    max_age_days: Option<u64>,
+}
+
+fn expired(backups: &[(u64, String, u64)], retention: Retention, now: u64) -> Vec<String> {
+    let oldest_allowed = retention.max_age_days.map(|days| now.saturating_sub(days * 86_400));
+
+    backups
+        .iter()
+        .filter(|(_, name, _)| !name.contains(".locked."))
+        .enumerate()
+        .filter(|(position, (created, _, _))| {
+            retention.keep.is_some_and(|keep| *position >= keep.max(1)) || oldest_allowed.is_some_and(|oldest| *created < oldest)
+        })
+        .map(|(_, (_, name, _))| name.clone())
+        .collect()
+}
+
+async fn archive(state: &AppState, slug: &str, retention: Retention, by: Option<&str>) -> Result<(), String> {
     let dir = backup_dir(state, slug);
     std::fs::create_dir_all(&dir).map_err(|error| format!("backup folder: {error}"))?;
 
@@ -202,12 +224,9 @@ async fn archive(state: &AppState, slug: &str, keep: Option<usize>, by: Option<&
         let _ = std::fs::write(dir.join(format!("{stamp}.by")), by);
     }
 
-    if let Some(keep) = keep {
-        let unlocked = stored(&dir).into_iter().filter(|(_, name, _)| !name.contains(".locked."));
-        for (_, old, _) in unlocked.skip(keep.max(1)) {
-            let _ = std::fs::remove_file(dir.join(format!("{}.by", self::stamp(&old))));
-            let _ = std::fs::remove_file(dir.join(old));
-        }
+    for old in expired(&stored(&dir), retention, unix_now()) {
+        let _ = std::fs::remove_file(dir.join(format!("{}.by", self::stamp(&old))));
+        let _ = std::fs::remove_file(dir.join(old));
     }
 
     Ok(())
@@ -216,7 +235,7 @@ async fn archive(state: &AppState, slug: &str, keep: Option<usize>, by: Option<&
 async fn restore(state: AppState, slug: String, backup: PathBuf) -> Result<(), String> {
     let was_running = stop(&state, &slug).await?;
     // The current state is archived first, so a restore can itself be undone.
-    archive(&state, &slug, None, Some("Before a restore")).await?;
+    archive(&state, &slug, Retention::default(), Some("Before a restore")).await?;
 
     let target = server_dir(&state, &slug);
     for entry in std::fs::read_dir(&target).map_err(|error| error.to_string())?.flatten() {
@@ -261,7 +280,7 @@ fn find_world(dir: &FsPath, depth: u8) -> Option<PathBuf> {
 // ponytail: a zip is unpacked without a size cap, so a hostile archive can fill the disk; add a quota if untrusted users get this.
 async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool, start_after: bool) -> Result<(), String> {
     let was_running = stop(&state, &slug).await?;
-    archive(&state, &slug, None, Some("Before a world import")).await?;
+    archive(&state, &slug, Retention::default(), Some("Before a world import")).await?;
 
     let target = server_dir(&state, &slug);
     let staging = target.join(".import");
@@ -358,6 +377,8 @@ pub async fn list(State(state): State<AppState>, Path(slug): Path<String>) -> Re
 pub struct CreateBody {
     // How many unlocked backups to keep afterwards; none means keep all.
     keep: Option<usize>,
+    // Delete unlocked backups older than this many days afterwards; none means no age limit.
+    max_age_days: Option<u64>,
     // Who or what started it, for the list.
     by: Option<String>,
 }
@@ -372,7 +393,8 @@ pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Jso
     let task_slug = slug.clone();
     run_task(&tasks, slug, "backing up", async move {
         let started = unix_now();
-        match archive(&state, &task_slug, body.keep, by.as_deref()).await {
+        let retention = Retention { keep: body.keep, max_age_days: body.max_age_days.filter(|days| *days >= 1) };
+        match archive(&state, &task_slug, retention, by.as_deref()).await {
             Err(reason) if reason != CANCELLED => {
                 // A failed backup is a line in the list, not a broken server.
                 let dir = backup_dir(&state, &task_slug);
@@ -562,6 +584,24 @@ mod tests {
         for bad in ["../1794600000.tar.gz", "world.tar.gz", "1794600000.zip", ".1794600000.partial", "1794600000.locked.locked.tar.gz", ".tar.gz"] {
             assert!(!valid_backup_name(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn retention_deletes_by_count_and_by_age_but_never_locked_backups() {
+        let day = 86_400;
+        let now = 100 * day;
+        let backup = |age_days: u64, name: &str| (now - age_days * day, name.to_owned(), 1);
+        // Newest first, as stored() returns them.
+        let backups = [backup(0, "a.tar.gz"), backup(2, "b.tar.gz"), backup(5, "c.locked.tar.gz"), backup(9, "d.tar.gz"), backup(30, "e.tar.gz")];
+        let names = |keep, max_age_days| expired(&backups, Retention { keep, max_age_days }, now);
+
+        assert!(names(None, None).is_empty());
+        assert_eq!(names(Some(2), None), ["d.tar.gz", "e.tar.gz"]);
+        assert_eq!(names(None, Some(7)), ["d.tar.gz", "e.tar.gz"]);
+        assert_eq!(names(None, Some(1)), ["b.tar.gz", "d.tar.gz", "e.tar.gz"]);
+        assert_eq!(names(Some(3), Some(20)), ["e.tar.gz"]);
+        // Zero never empties the folder.
+        assert_eq!(names(Some(0), None), ["b.tar.gz", "d.tar.gz", "e.tar.gz"]);
     }
 
     #[test]

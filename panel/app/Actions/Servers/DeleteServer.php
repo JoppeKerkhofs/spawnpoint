@@ -4,6 +4,7 @@ namespace App\Actions\Servers;
 
 use App\Models\ActivityLog;
 use App\Models\Server;
+use App\Services\CloudflareDns;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -22,5 +23,10 @@ class DeleteServer
         ActivityLog::record('server.delete', $server);
 
         $server->delete();
+
+        if (CloudflareDns::enabled()) {
+            // Best effort: a record that stays behind is harmless and can be removed in Cloudflare.
+            rescue(fn () => CloudflareDns::delete($server->hostname));
+        }
     }
 }

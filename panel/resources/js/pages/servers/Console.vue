@@ -13,9 +13,10 @@ const props = defineProps<{
     server: Server;
     states?: States;
     console: { url: string };
-    canManage: boolean;
     bluemapUrl: string | null;
 }>();
+
+const canSend = computed(() => props.server.can.includes('commands'));
 
 const ANSI_CODES = new RegExp(
     `${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`,
@@ -172,12 +173,7 @@ onBeforeUnmount(() => {
     <Head :title="`${server.name} console`" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
-        <ServerHeader
-            :server="server"
-            :states="states"
-            :can-manage="canManage"
-            tab="console"
-        />
+        <ServerHeader :server="server" :states="states" tab="console" />
 
         <div class="flex flex-wrap items-start gap-5">
             <section
@@ -233,10 +229,10 @@ onBeforeUnmount(() => {
                 </div>
 
                 <p
-                    v-if="!canManage"
+                    v-if="!canSend"
                     class="border-t border-white/10 bg-white/5 px-3.5 py-2.5 text-[0.8125rem] text-white/75"
                 >
-                    You can watch this console. Sending commands is for admins.
+                    You can watch this console, but not send commands.
                 </p>
                 <form
                     v-else

@@ -89,7 +89,10 @@ const remove = () => {
             </Form>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <SectionCard title="Delete server">
+                <SectionCard
+                    v-if="server.can.includes('admin')"
+                    title="Delete server"
+                >
                     <p class="mb-3 text-sm text-muted-foreground">
                         Removes the container and this entry. The data folder
                         stays on the host.

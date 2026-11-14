@@ -20,18 +20,34 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('service-status', ServiceStatusController::class)->name('service-status');
 
+    // Creating and deleting servers is for admins. Everything else on a server goes by the
+    // permissions of the share: an admin has them all, a viewer the ones ticked on the Users page.
     Route::middleware('can:manage-servers')->group(function () {
         Route::get('servers/create', [ServerController::class, 'create'])->name('servers.create');
         Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
-        Route::get('servers/{server}/configuration', [ServerController::class, 'configuration'])->name('servers.configuration');
+        Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
+    });
+
+    Route::middleware('can:search-modpacks')->group(function () {
         Route::get('modpacks/search', ModpackSearchController::class)->name('modpacks.search');
         Route::get('modpacks/versions', [ModpackSearchController::class, 'versions'])->name('modpacks.versions');
+    });
+
+    Route::middleware('can:act,server,"configure"')->group(function () {
+        Route::get('servers/{server}/configuration', [ServerController::class, 'configuration'])->name('servers.configuration');
+        Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
+    });
+
+    Route::middleware('can:act,server,"files"')->group(function () {
         Route::get('servers/{server}/files', [FileController::class, 'index'])->name('servers.files');
         Route::put('servers/{server}/files/content', [FileController::class, 'save'])->name('servers.files.save');
         Route::post('servers/{server}/files/folder', [FileController::class, 'folder'])->name('servers.files.folder');
         Route::post('servers/{server}/files/rename', [FileController::class, 'rename'])->name('servers.files.rename');
         Route::delete('servers/{server}/files', [FileController::class, 'destroy'])->name('servers.files.destroy');
         Route::get('servers/{server}/files/download', [FileController::class, 'download'])->name('servers.files.download');
+    });
+
+    Route::middleware('can:act,server,"backups"')->group(function () {
         Route::get('servers/{server}/backups', [BackupController::class, 'index'])->name('servers.backups');
         Route::post('servers/{server}/backups', [BackupController::class, 'store'])->name('servers.backups.store');
         Route::delete('servers/{server}/backups/running', [BackupController::class, 'cancel'])->name('servers.backups.cancel');
@@ -50,19 +66,20 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::delete('servers/{server}/backups/{backup}', [BackupController::class, 'destroy'])
             ->where('backup', '[0-9]{1,12}((\.locked)?\.tar\.gz|\.failed)')
             ->name('servers.backups.destroy');
-        Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
-        Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
-        Route::post('servers/{server}/power/{action}', [ServerController::class, 'power'])
-            ->whereIn('action', PowerServer::ACTIONS)
-            ->name('servers.power');
     });
 
-    // After servers/create above, so "create" is never taken for a server name.
-    Route::middleware('can:view,server')->group(function () {
-        Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
+    Route::post('servers/{server}/power/{action}', [ServerController::class, 'power'])
+        ->whereIn('action', PowerServer::ACTIONS)
+        ->middleware('can:act,server,"power"')
+        ->name('servers.power');
+
+    Route::middleware('can:act,server,"logs"')->group(function () {
         Route::get('servers/{server}/logs', [ServerController::class, 'logs'])->name('servers.logs');
         Route::get('servers/{server}/logs/download', [ServerController::class, 'downloadLog'])->name('servers.logs.download');
     });
+
+    // After servers/create above, so "create" is never taken for a server name.
+    Route::get('servers/{server}', [ServerController::class, 'show'])->middleware('can:view,server')->name('servers.show');
 });
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class, 'can:manage-users'])->group(function () {

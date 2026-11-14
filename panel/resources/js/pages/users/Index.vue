@@ -13,14 +13,24 @@ type User = {
     name: string;
     email: string;
     role: 'admin' | 'viewer';
-    servers: number[];
+    shares: Record<string, string[]>;
 };
 
 defineProps<{
     users: User[];
     servers: { id: number; name: string }[];
+    permissions: string[];
     passwordRules: string;
 }>();
+
+const permissionLabels: Record<string, string> = {
+    logs: 'Logs',
+    commands: 'Commands',
+    power: 'Power',
+    files: 'Files',
+    backups: 'Backups',
+    configure: 'Configure',
+};
 
 const me = usePage().props.auth.user.id;
 const selectClass = 'h-9 rounded-md border border-input bg-card px-2.5 text-sm';
@@ -44,7 +54,9 @@ const remove = (user: User) => {
             <h1 class="text-2xl leading-[1.3] font-bold text-primary">Users</h1>
             <p class="mt-1 text-[0.9375rem] text-muted-foreground">
                 Admins can do everything. Viewers see only the servers shared
-                with them and cannot change anything.
+                with them and can watch their console; tick what else they may
+                do on each server. Creating and deleting servers stays with
+                admins.
             </p>
         </div>
 
@@ -100,31 +112,85 @@ const remove = (user: User) => {
                         </div>
                         <InputError :message="errors.role" />
 
-                        <fieldset v-if="servers.length">
-                            <legend
-                                class="mb-1 text-[0.8125rem] text-muted-foreground"
-                            >
-                                Servers shared with this user as a viewer
-                            </legend>
-                            <div class="flex flex-wrap gap-x-4 gap-y-1">
-                                <label
-                                    v-for="server in servers"
-                                    :key="server.id"
-                                    class="flex items-center gap-2 text-sm"
+                        <div v-if="servers.length" class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <caption
+                                    class="mb-1 text-left text-[0.8125rem] text-muted-foreground"
                                 >
-                                    <input
-                                        type="checkbox"
-                                        name="servers[]"
-                                        :value="server.id"
-                                        :checked="
-                                            user.servers.includes(server.id)
-                                        "
-                                        class="size-4 accent-primary"
-                                    />
-                                    {{ server.name }}
-                                </label>
-                            </div>
-                        </fieldset>
+                                    Servers shared with this user as a viewer,
+                                    and what they may do there
+                                </caption>
+                                <thead>
+                                    <tr
+                                        class="text-left text-[0.8125rem] text-muted-foreground"
+                                    >
+                                        <th scope="col" class="py-1 pr-4">
+                                            Server
+                                        </th>
+                                        <th
+                                            v-for="permission in permissions"
+                                            :key="permission"
+                                            scope="col"
+                                            class="px-2 py-1 font-normal"
+                                        >
+                                            {{ permissionLabels[permission] }}
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="server in servers"
+                                        :key="server.id"
+                                        class="border-t border-divider"
+                                    >
+                                        <th
+                                            scope="row"
+                                            class="py-1.5 pr-4 text-left font-normal"
+                                        >
+                                            <label
+                                                class="flex items-center gap-2"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    name="shared[]"
+                                                    :value="server.id"
+                                                    :checked="
+                                                        server.id in user.shares
+                                                    "
+                                                    class="size-4 accent-primary"
+                                                />
+                                                {{ server.name }}
+                                            </label>
+                                        </th>
+                                        <td
+                                            v-for="permission in permissions"
+                                            :key="permission"
+                                            class="px-2 py-1.5"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                name="permissions[]"
+                                                :value="`${server.id}:${permission}`"
+                                                :checked="
+                                                    user.shares[
+                                                        server.id
+                                                    ]?.includes(permission)
+                                                "
+                                                :aria-label="`${permissionLabels[permission]} on ${server.name}`"
+                                                class="size-4 accent-primary"
+                                            />
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p
+                                class="mt-1 text-[0.8125rem] text-muted-foreground"
+                            >
+                                Ticks on a server that is not shared are
+                                ignored.
+                            </p>
+                            <InputError :message="errors.permissions" />
+                        </div>
 
                         <div class="flex flex-wrap gap-2">
                             <Button :disabled="processing">Save</Button>

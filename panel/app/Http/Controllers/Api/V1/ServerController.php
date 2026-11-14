@@ -43,13 +43,13 @@ class ServerController extends Controller
 
     /**
      * Get the WebSocket address of the live console, valid for one minute.
-     * Commands are only accepted when the token's owner is an admin.
+     * Commands are only accepted when the token's owner may send them on this server.
      */
     public function console(Request $request, Server $server): JsonResponse
     {
         abort_unless($request->user()->tokenCan('console:use'), 403, 'This token lacks the console:use ability.');
 
-        $write = $request->user()->can('manage-servers');
+        $write = $request->user()->can('act', [$server, 'commands']);
 
         return response()->json(['url' => (new NodeClient($server->node))->consoleUrl($server, $write), 'write' => $write]);
     }

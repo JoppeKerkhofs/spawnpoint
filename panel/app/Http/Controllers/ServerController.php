@@ -47,6 +47,10 @@ class ServerController extends Controller
             return back()->withErrors(['node' => __('The server was not created.')]);
         }
 
+        if ($createServer->dnsError !== null) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => __('The server was created, but its DNS record could not be added. Check the Cloudflare settings.')]);
+        }
+
         if ($request->boolean('world_zip')) {
             Inertia::flash('toast', ['type' => 'success', 'message' => __('Server created. Choose your world .zip under "Import a world"; the server starts once it is in.')]);
 
@@ -61,15 +65,14 @@ class ServerController extends Controller
      */
     public function show(Request $request, Server $server): Response
     {
-        $canManage = $request->user()->can('manage-servers');
+        $user = $request->user();
 
         return Inertia::render('servers/Console', [
-            'server' => $server,
-            'canManage' => $canManage,
+            'server' => $server->forUser($user),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             // A closure, so a reconnect can ask for a fresh token on its own.
-            // Viewers get a token that streams output but refuses commands.
-            'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: $canManage)],
+            // Without the commands permission the token streams output but refuses commands.
+            'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: $user->can('act', [$server, 'commands']))],
             'bluemapUrl' => $server->bluemap_enabled ? rtrim(Setting::value('bluemap_url'), '/')."/{$server->slug}/" : null,
         ]);
     }
@@ -77,11 +80,11 @@ class ServerController extends Controller
     /**
      * Show a server's configuration form.
      */
-    public function configuration(Server $server): Response
+    public function configuration(Request $request, Server $server): Response
     {
         return Inertia::render('servers/Configuration', [
             ...$this->options($server),
-            'server' => $server,
+            'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::states()),
         ]);
     }
@@ -103,8 +106,7 @@ class ServerController extends Controller
         }
 
         return Inertia::render('servers/Logs', [
-            'server' => $server,
-            'canManage' => $request->user()->can('manage-servers'),
+            'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'files' => $files ?? [],
             'file' => $file ?? null,
@@ -137,7 +139,11 @@ class ServerController extends Controller
     public function update(UpdateServerRequest $request, Server $server, UpdateServer $updateServer): RedirectResponse
     {
         $saved = $this->attempt(function () use ($updateServer, $server, $request): true {
-            $updateServer($server, $request->validated());
+            // Which server is the default affects other servers, so only an admin decides it.
+            $updateServer($server, [
+                ...$request->validated(),
+                'is_default' => $request->user()->isAdmin() ? $request->boolean('is_default') : $server->is_default,
+            ]);
 
             return true;
         }, __('Saved. The container is being recreated.'));

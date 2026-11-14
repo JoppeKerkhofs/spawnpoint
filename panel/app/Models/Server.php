@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -29,10 +30,11 @@ use Illuminate\Support\Carbon;
  * @property bool $bluemap_enabled
  * @property bool $is_default
  * @property int $backup_keep
+ * @property int|null $backup_retention_days
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'eula_accepted_at'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'backup_retention_days', 'eula_accepted_at'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -45,6 +47,9 @@ class Server extends Model
     public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
     public const array JAVA_VERSIONS = [8, 17, 21, 25];
+
+    // What a viewer can be allowed on a shared server, beyond seeing it and watching its console.
+    public const array PERMISSIONS = ['logs', 'commands', 'power', 'files', 'backups', 'configure'];
 
     public const array DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard'];
 
@@ -81,7 +86,34 @@ class Server extends Model
      */
     public function viewers(): BelongsToMany
     {
-        return $this->belongsToMany(User::class);
+        return $this->belongsToMany(User::class)->withPivot('permissions');
+    }
+
+    /**
+     * What a user may do on this server: every permission plus "admin" for an admin, the
+     * permissions of the share for a viewer, and nothing for anyone else.
+     *
+     * @return list<string>
+     */
+    public function permissionsFor(User $user): array
+    {
+        if ($user->isAdmin()) {
+            return [...self::PERMISSIONS, 'admin'];
+        }
+
+        $share = DB::table('server_user')->where(['server_id' => $this->id, 'user_id' => $user->id])->first();
+
+        return $share === null ? [] : array_values(array_intersect(self::PERMISSIONS, json_decode((string) $share->permissions, true) ?? []));
+    }
+
+    /**
+     * The server as the pages get it: its data plus what the user may do with it.
+     *
+     * @return array<string, mixed>
+     */
+    public function forUser(User $user): array
+    {
+        return [...$this->toArray(), 'can' => $this->permissionsFor($user)];
     }
 
     /**
@@ -112,6 +144,7 @@ class Server extends Model
             'bluemap_enabled' => 'boolean',
             'is_default' => 'boolean',
             'backup_keep' => 'integer',
+            'backup_retention_days' => 'integer',
             'eula_accepted_at' => 'datetime',
         ];
     }

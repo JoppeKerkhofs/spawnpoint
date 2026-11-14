@@ -13,8 +13,11 @@ defineProps<{
         bluemap_url: string;
         memory_limit_mb: string | number | null;
         require_two_factor: boolean;
+        dns_target: string | null;
     };
     hasCurseforgeKey: boolean;
+    hasCloudflareToken: boolean;
+    dnsEnabled: boolean;
     effectiveMemoryLimitMb: number | null;
 }>();
 
@@ -143,6 +146,71 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                         Remove the saved key
                     </label>
                     <InputError :message="errors.curseforge_key" />
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Cloudflare DNS">
+                <div class="flex flex-col gap-4">
+                    <p role="status" class="text-sm">
+                        <template v-if="dnsEnabled">
+                            On: every new server gets a DNS record, and loses it
+                            when the server is deleted.
+                        </template>
+                        <template v-else>
+                            Off. Fill in both fields to have the panel add a DNS
+                            record for every new server.
+                        </template>
+                    </p>
+                    <div class="grid gap-2">
+                        <Label for="cloudflare_token">API token</Label>
+                        <Input
+                            id="cloudflare_token"
+                            name="cloudflare_token"
+                            type="password"
+                            autocomplete="off"
+                            :placeholder="
+                                hasCloudflareToken
+                                    ? 'A token is saved. Type a new one to replace it.'
+                                    : 'No token saved'
+                            "
+                            aria-describedby="cloudflare_token_hint"
+                        />
+                        <span id="cloudflare_token_hint" :class="hint">
+                            A Cloudflare API token with the Zone: Read and DNS:
+                            Edit permissions for the zone of the base domain. It
+                            is stored encrypted and never shown again.
+                        </span>
+                        <label
+                            v-if="hasCloudflareToken"
+                            class="flex items-center gap-2 text-sm"
+                        >
+                            <input
+                                type="checkbox"
+                                name="remove_cloudflare_token"
+                                value="1"
+                                class="size-4 accent-primary"
+                            />
+                            Remove the saved token, which turns this off
+                        </label>
+                        <InputError :message="errors.cloudflare_token" />
+                    </div>
+                    <div class="grid gap-2">
+                        <Label for="dns_target">Point records at</Label>
+                        <Input
+                            id="dns_target"
+                            name="dns_target"
+                            spellcheck="false"
+                            placeholder="203.0.113.5"
+                            :default-value="settings.dns_target ?? ''"
+                            aria-describedby="dns_target_hint"
+                        />
+                        <span id="dns_target_hint" :class="hint">
+                            The public IP address of this host, or a hostname
+                            that points at it. Records are not proxied, because
+                            Cloudflare's proxy does not carry Minecraft.
+                        </span>
+                        <InputError :message="errors.dns_target" />
+                    </div>
                 </div>
             </SectionCard>
 

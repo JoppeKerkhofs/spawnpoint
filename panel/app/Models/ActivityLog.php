@@ -31,13 +31,19 @@ class ActivityLog extends Model
         $user = request()->user();
         $token = $user?->currentAccessToken();
 
+        $actor = match (true) {
+            $user === null => 'System',
+            $token instanceof PersonalAccessToken => "{$user->name} (API token: {$token->name})",
+            default => $user->name,
+        };
+
+        if ($server !== null) {
+            Webhook::notify($event, $server, $actor, isset($properties['action']) ? (string) $properties['action'] : null);
+        }
+
         self::create([
             'user_id' => $user?->id,
-            'actor' => match (true) {
-                $user === null => 'System',
-                $token instanceof PersonalAccessToken => "{$user->name} (API token: {$token->name})",
-                default => $user->name,
-            },
+            'actor' => $actor,
             'event' => $event,
             'subject' => $server?->slug,
             'properties' => $properties ?: null,

@@ -301,14 +301,18 @@ class NodeClient
     }
 
     /**
-     * Start a backup; afterwards the node keeps only the newest unlocked ones.
+     * Start a backup; afterwards the node deletes unlocked ones beyond the newest few or older than the age limit.
      *
      * @throws ConnectionException
      * @throws RequestException
      */
     public function createBackup(Server $server, string $by): void
     {
-        $this->send('POST', "/servers/{$server->slug}/backups", ['keep' => $server->backup_keep, 'by' => $by]);
+        $this->send('POST', "/servers/{$server->slug}/backups", [
+            'keep' => $server->backup_keep,
+            'max_age_days' => $server->backup_retention_days,
+            'by' => $by,
+        ]);
     }
 
     /**

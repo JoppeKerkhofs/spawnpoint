@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\CloudflareDns;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -14,6 +15,9 @@ use Illuminate\Support\Facades\DB;
 
 class CreateServer
 {
+    // Set when the server was created but its DNS record could not be added.
+    public ?string $dnsError = null;
+
     /**
      * Store a server and have its node create and start the container.
      *
@@ -25,7 +29,7 @@ class CreateServer
     public function __invoke(User $owner, array $data): Server
     {
         // The row is rolled back when the node refuses, so the form can simply be sent again.
-        return DB::transaction(function () use ($owner, $data): Server {
+        $server = DB::transaction(function () use ($owner, $data): Server {
             $server = Server::create([
                 'node_id' => Node::query()->firstOrFail()->id,
                 'owner_id' => $owner->id,
@@ -49,5 +53,20 @@ class CreateServer
 
             return $server;
         });
+
+        // The server works without the record (a wildcard record may cover it), so a failure here
+        // is reported but does not undo the server.
+        if (CloudflareDns::enabled()) {
+            try {
+                CloudflareDns::create($server->hostname);
+                ActivityLog::record('dns.create', $server, ['hostname' => $server->hostname]);
+            } catch (ConnectionException|RequestException $exception) {
+                report($exception);
+                $this->dnsError = $exception->getMessage();
+                ActivityLog::record('dns.failed', $server, ['hostname' => $server->hostname]);
+            }
+        }
+
+        return $server;
     }
 }

@@ -16,7 +16,7 @@ beforeEach(function () {
     $this->shared = Server::factory()->create(['slug' => 'shared', 'name' => 'Shared']);
     $this->hidden = Server::factory()->for($this->shared->node)->create(['slug' => 'hidden', 'name' => 'Hidden']);
     $this->viewer = User::factory()->create();
-    $this->viewer->servers()->attach($this->shared);
+    $this->viewer->servers()->attach($this->shared, ['permissions' => '["logs"]']);
     $this->admin = User::factory()->admin()->create();
 
     Http::fake([
@@ -59,7 +59,7 @@ test('a viewer can watch the console and read the logs of a shared server only, 
 
     $this->get(route('servers.show', $this->shared))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('canManage', false)
+            ->where('server.can', ['logs'])
             ->where('console.url', 'ws://node.test:8080/servers/shared/console?token='
                 .NodeClient::token('console', $this->shared->node->token, 'shared', now()->getTimestamp() + 60, false)),
         );
@@ -83,20 +83,25 @@ test('a user created without a password is emailed a link to set one', function 
 test('an admin creates a viewer and shares servers with them', function () {
     $this->actingAs($this->admin)
         ->post(route('users.store'), [
-            'name' => 'Lien', 'email' => 'lien@example.com', 'password' => 'a-long-password', 'role' => 'viewer', 'servers' => [$this->hidden->id],
+            'name' => 'Lien', 'email' => 'lien@example.com', 'password' => 'a-long-password', 'role' => 'viewer',
+            'shared' => [$this->hidden->id],
+            // The tick on a server that is not shared is dropped.
+            'permissions' => ["{$this->hidden->id}:files", "{$this->hidden->id}:power", "{$this->shared->id}:configure"],
         ])
         ->assertSessionHasNoErrors();
 
     $user = User::firstWhere('email', 'lien@example.com');
     expect($user->role)->toBe('viewer')
         ->and(Hash::check('a-long-password', $user->password))->toBeTrue()
-        ->and($user->servers->pluck('slug')->all())->toBe(['hidden']);
+        ->and($user->servers->pluck('slug')->all())->toBe(['hidden'])
+        ->and($this->hidden->permissionsFor($user))->toBe(['power', 'files'])
+        ->and($this->shared->permissionsFor($user))->toBe([]);
 });
 
 test('promoting a viewer to admin drops their shares, and an admin cannot demote or delete themselves', function () {
     $this->actingAs($this->admin);
 
-    $this->put(route('users.update', $this->viewer), ['role' => 'admin', 'servers' => [$this->shared->id]])->assertSessionHasNoErrors();
+    $this->put(route('users.update', $this->viewer), ['role' => 'admin', 'shared' => [$this->shared->id]])->assertSessionHasNoErrors();
     expect($this->viewer->refresh()->role)->toBe('admin')->and($this->viewer->servers()->count())->toBe(0);
 
     $this->put(route('users.update', $this->admin), ['role' => 'viewer'])->assertSessionHasErrors('role');
@@ -162,7 +167,7 @@ test('the api shows a viewer only their shared servers', function () {
     Sanctum::actingAs($this->viewer, ['servers:read', 'servers:power']);
 
     $this->getJson('/api/v1/servers')->assertJsonCount(1, 'data')->assertJsonPath('data.0.slug', 'shared');
-    // The ability is on the token, but the role still decides.
+    // The ability is on the token, but the share does not include power.
     $this->postJson('/api/v1/servers/shared/power/stop')->assertForbidden();
 });
 
@@ -240,4 +245,46 @@ test('the api starts and stops servers only with the power ability', function ()
     $this->getJson('/api/v1/servers')->assertForbidden();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/shared/stop'));
+});
+
+test('a viewer can do what their share allows and nothing more', function () {
+    $this->freezeTime();
+    $this->viewer->servers()->sync([$this->shared->id => ['permissions' => '["power","commands"]']]);
+    $this->actingAs($this->viewer);
+
+    $this->post(route('servers.power', [$this->shared, 'stop']))->assertRedirect();
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/shared/stop'));
+
+    $this->get(route('servers.show', $this->shared))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('server.can', ['commands', 'power'])
+            ->where('console.url', 'ws://node.test:8080/servers/shared/console?token='
+                .NodeClient::token('console', $this->shared->node->token, 'shared', now()->getTimestamp() + 60, true)),
+        );
+
+    $this->get(route('servers.logs', $this->shared))->assertForbidden();
+    $this->get(route('servers.files', $this->shared))->assertForbidden();
+    $this->get(route('servers.backups', $this->shared))->assertForbidden();
+    $this->get(route('servers.configuration', $this->shared))->assertForbidden();
+    $this->get(route('modpacks.search', ['platform' => 'MODRINTH']))->assertForbidden();
+    $this->delete(route('servers.destroy', $this->shared))->assertForbidden();
+    $this->post(route('servers.power', [$this->hidden, 'stop']))->assertForbidden();
+
+    Sanctum::actingAs($this->viewer, ['servers:power', 'logs:read']);
+    $this->postJson('/api/v1/servers/shared/power/start')->assertStatus(202);
+    $this->getJson('/api/v1/servers/shared/logs')->assertForbidden();
+});
+
+test('a viewer who may configure cannot delete the server or make it the default', function () {
+    $this->viewer->servers()->sync([$this->shared->id => ['permissions' => '["configure"]']]);
+    $this->actingAs($this->viewer);
+
+    $this->get(route('servers.configuration', $this->shared))->assertOk();
+    $this->put(route('servers.update', $this->shared), [
+        ...$this->shared->only('name', 'server_type', 'mc_version', 'java_version', 'memory_mb'),
+        ...$this->shared->settings, 'is_default' => '1',
+    ])->assertSessionHasNoErrors();
+
+    expect($this->shared->refresh()->is_default)->toBeFalse();
+    $this->delete(route('servers.destroy', $this->shared))->assertForbidden();
 });

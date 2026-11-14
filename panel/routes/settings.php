@@ -3,6 +3,7 @@
 use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\WebhookController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
     Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
     Route::delete('settings/api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
+
+    Route::get('settings/webhooks', [WebhookController::class, 'index'])->name('webhooks.index');
+    Route::post('settings/webhooks', [WebhookController::class, 'store'])->name('webhooks.store');
+    Route::put('settings/webhooks/{webhook}', [WebhookController::class, 'update'])->name('webhooks.update');
+    Route::post('settings/webhooks/{webhook}/test', [WebhookController::class, 'test'])->name('webhooks.test');
+    Route::delete('settings/webhooks/{webhook}', [WebhookController::class, 'destroy'])->name('webhooks.destroy');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

@@ -343,7 +343,7 @@ const memoryGb = computed(
                     <ServerPowerButtons
                         :slug="server.slug"
                         :state="current.state"
-                        :can-manage="canManage"
+                        :can-manage="server.can.includes('power')"
                     >
                         <Button
                             variant="outline"

@@ -8,16 +8,11 @@ import { serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
 import { backups, configuration, files, logs, show } from '@/routes/servers';
 
-const props = withDefaults(
-    defineProps<{
-        server: Server;
-        states?: States;
-        tab: 'console' | 'configuration' | 'files' | 'logs' | 'backups';
-        // Viewers only get the console and the logs, and nothing to press.
-        canManage?: boolean;
-    }>(),
-    { canManage: true },
-);
+const props = defineProps<{
+    server: Server;
+    states?: States;
+    tab: 'console' | 'configuration' | 'files' | 'logs' | 'backups';
+}>();
 
 usePoll(4000, { only: ['states'] });
 
@@ -51,7 +46,12 @@ const tabs = computed(() =>
             href: backups({ server: props.server.slug }),
         },
     ].filter(
-        (item) => props.canManage || ['console', 'logs'].includes(item.key),
+        // Everyone who sees the server gets its console; the other tabs go by permission.
+        (item) =>
+            item.key === 'console' ||
+            props.server.can.includes(
+                item.key === 'configuration' ? 'configure' : item.key,
+            ),
     ),
 );
 </script>
@@ -80,7 +80,7 @@ const tabs = computed(() =>
             <ServerPowerButtons
                 :slug="server.slug"
                 :state="current.state"
-                :can-manage="canManage"
+                :can-manage="server.can.includes('power')"
             />
         </div>
 

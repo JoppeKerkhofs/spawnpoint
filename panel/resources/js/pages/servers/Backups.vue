@@ -54,6 +54,7 @@ const props = defineProps<{
     upload: { url: string };
     error: string | null;
     timezone: string;
+    autoBackupAt: string | null;
 }>();
 
 const slug = computed(() => ({ server: props.server.slug }));
@@ -569,13 +570,40 @@ const submitImport = () => {
                     </Form>
                 </SectionCard>
 
-                <SectionCard title="Retention">
+                <SectionCard title="Automatic backup and retention">
                     <Form
                         v-bind="retention.form(slug)"
                         :options="{ preserveScroll: true }"
                         class="flex flex-col gap-4"
                         v-slot="{ errors, processing }"
                     >
+                        <div class="grid gap-2">
+                            <label class="flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    name="auto_backup"
+                                    value="1"
+                                    :checked="autoBackupAt !== null"
+                                    class="size-4 accent-primary"
+                                />
+                                Back up automatically every day
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <Label for="auto_backup_at">at</Label>
+                                <Input
+                                    id="auto_backup_at"
+                                    name="auto_backup_at"
+                                    type="time"
+                                    class="w-32"
+                                    :default-value="autoBackupAt ?? '04:00'"
+                                />
+                                <span class="text-sm text-muted-foreground">{{
+                                    timezone
+                                }}</span>
+                            </div>
+                            <InputError :message="errors.auto_backup_at" />
+                        </div>
+
                         <div class="grid gap-2">
                             <Label for="backup_keep">Keep the newest</Label>
                             <div class="flex items-center gap-2">
@@ -594,6 +622,37 @@ const submitImport = () => {
                                 >
                             </div>
                             <InputError :message="errors.backup_keep" />
+                        </div>
+
+                        <div class="grid gap-2">
+                            <Label for="backup_retention_days"
+                                >Delete backups older than</Label
+                            >
+                            <div class="flex items-center gap-2">
+                                <Input
+                                    id="backup_retention_days"
+                                    name="backup_retention_days"
+                                    type="number"
+                                    min="1"
+                                    max="3650"
+                                    class="w-24"
+                                    :default-value="
+                                        server.backup_retention_days ?? ''
+                                    "
+                                />
+                                <span class="text-sm text-muted-foreground"
+                                    >days; empty for no age limit</span
+                                >
+                            </div>
+                            <span
+                                class="text-[0.8125rem] text-muted-foreground"
+                            >
+                                Checked after each new backup. Locked backups
+                                and the newest one are never deleted.
+                            </span>
+                            <InputError
+                                :message="errors.backup_retention_days"
+                            />
                         </div>
 
                         <dl

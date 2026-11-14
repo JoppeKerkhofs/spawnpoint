@@ -10,6 +10,7 @@ import { index as apiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
+import { index as webhooks } from '@/routes/webhooks';
 import type { NavItem } from '@/types';
 
 const sidebarNavItems: NavItem[] = [
@@ -28,6 +29,10 @@ const sidebarNavItems: NavItem[] = [
     {
         title: 'API tokens',
         href: apiTokens(),
+    },
+    {
+        title: 'Webhooks',
+        href: webhooks(),
     },
 ];
 

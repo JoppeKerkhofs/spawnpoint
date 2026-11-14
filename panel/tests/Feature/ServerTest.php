@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\User;
@@ -205,4 +206,47 @@ test('a server is kept when the node cannot delete its container', function () {
         ->delete(route('servers.destroy', $server));
 
     expect(Server::count())->toBe(1);
+});
+
+test('with cloudflare set up a new server gets a dns record, and loses it when deleted', function () {
+    config(['panel.cloudflare_token' => 'cf-token', 'panel.dns_target' => '203.0.113.5']);
+    Node::factory()->create();
+    Http::fake([
+        'node.test:8080/*' => Http::response(status: 202),
+        'api.cloudflare.com/client/v4/zones?name=mc.example.com' => Http::response(['result' => []]),
+        'api.cloudflare.com/client/v4/zones?name=example.com' => Http::response(['result' => [['id' => 'zone1']]]),
+        'api.cloudflare.com/client/v4/zones/zone1/dns_records?name=survival.mc.example.com' => Http::response(['result' => [['id' => 'rec1']]]),
+        'api.cloudflare.com/client/v4/zones/zone1/dns_records*' => Http::response(['success' => true]),
+    ]);
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.store'), serverForm())->assertRedirect(route('servers.show', 'survival'));
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+        && $request->url() === 'https://api.cloudflare.com/client/v4/zones/zone1/dns_records'
+        && $request->hasHeader('Authorization', 'Bearer cf-token')
+        && $request['type'] === 'A'
+        && $request['name'] === 'survival.mc.example.com'
+        && $request['content'] === '203.0.113.5'
+        && $request['proxied'] === false);
+
+    $this->delete(route('servers.destroy', Server::sole()));
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && str_ends_with($request->url(), '/dns_records/rec1'));
+});
+
+test('a server is still created when cloudflare refuses the dns record', function () {
+    config(['panel.cloudflare_token' => 'wrong', 'panel.dns_target' => 'host.example.net']);
+    Node::factory()->create();
+    Http::fake([
+        'node.test:8080/*' => Http::response(status: 202),
+        'api.cloudflare.com/*' => Http::response(['errors' => [['code' => 10000]]], 403),
+    ]);
+
+    $this->actingAs(User::factory()->admin()->create())
+        ->post(route('servers.store'), serverForm())
+        ->assertRedirect(route('servers.show', 'survival'));
+
+    expect(Server::count())->toBe(1)
+        ->and(ActivityLog::query()->where('event', 'dns.failed')->exists())->toBeTrue();
 });

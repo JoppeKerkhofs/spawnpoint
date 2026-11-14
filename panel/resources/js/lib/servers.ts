@@ -21,6 +21,9 @@ export type Server = {
     bluemap_enabled: boolean;
     is_default: boolean;
     backup_keep: number;
+    backup_retention_days: number | null;
+    // What the signed-in user may do here; "admin" on top of everything for an admin.
+    can: string[];
     settings: {
         motd: string;
         difficulty: string;
