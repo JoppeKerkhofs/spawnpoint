@@ -37,9 +37,11 @@ class CreateServer
                 'settings' => UpdateServer::settings($data),
                 'modpack' => UpdateServer::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
+                'is_default' => (bool) ($data['is_default'] ?? false),
                 'eula_accepted_at' => now(),
             ]);
 
+            UpdateServer::demoteOtherDefaults($server);
             (new NodeClient($server->node))->apply($server, start: true);
 
             return $server;

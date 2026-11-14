@@ -30,10 +30,31 @@ class UpdateServer
                 'settings' => self::settings($data),
                 'modpack' => self::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
+                'is_default' => (bool) ($data['is_default'] ?? false),
             ]);
 
+            self::demoteOtherDefaults($server);
             (new NodeClient($server->node))->apply($server);
         });
+    }
+
+    /**
+     * Keep at most one default server: when this one is the default, the others stop being it.
+     * Their containers are recreated to drop the router label, which restarts the running ones.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public static function demoteOtherDefaults(Server $server): void
+    {
+        if (! $server->is_default) {
+            return;
+        }
+
+        foreach (Server::query()->where('is_default', true)->whereKeyNot($server->getKey())->with('node')->get() as $other) {
+            $other->update(['is_default' => false]);
+            (new NodeClient($other->node))->apply($other);
+        }
     }
 
     /**

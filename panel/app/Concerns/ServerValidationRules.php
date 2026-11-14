@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Models\Server;
+use App\Services\MemoryLimit;
 use Closure;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,22 @@ trait ServerValidationRules
             'server_type' => ['required', Rule::in(Server::TYPES)],
             'mc_version' => ['required', 'string', 'max:16', 'regex:/^(LATEST|\d+(\.\d+)+)$/'],
             'java_version' => ['required', 'integer', Rule::in(Server::JAVA_VERSIONS)],
-            'memory_mb' => ['required', 'integer', 'between:1024,32768'],
+            'memory_mb' => [
+                'required',
+                'integer',
+                'between:1024,32768',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    // On an update, the server's own current share does not count against it.
+                    $free = MemoryLimit::freeMb($this->route('server'));
+
+                    if ($free !== null && (int) $value > $free) {
+                        $fail(__('Only :free GB is left under the :limit GB memory limit.', [
+                            'free' => max(0, round($free / 1024, 1)),
+                            'limit' => round((int) MemoryLimit::mb() / 1024, 1),
+                        ]));
+                    }
+                },
+            ],
             'motd' => ['nullable', 'string', 'max:100', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             'difficulty' => ['required', Rule::in(Server::DIFFICULTIES)],
             'mode' => ['required', Rule::in(Server::MODES)],
@@ -43,6 +59,7 @@ trait ServerValidationRules
                 },
             ],
             'bluemap' => ['nullable', 'boolean'],
+            'is_default' => ['nullable', 'boolean'],
             'modpack_name' => ['nullable', 'string', 'max:120'],
             'modpack_icon' => ['nullable', 'string', 'max:500', 'starts_with:https://'],
         ];

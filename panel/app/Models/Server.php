@@ -26,12 +26,13 @@ use Illuminate\Support\Carbon;
  * @property array{motd: string, difficulty: string, mode: string, max_players: int} $settings
  * @property array{project: string, name: string, icon: string|null}|null $modpack
  * @property bool $bluemap_enabled
+ * @property bool $is_default
  * @property string|null $backup_at
  * @property int $backup_keep
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'backup_at', 'backup_keep', 'eula_accepted_at'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_at', 'backup_keep', 'eula_accepted_at'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -101,6 +102,7 @@ class Server extends Model
             'settings' => 'array',
             'modpack' => 'array',
             'bluemap_enabled' => 'boolean',
+            'is_default' => 'boolean',
             'backup_keep' => 'integer',
             'eula_accepted_at' => 'datetime',
         ];

@@ -10,6 +10,7 @@ use App\Http\Requests\LogRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
 use App\Models\Server;
+use App\Services\MemoryLimit;
 use App\Services\MinecraftVersions;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -63,7 +64,7 @@ class ServerController extends Controller
     public function configuration(Server $server): Response
     {
         return Inertia::render('servers/Configuration', [
-            ...$this->options(),
+            ...$this->options($server),
             'server' => $server,
             'states' => Inertia::defer(fn () => NodeClient::states()),
         ]);
@@ -156,10 +157,12 @@ class ServerController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function options(): array
+    private function options(?Server $server = null): array
     {
         return [
             'baseDomain' => config('panel.base_domain'),
+            // What this server may still be given: the limit minus what the other servers have.
+            'memory' => ['limitMb' => MemoryLimit::mb(), 'freeMb' => MemoryLimit::freeMb($server)],
             'options' => [
                 'types' => Server::TYPES,
                 'mcVersions' => MinecraftVersions::releases(),

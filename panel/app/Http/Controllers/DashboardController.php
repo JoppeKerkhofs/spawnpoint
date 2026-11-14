@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
+use App\Services\MemoryLimit;
 use App\Services\NodeClient;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,6 +21,7 @@ class DashboardController extends Controller
 
         return Inertia::render('Dashboard', [
             'servers' => $servers,
+            'memoryLimitMb' => fn () => $request->user()->can('manage-servers') ? MemoryLimit::mb() : null,
             'states' => Inertia::defer(function () use ($servers): array {
                 $states = NodeClient::states();
                 // A viewer must not learn about servers that are not shared with them.

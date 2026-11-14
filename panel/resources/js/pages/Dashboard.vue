@@ -12,6 +12,7 @@ import { create, show } from '@/routes/servers';
 
 const props = defineProps<{
     servers: Server[];
+    memoryLimitMb: number | null;
     states?: States;
 }>();
 
@@ -100,11 +101,29 @@ const memoryGb = computed(
             <div
                 class="flex-[1_1_200px] rounded-md border border-border bg-card px-4 py-3.5"
             >
-                <div class="text-[0.8125rem] text-muted-foreground">
-                    Memory allocated
+                <div
+                    class="flex justify-between text-[0.8125rem] text-muted-foreground"
+                >
+                    <span>Memory allocated</span>
+                    <span v-if="memoryLimitMb" class="tabular-nums"
+                        >limit {{ Math.round(memoryLimitMb / 1024) }} GB</span
+                    >
                 </div>
                 <div class="text-2xl font-bold text-primary tabular-nums">
                     {{ memoryGb }} GB
+                </div>
+                <div
+                    v-if="memoryLimitMb"
+                    class="mt-1 h-1.5 overflow-hidden rounded-full bg-divider"
+                    role="img"
+                    :aria-label="`${memoryGb} of ${Math.round(memoryLimitMb / 1024)} GB allocated`"
+                >
+                    <div
+                        class="h-full bg-primary"
+                        :style="{
+                            width: `${Math.min(100, ((memoryGb * 1024) / memoryLimitMb) * 100)}%`,
+                        }"
+                    />
                 </div>
             </div>
         </div>
@@ -138,6 +157,11 @@ const memoryGb = computed(
                         </Link>
                         <template v-else>{{ server.name }}</template>
                     </h2>
+                    <span
+                        v-if="server.is_default"
+                        class="rounded-full border border-brand px-2 py-px text-xs font-semibold tracking-[0.02em] text-primary uppercase"
+                        >Default</span
+                    >
                     <StatusPill :tone="toneOf(current.state)">
                         {{ current.state }}
                     </StatusPill>

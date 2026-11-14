@@ -5,6 +5,9 @@ return [
     // Every server hostname is one label under this domain, covered by a wildcard DNS record.
     'base_domain' => env('PANEL_BASE_DOMAIN', 'mc.localhost'),
 
+    // The most memory, in MB, all servers together may be given. Empty means 90% of the host's memory.
+    'memory_limit_mb' => env('PANEL_MEMORY_LIMIT_MB'),
+
     // Where this panel reaches the Rust service that panel:setup registers.
     'node_url' => env('PANEL_NODE_URL', 'http://127.0.0.1:8080'),
 

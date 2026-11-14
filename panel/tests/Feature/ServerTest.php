@@ -58,6 +58,7 @@ test('an admin creates a server and its node is told to create and start it', fu
             'modpack' => null,
             'cf_api_key' => null,
             'bluemap' => false,
+            'is_default' => false,
             'start' => true,
         ]);
 });

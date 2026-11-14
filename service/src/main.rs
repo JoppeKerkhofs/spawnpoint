@@ -50,6 +50,9 @@ const MANAGED_LABEL: &str = "mcpanel.managed";
 const IMAGE: &str = "itzg/minecraft-server";
 // Shared with mc-router (compose.yaml), which routes players to servers by hostname.
 const NETWORK: &str = "minecraft";
+// Holds one empty file per server that was stopped on purpose. Not a valid server name, so it can
+// never collide with a server's folder or be reached through the file manager.
+const STOPPED_DIR: &str = ".mcpanel-stopped";
 // BlueMap's built-in web server listens here unless its config says otherwise.
 const BLUEMAP_PORT: &str = "8100";
 const JAVA_VERSIONS: [u8; 4] = [8, 17, 21, 25];
@@ -117,6 +120,9 @@ struct ServerConfig {
     // Publishes the server's BlueMap web map under /<slug>/ on the map port.
     #[serde(default)]
     bluemap: bool,
+    // Makes the router send players here when they use a hostname no server has.
+    #[serde(default)]
+    is_default: bool,
     #[serde(default)]
     start: bool,
 }
@@ -264,6 +270,61 @@ pub async fn managed(docker: &Docker, slug: &str) -> Result<Option<ContainerInsp
     }
 }
 
+// Records whether a server was stopped on purpose, so a reboot brings back only the others.
+fn set_stopped(state: &AppState, slug: &str, stopped: bool) {
+    let dir = FsPath::new(&*state.data_dir).join(STOPPED_DIR);
+    let result = if stopped {
+        std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(slug), ""))
+    } else {
+        match std::fs::remove_file(dir.join(slug)) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        }
+    };
+
+    if let Err(error) = result {
+        eprintln!("could not record the stopped state of {slug}: {error}");
+    }
+}
+
+// Runs once when the service starts, which is also what happens after the host reboots:
+// every server that is not running and was not stopped on purpose is started again.
+async fn start_after_boot(state: AppState) {
+    let label = format!("{MANAGED_LABEL}=true");
+    let filters = HashMap::from([("label", vec![label.as_str()])]);
+    let options = ListContainersOptionsBuilder::default().all(true).filters(&filters).build();
+    let Ok(containers) = state.docker.list_containers(Some(options)).await else {
+        eprintln!("could not list servers to start after boot");
+        return;
+    };
+
+    for container in containers {
+        let names = container.names.unwrap_or_default();
+        let Some(slug) = names.first().and_then(|name| name.strip_prefix("/mc-")) else {
+            continue;
+        };
+        let running = container.state == Some(bollard::models::ContainerSummaryStateEnum::RUNNING);
+        let stopped_on_purpose = FsPath::new(&*state.data_dir).join(STOPPED_DIR).join(slug).is_file();
+
+        if !running && !stopped_on_purpose {
+            match state.docker.start_container(&container_name(slug), None::<StartContainerOptions>).await {
+                Ok(()) => println!("started {slug} after boot"),
+                Err(error) => eprintln!("could not start {slug} after boot: {error}"),
+            }
+        }
+    }
+}
+
+// The host's memory, so the panel can refuse to hand out more than there is.
+async fn host(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+    let info = state.docker.info().await.map_err(|error| {
+        eprintln!("docker info failed: {error}");
+        StatusCode::BAD_GATEWAY
+    })?;
+
+    Ok(Json(json!({ "memory_mb": info.mem_total.unwrap_or(0) / 1024 / 1024 })))
+}
+
 // Runs slow Docker work in the background so the panel's request returns at once.
 pub fn run_task<F, E>(tasks: &Tasks, slug: String, label: &'static str, work: F) -> StatusCode
 where
@@ -346,6 +407,10 @@ fn labels(slug: &str, config: &ServerConfig) -> HashMap<String, String> {
         ("mc-router.host".to_owned(), config.hostname.clone()),
     ]);
 
+    if config.is_default {
+        labels.insert("mc-router.default".to_owned(), "true".to_owned());
+    }
+
     if config.bluemap {
         let router = format!("traefik.http.routers.bluemap-{slug}");
         let strip = format!("bluemap-{slug}-strip");
@@ -377,6 +442,9 @@ async fn put_server(
         .await
         .map_err(|status| (status, String::new()))?
         .map(|container| container.state.and_then(|state| state.running).unwrap_or(false));
+    if config.start {
+        set_stopped(&state, &slug, false);
+    }
     let work = apply(state.docker.clone(), state.data_dir.clone(), slug.clone(), config, existing);
 
     Ok(run_task(&state.tasks, slug, "installing", work))
@@ -385,6 +453,12 @@ async fn put_server(
 async fn power(State(state): State<AppState>, Path((slug, action)): Path<(String, String)>) -> Result<StatusCode, StatusCode> {
     if !valid_slug(&slug) || managed(&state.docker, &slug).await?.is_none() {
         return Err(StatusCode::NOT_FOUND);
+    }
+
+    match action.as_str() {
+        "start" | "restart" => set_stopped(&state, &slug, false),
+        "stop" | "kill" => set_stopped(&state, &slug, true),
+        _ => {}
     }
 
     let docker = state.docker.clone();
@@ -417,6 +491,7 @@ async fn delete_server(State(state): State<AppState>, Path(slug): Path<String>) 
     if !valid_slug(&slug) {
         return Err(StatusCode::NOT_FOUND);
     }
+    set_stopped(&state, &slug, false);
     if managed(&state.docker, &slug).await?.is_none() {
         state.tasks.lock().unwrap().remove(&slug);
         return Ok(StatusCode::NO_CONTENT);
@@ -781,13 +856,16 @@ async fn main() {
         .route("/servers/{slug}/backups/{name}/lock", post(backups::lock))
         .route("/servers/{slug}/import", post(backups::import_world))
         .route("/imports", get(backups::list_imports))
+        .route("/host", get(host))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_signature))
         // Authenticated by its console token instead of a signed request.
         .route("/servers/{slug}/console", get(console))
         .route("/servers/{slug}/upload", put(files::upload).merge(options(files::upload_preflight)))
         .route("/servers/{slug}/download", get(files::download))
         .route("/servers/{slug}/backups/{name}/download", get(backups::download))
-        .with_state(state);
+        .with_state(state.clone());
+
+    tokio::spawn(start_after_boot(state));
 
     let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
     println!("listening on {listen}");
@@ -877,6 +955,9 @@ mod tests {
         let with_map = config(|value| value["bluemap"] = json!(true)).unwrap();
         assert_eq!(labels("survival", &with_map)["traefik.http.routers.bluemap-survival.rule"], "PathPrefix(`/survival/`)");
         assert!(!labels("survival", &valid).contains_key("traefik.enable"));
+        assert!(!labels("survival", &valid).contains_key("mc-router.default"));
+        let default = config(|value| value["is_default"] = json!(true)).unwrap();
+        assert_eq!(labels("survival", &default)["mc-router.default"], "true");
 
         let pack = |server_type: &str, modpack: Value| {
             config(|value| {

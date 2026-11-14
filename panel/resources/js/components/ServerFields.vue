@@ -5,12 +5,13 @@ import SectionCard from '@/components/SectionCard.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ModpackPicker from '@/components/ModpackPicker.vue';
-import type { Server, ServerOptions } from '@/lib/servers';
+import type { MemoryBudget, Server, ServerOptions } from '@/lib/servers';
 import { PACK_TYPES, title, typeLabels } from '@/lib/servers';
 
 const props = defineProps<{
     options: ServerOptions;
     errors: Record<string, string>;
+    memory: MemoryBudget;
     server?: Server;
 }>();
 
@@ -37,7 +38,22 @@ const platform = ref<'MODRINTH' | 'AUTO_CURSEFORGE'>(
 const typeButton =
     'flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50';
 
-const memoryGb = ref((props.server?.memory_mb ?? 4096) / 1024);
+const freeGb = computed(() =>
+    props.memory.freeMb === null
+        ? null
+        : Math.floor(props.memory.freeMb / 1024),
+);
+// The slider stops at what is left under the limit, but never below what this server already has.
+const maxMemoryGb = computed(() =>
+    Math.max(
+        1,
+        (props.server?.memory_mb ?? 0) / 1024,
+        Math.min(16, freeGb.value ?? 16),
+    ),
+);
+const memoryGb = ref(
+    Math.min((props.server?.memory_mb ?? 4096) / 1024, maxMemoryGb.value),
+);
 
 const selectClass =
     'h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm';
@@ -169,11 +185,20 @@ const selectClass =
                 v-model.number="memoryGb"
                 type="range"
                 min="1"
-                max="16"
+                :max="maxMemoryGb"
                 class="w-full accent-primary"
+                aria-describedby="memory_hint"
             />
             <input type="hidden" name="memory_mb" :value="memoryGb * 1024" />
-            <span class="text-[0.8125rem] text-muted-foreground">
+            <span
+                id="memory_hint"
+                class="text-[0.8125rem] text-muted-foreground"
+            >
+                <template v-if="freeGb !== null && memory.limitMb !== null">
+                    {{ Math.max(0, freeGb) }} GB left for this server under the
+                    {{ Math.round(memory.limitMb / 1024) }} GB limit for all
+                    servers.
+                </template>
                 The container limit. Minecraft's heap gets three quarters of it.
             </span>
             <InputError :message="errors.memory_mb" />
@@ -264,6 +289,29 @@ const selectClass =
                     yourself, in Files; this only opens the way to it.
                 </span>
                 <InputError :message="errors.bluemap" />
+            </div>
+
+            <div class="grid content-start gap-1 sm:col-span-3">
+                <label class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        name="is_default"
+                        value="1"
+                        :checked="server?.is_default"
+                        class="size-4 accent-primary"
+                        aria-describedby="is_default_hint"
+                    />
+                    Make this the default server
+                </label>
+                <span
+                    id="is_default_hint"
+                    class="text-[0.8125rem] text-muted-foreground"
+                >
+                    Players who use a hostname that no server has, such as the
+                    base domain itself, land here. Only one server can be the
+                    default; changing it restarts the servers involved.
+                </span>
+                <InputError :message="errors.is_default" />
             </div>
         </div>
     </SectionCard>

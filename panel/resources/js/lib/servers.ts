@@ -11,6 +11,7 @@ export type Server = {
     memory_mb: number;
     modpack: Modpack | null;
     bluemap_enabled: boolean;
+    is_default: boolean;
     backup_at: string | null;
     backup_keep: number;
     settings: {
@@ -29,6 +30,9 @@ export type ServerOptions = {
     difficulties: string[];
     modes: string[];
 };
+
+// Both are null when the host's memory could not be read and no limit is configured.
+export type MemoryBudget = { limitMb: number | null; freeMb: number | null };
 
 export type ServerState = { state: string; detail: string | null };
 

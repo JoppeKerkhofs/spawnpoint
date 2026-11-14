@@ -77,6 +77,7 @@ class NodeClient
             'modpack' => $server->modpack['project'] ?? null,
             'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? config('panel.curseforge_key') : null,
             'bluemap' => $server->bluemap_enabled,
+            'is_default' => $server->is_default,
             'start' => $start,
         ]);
     }
@@ -223,6 +224,17 @@ class NodeClient
     public static function signature(string $token, int $timestamp, string $method, string $path, string $body): string
     {
         return hash_hmac('sha256', "{$timestamp}\n{$method}\n{$path}\n{$body}", $token);
+    }
+
+    /**
+     * Get the memory of the machine the node runs on, in MB.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function hostMemoryMb(): int
+    {
+        return (int) $this->send('GET', '/host')->json('memory_mb');
     }
 
     /**

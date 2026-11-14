@@ -9,12 +9,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import type { Server, ServerOptions, States } from '@/lib/servers';
+import type {
+    MemoryBudget,
+    Server,
+    ServerOptions,
+    States,
+} from '@/lib/servers';
 import { destroy, update } from '@/routes/servers';
 
 const props = defineProps<{
     server: Server;
     options: ServerOptions;
+    memory: MemoryBudget;
     baseDomain: string;
     states?: States;
 }>();
@@ -62,6 +68,7 @@ const remove = () => {
                 <ServerFields
                     v-model:java-version="javaVersion"
                     :options="options"
+                    :memory="memory"
                     :errors="errors"
                     :server="server"
                 />

@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import type { ServerOptions } from '@/lib/servers';
+import type { MemoryBudget, ServerOptions } from '@/lib/servers';
 import { dashboard } from '@/routes';
 import { store } from '@/routes/servers';
 
 defineProps<{
     baseDomain: string;
     options: ServerOptions;
+    memory: MemoryBudget;
 }>();
 
 const slug = ref('');
@@ -96,6 +97,7 @@ const javaVersion = ref(25);
                 <ServerFields
                     v-model:java-version="javaVersion"
                     :options="options"
+                    :memory="memory"
                     :errors="errors"
                 />
 
