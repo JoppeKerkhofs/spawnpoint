@@ -1,0 +1,11 @@
+services:
+  service:
+    build: ./service
+    init: true
+    restart: unless-stopped
+    environment:
+      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?run "php artisan node:register" in panel/ and put the token in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
