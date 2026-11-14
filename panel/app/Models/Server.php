@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int $java_version
  * @property int $memory_mb
  * @property array<string, mixed> $settings Game settings; servers saved before a setting existed lack its key.
- * @property array{project: string, name: string, icon: string|null}|null $modpack
+ * @property array{project: string, name: string, icon: string|null, version?: string|null, version_name?: string|null}|null $modpack
  * @property bool $bluemap_enabled
  * @property bool $is_default
  * @property int $backup_keep
@@ -39,10 +39,10 @@ class Server extends Model
     use HasFactory;
 
     // These lists mirror the ones the Rust service accepts (service/src/main.rs).
-    public const array TYPES = ['VANILLA', 'PAPER', 'FABRIC', 'FORGE', 'NEOFORGE', 'MODRINTH', 'AUTO_CURSEFORGE'];
+    public const array TYPES = ['VANILLA', 'PAPER', 'FABRIC', 'FORGE', 'NEOFORGE', 'MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
     // Server types that install a whole modpack instead of one loader.
-    public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE'];
+    public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
     public const array JAVA_VERSIONS = [8, 17, 21, 25];
 

@@ -21,7 +21,7 @@ defineProps<{
 
 const slug = ref('');
 const javaVersion = ref(25);
-const worldSource = ref<'new' | 'host'>('new');
+const worldSource = ref<'new' | 'host' | 'zip'>('new');
 </script>
 
 <template>
@@ -129,6 +129,15 @@ const worldSource = ref<'new' | 'host'>('new');
                                 />
                                 Start from a world folder on the host
                             </label>
+                            <label class="flex items-center gap-2">
+                                <input
+                                    v-model="worldSource"
+                                    type="radio"
+                                    value="zip"
+                                    class="size-4 accent-primary"
+                                />
+                                Upload a world .zip
+                            </label>
                         </div>
 
                         <div v-if="worldSource === 'new'" class="grid gap-2">
@@ -146,6 +155,12 @@ const worldSource = ref<'new' | 'host'>('new');
                             />
                             <InputError :message="errors.seed" />
                         </div>
+                        <p v-else-if="worldSource === 'zip'" class="text-sm">
+                            <input type="hidden" name="world_zip" value="1" />
+                            The server is created without starting. On the next
+                            page you choose the .zip; the server starts once the
+                            world is in.
+                        </p>
                         <div v-else class="grid gap-2">
                             <Label for="import_path">Folder on the host</Label>
                             <select
@@ -166,8 +181,8 @@ const worldSource = ref<'new' | 'host'>('new');
                         <span class="text-[0.8125rem] text-muted-foreground">
                             {{
                                 imports.length
-                                    ? 'Only worlds in the mounted import folder are listed. A world from a .zip can be imported on the Backups tab once the server exists.'
-                                    : 'No worlds are in the import folder. A world from a .zip can be imported on the Backups tab once the server exists.'
+                                    ? 'Only worlds in the mounted import folder are listed as host folders.'
+                                    : 'No worlds are in the import folder on the host.'
                             }}
                         </span>
                     </div>

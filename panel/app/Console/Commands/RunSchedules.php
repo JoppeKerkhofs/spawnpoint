@@ -34,7 +34,7 @@ class RunSchedules extends Command
 
             try {
                 match ($schedule->action) {
-                    'backup' => $client->createBackup($server),
+                    'backup' => $client->createBackup($server, 'Schedule'),
                     'command' => $client->command($server, (string) $schedule->command),
                     default => $client->power($server, $schedule->action),
                 };

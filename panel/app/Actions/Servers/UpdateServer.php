@@ -64,7 +64,7 @@ class UpdateServer
      * Pick the modpack out of validated form data; null for a plain loader.
      *
      * @param  array<string, mixed>  $data
-     * @return array{project: string, name: string, icon: string|null}|null
+     * @return array{project: string, name: string, icon: string|null, version: string|null, version_name: string|null}|null
      */
     public static function modpack(array $data): ?array
     {
@@ -76,6 +76,8 @@ class UpdateServer
             'project' => $data['modpack_project'],
             'name' => $data['modpack_name'] ?? $data['modpack_project'],
             'icon' => $data['modpack_icon'] ?? null,
+            'version' => $data['modpack_version'] ?? null,
+            'version_name' => $data['modpack_version_name'] ?? null,
         ];
     }
 

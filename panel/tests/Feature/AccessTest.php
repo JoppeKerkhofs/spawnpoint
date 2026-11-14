@@ -34,7 +34,7 @@ test('a viewer sees only the servers shared with them, and only their states', f
         ->assertInertia(fn (Assert $page) => $page
             ->has('servers', 1)
             ->where('servers.0.slug', 'shared')
-            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null]])),
+            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0]])),
         );
 });
 
@@ -193,6 +193,32 @@ test('the api gives console, logs and backups only with the matching ability and
     $this->getJson('/api/v1/servers/shared/console')->assertJsonPath('write', true);
     $this->getJson('/api/v1/servers/shared/backups')->assertOk();
     $this->postJson('/api/v1/servers/shared/backups')->assertStatus(202);
+});
+
+test('the api reads and writes files only with the files abilities, for admins', function () {
+    Http::swap(new HttpFactory);
+    Http::fake([
+        'node.test:8080/servers/shared/files?path=mods' => Http::response([['name' => 'a.jar', 'dir' => false, 'size' => 1, 'modified' => 1]]),
+        'node.test:8080/servers/shared/files/content?path=ops.json' => Http::sequence()->push('[]')->push(status: 204),
+        'node.test:8080/servers/shared/files?path=old.txt' => Http::response(status: 204),
+        'node.test:8080/servers/shared/files?path=gone.txt' => Http::response(status: 404),
+    ]);
+
+    Sanctum::actingAs($this->viewer, ['files:read', 'files:write']);
+    $this->getJson('/api/v1/servers/shared/files?path=mods')->assertForbidden();
+
+    Sanctum::actingAs($this->admin, ['files:read']);
+    $this->getJson('/api/v1/servers/shared/files?path=mods')->assertJsonPath('entries.0.name', 'a.jar');
+    $this->getJson('/api/v1/servers/shared/files?path=ops.json&file=1')->assertJsonPath('content', '[]');
+    $this->getJson('/api/v1/servers/shared/files?path=../other')->assertStatus(422);
+    $this->putJson('/api/v1/servers/shared/files', ['path' => 'ops.json', 'content' => '[]'])->assertForbidden();
+    $this->getJson('/api/v1/servers/shared/files/transfer')->assertForbidden();
+
+    Sanctum::actingAs($this->admin, ['files:write']);
+    $this->putJson('/api/v1/servers/shared/files', ['path' => 'ops.json', 'content' => '[]'])->assertOk();
+    $this->deleteJson('/api/v1/servers/shared/files', ['path' => 'old.txt'])->assertOk();
+    $this->deleteJson('/api/v1/servers/shared/files', ['path' => 'gone.txt'])->assertNotFound();
+    $this->getJson('/api/v1/servers/shared/files/transfer')->assertJsonStructure(['upload', 'download']);
 });
 
 test('the api answers 502 when the rust service is down', function () {

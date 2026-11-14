@@ -23,6 +23,8 @@ class StoreServerRequest extends FormRequest
             ...$this->serverRules(),
             'slug' => ['required', 'string', 'max:63', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/', 'unique:servers,slug'],
             'eula' => ['accepted'],
+            // The server is created without starting, so a world zip can be put in first.
+            'world_zip' => ['nullable', 'boolean'],
             'seed' => ['nullable', 'string', 'max:64', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             // A world folder inside the node's import folder; the Rust service checks it again.
             'import_path' => ['nullable', 'string', 'max:1000', 'not_regex:/(^|\/)\.\.?(\/|$)|[\\\\\x00-\x1F\x7F]/'],

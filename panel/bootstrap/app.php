@@ -35,7 +35,9 @@ return Application::configure(basePath: dirname(__DIR__))
             ? response()->json(['message' => 'The Rust service did not answer or refused the request.'], 502)
             : null;
         $exceptions->render(fn (ConnectionException $exception, Request $request) => $nodeFailure($exception, $request));
-        $exceptions->render(fn (RequestException $exception, Request $request) => $nodeFailure($exception, $request));
+        $exceptions->render(fn (RequestException $exception, Request $request) => $request->is('api/*') && in_array($exception->response->status(), [403, 404, 409, 413, 415], true)
+            ? response()->json(['message' => 'The Rust service refused: '.$exception->response->status().'.'], $exception->response->status())
+            : $nodeFailure($exception, $request));
 
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),

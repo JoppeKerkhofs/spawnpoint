@@ -49,9 +49,11 @@ trait ServerValidationRules
                 'string',
                 'max:200',
                 function (string $attribute, mixed $value, Closure $fail): void {
-                    $pattern = $this->input('server_type') === 'AUTO_CURSEFORGE'
-                        ? '/^[A-Za-z0-9-]+$/'
-                        : '/^(https:\/\/modrinth\.com\/)?[A-Za-z0-9._\/-]+$/';
+                    $pattern = match ($this->input('server_type')) {
+                        'AUTO_CURSEFORGE' => '/^[A-Za-z0-9-]+$/',
+                        'FTBA' => '/^[0-9]{1,9}$/',
+                        default => '/^(https:\/\/modrinth\.com\/)?[A-Za-z0-9._\/-]+$/',
+                    };
 
                     if (! preg_match($pattern, (string) $value)) {
                         $fail(__('Pick a pack from the list, or paste a link to its Modrinth page.'));
@@ -67,6 +69,9 @@ trait ServerValidationRules
             'jvm_opts' => ['nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             'cpu_limit' => ['nullable', 'numeric', 'between:0.25,64'],
             'is_default' => ['nullable', 'boolean'],
+            // A Modrinth version id or an FTB version number; empty installs the newest.
+            'modpack_version' => ['nullable', 'string', 'max:16', $this->input('server_type') === 'FTBA' ? 'regex:/^[0-9]+$/' : 'regex:/^[A-Za-z0-9]+$/'],
+            'modpack_version_name' => ['nullable', 'string', 'max:120'],
             'modpack_name' => ['nullable', 'string', 'max:120'],
             'modpack_icon' => ['nullable', 'string', 'max:500', 'starts_with:https://'],
         ];

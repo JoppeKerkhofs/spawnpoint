@@ -1,4 +1,12 @@
-export type Modpack = { project: string; name: string; icon: string | null };
+export type Modpack = {
+    project: string;
+    name: string;
+    icon: string | null;
+    version?: string | null;
+    version_name?: string | null;
+};
+
+export type PackPlatform = 'MODRINTH' | 'AUTO_CURSEFORGE' | 'FTBA';
 
 export type Server = {
     id: number;
@@ -54,6 +62,11 @@ export type ServerState = {
     detail: string | null;
     players?: Players | null;
     usage?: Usage | null;
+    disk_bytes?: number | null;
+    // Unix seconds of the newest backup.
+    last_backup?: number | null;
+    // Mod or plugin jars put in place since the server started, so not loaded yet.
+    mods_changed?: number;
 };
 
 export type States = {
@@ -63,10 +76,15 @@ export type States = {
 
 export type PowerAction = 'start' | 'stop' | 'restart' | 'kill';
 
+export const bytesLabel = (bytes: number): string =>
+    bytes >= 1024 ** 3
+        ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
+        : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+
 export const title = (value: string): string =>
     value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 
-export const PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE'];
+export const PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
 export const typeLabels: Record<string, string> = {
     VANILLA: 'Vanilla',
@@ -76,6 +94,7 @@ export const typeLabels: Record<string, string> = {
     NEOFORGE: 'NeoForge',
     MODRINTH: 'Modrinth modpack',
     AUTO_CURSEFORGE: 'CurseForge modpack',
+    FTBA: 'FTB modpack',
 };
 
 export const software = (server: Server): string =>

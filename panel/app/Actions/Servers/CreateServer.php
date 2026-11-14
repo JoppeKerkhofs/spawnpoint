@@ -44,7 +44,7 @@ class CreateServer
             ]);
 
             UpdateServer::demoteOtherDefaults($server);
-            (new NodeClient($server->node))->apply($server, start: true, importHost: $data['import_path'] ?? null);
+            (new NodeClient($server->node))->apply($server, start: ! ($data['world_zip'] ?? false), importHost: $data['import_path'] ?? null);
             ActivityLog::record('server.create', $server, array_filter(['imported_world' => $data['import_path'] ?? null]));
 
             return $server;

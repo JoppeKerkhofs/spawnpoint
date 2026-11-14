@@ -13,7 +13,7 @@ use Inertia\Response;
 class ApiTokenController extends Controller
 {
     // What a token may do; it can never do more than its owner's role allows.
-    public const array ABILITIES = ['servers:read', 'servers:power', 'console:use', 'logs:read', 'backups:manage'];
+    public const array ABILITIES = ['servers:read', 'servers:power', 'console:use', 'logs:read', 'backups:manage', 'files:read', 'files:write'];
 
     /**
      * Show the user's API tokens.

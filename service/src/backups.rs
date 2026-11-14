@@ -6,6 +6,8 @@ use std::{
     ffi::OsStr,
     os::unix::fs::MetadataExt,
     path::{Path as FsPath, PathBuf},
+    process::Stdio,
+    sync::Arc,
     time::UNIX_EPOCH,
 };
 
@@ -18,12 +20,12 @@ use axum::{
 use bollard::query_parameters::{StartContainerOptions, StopContainerOptionsBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::process::Command;
+use tokio::{io::AsyncReadExt, process::Command, sync::Notify};
 
 use crate::{
     claims, container_name,
     files::{resolve_in, send_file},
-    managed, run_command, run_task, unix_now, valid_slug, AppState, STOP_TIMEOUT_SECS,
+    managed, run_command, run_task, set_stopped, unix_now, valid_slug, AppState, STOP_TIMEOUT_SECS,
 };
 
 // Left out of archives and kept through restores: the server recreates or re-downloads them.
@@ -44,6 +46,24 @@ fn valid_backup_name(name: &str) -> bool {
     name.strip_suffix(".tar.gz")
         .map(|stem| stem.strip_suffix(".locked").unwrap_or(stem))
         .is_some_and(|stamp| (1..=12).contains(&stamp.len()) && stamp.bytes().all(|b| b.is_ascii_digit()))
+}
+
+// What a backup that was stopped on purpose reports, so it is not recorded as a failure.
+const CANCELLED: &str = "cancelled";
+
+// The time a backup was started, which begins the name of everything that belongs to it:
+// the archive, "<stamp>.by" with who started it, and "<stamp>.failed" with why it failed.
+fn stamp(name: &str) -> &str {
+    name.trim_start_matches('.').split('.').next().unwrap_or_default()
+}
+
+fn valid_failure_name(name: &str) -> bool {
+    name.strip_suffix(".failed").is_some_and(|stamp| (1..=12).contains(&stamp.len()) && stamp.bytes().all(|b| b.is_ascii_digit()))
+}
+
+// The newest backup of a server, as unix seconds.
+pub fn latest(state: &AppState, slug: &str) -> Option<u64> {
+    stored(&backup_dir(state, slug)).first().map(|(created, _, _)| *created)
 }
 
 fn backup_path(state: &AppState, slug: &str, name: &str) -> Result<PathBuf, StatusCode> {
@@ -110,7 +130,38 @@ fn stored(dir: &FsPath) -> Vec<(u64, String, u64)> {
     backups
 }
 
-async fn archive(state: &AppState, slug: &str, keep: Option<usize>) -> Result<(), String> {
+// Runs tar so that it can be stopped half-way.
+async fn tar(arguments: &[&OsStr], cancel: &Notify) -> Result<(), String> {
+    let mut child = Command::new("tar")
+        .args(arguments)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| format!("tar: {error}"))?;
+    let stderr = child.stderr.take();
+
+    let status = tokio::select! {
+        status = child.wait() => status.map_err(|error| format!("tar: {error}"))?,
+        () = cancel.notified() => {
+            let _ = child.kill().await;
+            return Err(CANCELLED.into());
+        }
+    };
+
+    // tar exits with 1 when a file changed while it was read, which a live server can still cause.
+    if matches!(status.code(), Some(0 | 1)) {
+        return Ok(());
+    }
+
+    let mut reason = String::new();
+    if let Some(mut stderr) = stderr {
+        let _ = stderr.read_to_string(&mut reason).await;
+    }
+    Err(format!("tar failed: {}", reason.trim()))
+}
+
+async fn archive(state: &AppState, slug: &str, keep: Option<usize>, by: Option<&str>) -> Result<(), String> {
     let dir = backup_dir(state, slug);
     std::fs::create_dir_all(&dir).map_err(|error| format!("backup folder: {error}"))?;
 
@@ -127,12 +178,16 @@ async fn archive(state: &AppState, slug: &str, keep: Option<usize>) -> Result<()
     let target = dir.join(format!("{stamp}.tar.gz"));
     let source = server_dir(state, slug);
     let excludes: Vec<String> = EXCLUDED.iter().map(|folder| format!("--exclude=./{folder}")).collect();
-    let mut arguments: Vec<&OsStr> = vec!["-czf".as_ref(), partial.as_ref(), "-C".as_ref(), source.as_ref()];
+    // Without the per-file warnings, a busy world cannot fill the pipe tar's messages are read from.
+    let mut arguments: Vec<&OsStr> =
+        vec!["--warning=no-file-changed".as_ref(), "-czf".as_ref(), partial.as_ref(), "-C".as_ref(), source.as_ref()];
     arguments.extend(excludes.iter().map(OsStr::new));
     arguments.push(".".as_ref());
 
-    // tar exits with 1 when a file changed while it was read, which a live server can still cause.
-    let archived = run("tar", &arguments, &[0, 1]).await;
+    let cancel = Arc::new(Notify::new());
+    state.cancels.lock().unwrap().insert(slug.to_owned(), cancel.clone());
+    let archived = tar(&arguments, &cancel).await;
+    state.cancels.lock().unwrap().remove(slug);
 
     if running {
         run_command(&state.docker, &name, "save-on").await;
@@ -143,10 +198,14 @@ async fn archive(state: &AppState, slug: &str, keep: Option<usize>) -> Result<()
         return Err(error);
     }
     std::fs::rename(&partial, &target).map_err(|error| format!("backup folder: {error}"))?;
+    if let Some(by) = by {
+        let _ = std::fs::write(dir.join(format!("{stamp}.by")), by);
+    }
 
     if let Some(keep) = keep {
         let unlocked = stored(&dir).into_iter().filter(|(_, name, _)| !name.contains(".locked."));
         for (_, old, _) in unlocked.skip(keep.max(1)) {
+            let _ = std::fs::remove_file(dir.join(format!("{}.by", self::stamp(&old))));
             let _ = std::fs::remove_file(dir.join(old));
         }
     }
@@ -157,7 +216,7 @@ async fn archive(state: &AppState, slug: &str, keep: Option<usize>) -> Result<()
 async fn restore(state: AppState, slug: String, backup: PathBuf) -> Result<(), String> {
     let was_running = stop(&state, &slug).await?;
     // The current state is archived first, so a restore can itself be undone.
-    archive(&state, &slug, None).await?;
+    archive(&state, &slug, None, Some("Before a restore")).await?;
 
     let target = server_dir(&state, &slug);
     for entry in std::fs::read_dir(&target).map_err(|error| error.to_string())?.flatten() {
@@ -200,9 +259,9 @@ fn find_world(dir: &FsPath, depth: u8) -> Option<PathBuf> {
 }
 
 // ponytail: a zip is unpacked without a size cap, so a hostile archive can fill the disk; add a quota if untrusted users get this.
-async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool) -> Result<(), String> {
+async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool, start_after: bool) -> Result<(), String> {
     let was_running = stop(&state, &slug).await?;
-    archive(&state, &slug, None).await?;
+    archive(&state, &slug, None, Some("Before a world import")).await?;
 
     let target = server_dir(&state, &slug);
     let staging = target.join(".import");
@@ -239,7 +298,13 @@ async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool) ->
         run("chown", &["-R".as_ref(), owner.as_ref(), target.join("world").as_ref()], &[0]).await?;
     }
 
-    if was_running {
+    // An uploaded zip has done its job.
+    if is_zip {
+        let _ = std::fs::remove_file(&source);
+    }
+
+    if was_running || start_after {
+        set_stopped(&state, &slug, false);
         start(&state, &slug).await?;
     }
 
@@ -251,20 +316,50 @@ pub async fn list(State(state): State<AppState>, Path(slug): Path<String>) -> Re
         return Err(StatusCode::NOT_FOUND);
     }
 
-    Ok(Json(Value::Array(
-        stored(&backup_dir(&state, &slug))
-            .into_iter()
-            .map(|(created, name, size)| {
-                json!({ "name": name, "size": size, "created": created, "locked": name.contains(".locked.") })
-            })
-            .collect(),
-    )))
+    let dir = backup_dir(&state, &slug);
+    let by = |name: &str| std::fs::read_to_string(dir.join(format!("{}.by", stamp(name)))).ok();
+    let mut backups: Vec<(u64, Value)> = stored(&dir)
+        .into_iter()
+        .map(|(created, name, size)| {
+            let entry = json!({
+                "name": name, "size": size, "created": created, "locked": name.contains(".locked."),
+                "status": "completed", "by": by(&name), "reason": null,
+            });
+            (created, entry)
+        })
+        .collect();
+
+    let running = state.cancels.lock().unwrap().contains_key(&slug);
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let started: u64 = stamp(&name).parse().unwrap_or(0);
+
+        if valid_failure_name(&name) {
+            let reason = std::fs::read_to_string(entry.path()).unwrap_or_default();
+            backups.push((started, json!({
+                "name": name, "size": 0, "created": started, "locked": false,
+                "status": "failed", "by": by(&name), "reason": reason,
+            })));
+        } else if running && name.ends_with(".partial") {
+            // The size so far lets the panel estimate progress against the previous backup.
+            let size = entry.metadata().map_or(0, |metadata| metadata.len());
+            backups.push((started, json!({
+                "name": "running", "size": size, "created": started, "locked": false,
+                "status": "running", "by": null, "reason": null,
+            })));
+        }
+    }
+    backups.sort_by(|a, b| b.0.cmp(&a.0));
+
+    Ok(Json(Value::Array(backups.into_iter().map(|(_, entry)| entry).collect())))
 }
 
 #[derive(Deserialize)]
 pub struct CreateBody {
     // How many unlocked backups to keep afterwards; none means keep all.
     keep: Option<usize>,
+    // Who or what started it, for the list.
+    by: Option<String>,
 }
 
 pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<CreateBody>) -> StatusCode {
@@ -272,9 +367,35 @@ pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Jso
         return StatusCode::NOT_FOUND;
     }
 
+    let by = body.by.filter(|by| by.chars().count() <= 80 && !by.chars().any(char::is_control));
     let tasks = state.tasks.clone();
     let task_slug = slug.clone();
-    run_task(&tasks, slug, "backing up", async move { archive(&state, &task_slug, body.keep).await })
+    run_task(&tasks, slug, "backing up", async move {
+        let started = unix_now();
+        match archive(&state, &task_slug, body.keep, by.as_deref()).await {
+            Err(reason) if reason != CANCELLED => {
+                // A failed backup is a line in the list, not a broken server.
+                let dir = backup_dir(&state, &task_slug);
+                let _ = std::fs::write(dir.join(format!("{started}.failed")), &reason);
+                if let Some(by) = &by {
+                    let _ = std::fs::write(dir.join(format!("{started}.by")), by);
+                }
+            }
+            _ => {}
+        }
+        Ok::<(), String>(())
+    })
+}
+
+// Stops the backup that is running; what was written so far is thrown away.
+pub async fn cancel(State(state): State<AppState>, Path(slug): Path<String>) -> StatusCode {
+    match state.cancels.lock().unwrap().get(&slug) {
+        Some(cancel) => {
+            cancel.notify_one();
+            StatusCode::ACCEPTED
+        }
+        None => StatusCode::NOT_FOUND,
+    }
 }
 
 pub async fn restore_backup(State(state): State<AppState>, Path((slug, name)): Path<(String, String)>) -> Result<StatusCode, StatusCode> {
@@ -304,7 +425,16 @@ pub async fn lock(
 }
 
 pub async fn delete(State(state): State<AppState>, Path((slug, name)): Path<(String, String)>) -> Result<StatusCode, StatusCode> {
-    std::fs::remove_file(backup_path(&state, &slug, &name)?).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    // The record of a failed backup is removed the same way as an archive.
+    let dir = backup_dir(&state, &slug);
+    let path = if valid_slug(&slug) && valid_failure_name(&name) && dir.join(&name).is_file() {
+        dir.join(&name)
+    } else {
+        backup_path(&state, &slug, &name)?
+    };
+
+    std::fs::remove_file(path).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    let _ = std::fs::remove_file(dir.join(format!("{}.by", stamp(&name))));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -356,6 +486,18 @@ pub fn host_world(state: &AppState, relative: &str) -> Result<PathBuf, StatusCod
     }
 }
 
+// Docker only makes the data folder when a container first starts, but files can be uploaded to a
+// server that has not started yet, so the folder is made here, owned by the user Minecraft runs as.
+pub async fn ensure_folder(state: &AppState, slug: &str) -> Result<(), String> {
+    let folder = server_dir(state, slug);
+    if folder.is_dir() {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+    run("chown", &["1000:1000".as_ref(), folder.as_ref()], &[0]).await
+}
+
 // Gives a server that is about to be created a world from the import folder to start with.
 pub async fn seed_world(state: &AppState, slug: &str, source: &FsPath) -> Result<(), String> {
     let target = server_dir(state, slug);
@@ -375,6 +517,9 @@ pub struct ImportBody {
     // "zip": a .zip inside the server's own folder; "host": a world folder inside the import folder.
     source: String,
     path: String,
+    // Start the server afterwards even if it was not running, for a server created to receive this world.
+    #[serde(default)]
+    start: bool,
 }
 
 pub async fn import_world(
@@ -400,7 +545,7 @@ pub async fn import_world(
     };
 
     let tasks = state.tasks.clone();
-    Ok(run_task(&tasks, slug.clone(), "importing", import(state, slug, source, is_zip)))
+    Ok(run_task(&tasks, slug.clone(), "importing", import(state, slug, source, is_zip, body.start)))
 }
 
 #[cfg(test)]
@@ -411,6 +556,9 @@ mod tests {
     fn only_archives_the_service_named_are_backups() {
         assert!(valid_backup_name("1794600000.tar.gz"));
         assert!(valid_backup_name("1794600000.locked.tar.gz"));
+        assert!(valid_failure_name("1794600000.failed") && !valid_failure_name("../x.failed") && !valid_failure_name("1794600000.tar.gz"));
+        assert_eq!(stamp("1794600000.locked.tar.gz"), "1794600000");
+        assert_eq!(stamp(".1794600000.partial"), "1794600000");
         for bad in ["../1794600000.tar.gz", "world.tar.gz", "1794600000.zip", ".1794600000.partial", "1794600000.locked.locked.tar.gz", ".tar.gz"] {
             assert!(!valid_backup_name(bad), "{bad}");
         }

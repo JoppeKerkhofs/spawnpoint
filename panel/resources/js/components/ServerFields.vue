@@ -5,7 +5,12 @@ import SectionCard from '@/components/SectionCard.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ModpackPicker from '@/components/ModpackPicker.vue';
-import type { MemoryBudget, Server, ServerOptions } from '@/lib/servers';
+import type {
+    MemoryBudget,
+    PackPlatform,
+    Server,
+    ServerOptions,
+} from '@/lib/servers';
 import { PACK_TYPES, title, typeLabels } from '@/lib/servers';
 
 const props = defineProps<{
@@ -32,8 +37,8 @@ const loaderTypes = computed(() =>
 const initialType = props.server?.server_type ?? 'PAPER';
 const isPack = ref(PACK_TYPES.includes(initialType));
 const loader = ref(isPack.value ? 'PAPER' : initialType);
-const platform = ref<'MODRINTH' | 'AUTO_CURSEFORGE'>(
-    initialType === 'AUTO_CURSEFORGE' ? 'AUTO_CURSEFORGE' : 'MODRINTH',
+const platform = ref<PackPlatform>(
+    isPack.value ? (initialType as PackPlatform) : 'MODRINTH',
 );
 const typeButton =
     'flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50';

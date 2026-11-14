@@ -56,6 +56,7 @@ test('an admin creates a server and its node is told to create and start it', fu
             'mode' => 'survival',
             'max_players' => 20,
             'modpack' => null,
+            'modpack_version' => null,
             'cf_api_key' => null,
             'bluemap' => false,
             'ops' => [],

@@ -5,6 +5,7 @@ import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import Sparkline from '@/components/Sparkline.vue';
 import type { Players, Server, States, Usage } from '@/lib/servers';
+import { bytesLabel } from '@/lib/servers';
 
 type Line = { id: number; text: string; kind: 'log' | 'command' | 'reply' };
 
@@ -335,6 +336,21 @@ onBeforeUnmount(() => {
                                 :max="latest.memory_limit"
                                 label="Memory use over the last ten minutes"
                             />
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-muted-foreground">Disk</span>
+                            <span
+                                class="font-semibold text-primary tabular-nums"
+                            >
+                                {{
+                                    states?.servers[server.slug]?.disk_bytes
+                                        ? bytesLabel(
+                                              states.servers[server.slug]
+                                                  .disk_bytes!,
+                                          )
+                                        : 'Not measured yet'
+                                }}
+                            </span>
                         </div>
                         <p class="text-[0.8125rem] text-muted-foreground">
                             The last 10 minutes, measured every 10 seconds.

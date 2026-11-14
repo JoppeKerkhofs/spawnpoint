@@ -47,6 +47,12 @@ class ServerController extends Controller
             return back()->withErrors(['node' => __('The server was not created.')]);
         }
 
+        if ($request->boolean('world_zip')) {
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Server created. Choose your world .zip under "Import a world"; the server starts once it is in.')]);
+
+            return to_route('servers.backups', $server);
+        }
+
         return to_route('servers.show', $server);
     }
 

@@ -65,6 +65,8 @@ const PLAYERS_MAX_AGE_SECS: u64 = 10;
 // One usage sample every ten seconds, kept for ten minutes.
 const USAGE_INTERVAL_SECS: u64 = 10;
 const USAGE_SAMPLES: usize = 60;
+// Walking a world folder costs more than a sample, so its size is measured once a minute.
+const DISK_EVERY_SAMPLES: u64 = 6;
 const MAX_COMMAND_CHARS: usize = 500;
 // Also bounds what a gzipped log may expand to.
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
@@ -91,6 +93,13 @@ pub struct AppState {
     players: Arc<Mutex<HashMap<String, (u64, Value)>>>,
     // CPU and memory of each running server over the last ten minutes, oldest first.
     usage: Arc<Mutex<HashMap<String, VecDeque<Value>>>>,
+    // Bytes on disk of each server's folder, measured now and then.
+    disk: Arc<Mutex<HashMap<String, u64>>>,
+    // One entry per backup that is running, to stop it with.
+    pub cancels: Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
+    // Per server: the start it belongs to and the moment that start finished booting. Jars newer
+    // than that moment were added by a person, not installed by the image, and are not loaded yet.
+    booted: Arc<Mutex<HashMap<String, (String, u64)>>>,
 }
 
 #[cfg(test)]
@@ -106,6 +115,9 @@ impl AppState {
             tasks: Tasks::default(),
             players: Default::default(),
             usage: Default::default(),
+            disk: Default::default(),
+            cancels: Default::default(),
+            booted: Default::default(),
         }
     }
 }
@@ -128,6 +140,9 @@ struct ServerConfig {
     modpack: Option<String>,
     #[serde(default)]
     cf_api_key: Option<String>,
+    // A specific FTB pack version; none installs the newest.
+    #[serde(default)]
+    modpack_version: Option<String>,
     // Publishes the server's BlueMap web map under /<slug>/ on the map port.
     #[serde(default)]
     bluemap: bool,
@@ -175,6 +190,8 @@ fn valid_modpack(server_type: &str, modpack: Option<&str>) -> bool {
         // A project slug or id, or a link to a project or version page.
         ("MODRINTH", Some(pack)) => plain(pack.strip_prefix("https://modrinth.com/").unwrap_or(pack), b"._-/"),
         ("AUTO_CURSEFORGE", Some(pack)) => plain(pack, b"-"),
+        // FTB packs go by number.
+        ("FTBA", Some(pack)) => pack.len() <= 9 && plain(pack, b"") && pack.bytes().all(|b| b.is_ascii_digit()),
         _ => false,
     }
 }
@@ -200,6 +217,8 @@ impl ServerConfig {
             Err("cf_api_key")
         } else if self.server_type == "AUTO_CURSEFORGE" && self.cf_api_key.is_none() {
             Err("cf_api_key")
+        } else if self.modpack_version.as_deref().is_some_and(|version| version.is_empty() || version.len() > 9 || !version.bytes().all(|b| b.is_ascii_digit())) {
+            Err("modpack_version")
         } else if !version_ok {
             Err("mc_version")
         } else if !(512..=65536).contains(&self.memory_mb) {
@@ -237,6 +256,12 @@ impl ServerConfig {
             ("AUTO_CURSEFORGE", Some(pack)) => {
                 env.push(format!("CF_SLUG={pack}"));
                 env.push(format!("CF_API_KEY={}", self.cf_api_key.as_deref().unwrap_or_default()));
+            }
+            ("FTBA", Some(pack)) => {
+                env.push(format!("FTB_MODPACK_ID={pack}"));
+                if let Some(version) = &self.modpack_version {
+                    env.push(format!("FTB_MODPACK_VERSION_ID={version}"));
+                }
             }
             _ => {}
         }
@@ -331,7 +356,7 @@ pub async fn managed(docker: &Docker, slug: &str) -> Result<Option<ContainerInsp
 }
 
 // Records whether a server was stopped on purpose, so a reboot brings back only the others.
-fn set_stopped(state: &AppState, slug: &str, stopped: bool) {
+pub fn set_stopped(state: &AppState, slug: &str, stopped: bool) {
     let dir = FsPath::new(&*state.data_dir).join(STOPPED_DIR);
     let result = if stopped {
         std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(slug), ""))
@@ -437,6 +462,7 @@ async fn apply(
     if let (None, Some(source)) = (existing, &import) {
         backups::seed_world(&state, &slug, source).await?;
     }
+    backups::ensure_folder(&state, &slug).await?;
 
     let image = format!("{IMAGE}:java{}", config.java_version);
     // ponytail: pulled only when missing, so image updates need a manual pull; add an update action later.
@@ -592,6 +618,8 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
 
     let mut servers: HashMap<String, (String, Option<String>)> = HashMap::new();
     let mut player_counts: HashMap<String, Value> = HashMap::new();
+    // Mod and plugin jars put in place after the server last started, so not loaded yet.
+    let mut changed_mods: HashMap<String, usize> = HashMap::new();
     for container in containers {
         let names = container.names.unwrap_or_default();
         let Some(slug) = names.first().and_then(|name| name.strip_prefix("/mc-")) else {
@@ -599,9 +627,12 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
         };
         // One inspect per server: the list call has no exit code or health.
         if let Ok(Some(inspected)) = managed(&state.docker, slug).await {
-            let (label, detail) = describe(&inspected.state.unwrap_or_default());
+            let (label, detail) = describe(inspected.state.as_ref().unwrap_or(&ContainerState::default()));
             if label == "running" {
                 player_counts.insert(slug.to_owned(), players(&state, slug).await);
+                let started_at = inspected.state.as_ref().and_then(|state| state.started_at.clone()).unwrap_or_default();
+                let booted = state.booted.lock().unwrap().get(slug).filter(|(start, _)| *start == started_at).map(|(_, at)| *at);
+                changed_mods.insert(slug.to_owned(), booted.map_or(0, |booted| mods_newer_than(&state, slug, booted)));
             }
             servers.insert(slug.to_owned(), (label.to_owned(), detail));
         }
@@ -616,6 +647,9 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     }
 
     let usage = state.usage.lock().unwrap().clone();
+    let disk = state.disk.lock().unwrap().clone();
+    let last_backups: HashMap<String, u64> =
+        servers.keys().filter_map(|slug| Some((slug.clone(), backups::latest(&state, slug)?))).collect();
 
     Ok(Json(Value::Array(
         servers
@@ -624,7 +658,12 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
                 // A busy server (backing up, restarting) reports no players, even if it had some a moment ago.
                 let players = if state == "running" { player_counts.remove(&slug) } else { None };
                 let usage = if state == "running" { usage.get(&slug).and_then(|samples| samples.back().cloned()) } else { None };
-                json!({ "slug": slug, "state": state, "detail": detail, "players": players, "usage": usage })
+                json!({
+                    "slug": slug, "state": state, "detail": detail, "players": players, "usage": usage,
+                    "disk_bytes": disk.get(&slug),
+                    "last_backup": last_backups.get(&slug),
+                    "mods_changed": changed_mods.get(&slug).copied().unwrap_or(0),
+                })
             })
             .collect(),
     )))
@@ -741,6 +780,22 @@ async fn players(state: &AppState, slug: &str) -> Value {
     value
 }
 
+fn mods_newer_than(state: &AppState, slug: &str, since: u64) -> usize {
+    ["mods", "plugins"]
+        .iter()
+        .flat_map(|folder| std::fs::read_dir(FsPath::new(&*state.data_dir).join(slug).join(folder)).into_iter().flatten().flatten())
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".jar"))
+        .filter_map(|entry| entry.metadata().ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok())
+        .filter(|modified| modified.as_secs() > since)
+        .count()
+}
+
+async fn folder_bytes(path: PathBuf) -> Option<u64> {
+    let output = tokio::process::Command::new("du").arg("-sb").arg(&path).output().await.ok()?;
+
+    String::from_utf8_lossy(&output.stdout).split_whitespace().next()?.parse().ok()
+}
+
 // CPU is the share of one core used since the previous sample, so the first sample reads 0.
 fn usage_sample(previous_cpu: &mut Option<(u64, u64)>, sample: ContainerStatsResponse) -> Value {
     let cpu = sample.cpu_stats.unwrap_or_default();
@@ -769,9 +824,12 @@ async fn monitor(state: AppState) {
     let mut previous_cpu: HashMap<String, Option<(u64, u64)>> = HashMap::new();
     let mut tick = tokio::time::interval(Duration::from_secs(USAGE_INTERVAL_SECS));
     let label = format!("{MANAGED_LABEL}=true");
+    let mut round = 0u64;
 
     loop {
         tick.tick().await;
+        let measure_disk = round % DISK_EVERY_SAMPLES == 0;
+        round += 1;
 
         let filters = HashMap::from([("label", vec![label.as_str()]), ("status", vec!["running"])]);
         let options = ListContainersOptionsBuilder::default().filters(&filters).build();
@@ -798,6 +856,23 @@ async fn monitor(state: AppState) {
                 }
             }
             players(&state, slug).await;
+
+            // Once per start, when the server first answers as running: from then on a new jar is a person's doing.
+            if let Ok(Some(inspected)) = managed(&state.docker, slug).await {
+                let container = inspected.state.unwrap_or_default();
+                let started_at = container.started_at.clone().unwrap_or_default();
+                let mut booted = state.booted.lock().unwrap();
+                if describe(&container).0 == "running" && booted.get(slug).is_none_or(|(start, _)| *start != started_at) {
+                    booted.insert(slug.clone(), (started_at, unix_now()));
+                }
+            }
+
+            // Also the first time a server is seen, so a new one has a figure at once.
+            if measure_disk || !state.disk.lock().unwrap().contains_key(slug) {
+                if let Some(bytes) = folder_bytes(FsPath::new(&*state.data_dir).join(slug)).await {
+                    state.disk.lock().unwrap().insert(slug.clone(), bytes);
+                }
+            }
         }
 
         previous_cpu.retain(|slug, _| running.contains(slug));
@@ -1026,6 +1101,9 @@ async fn main() {
         tasks: Tasks::default(),
         players: Default::default(),
         usage: Default::default(),
+        disk: Default::default(),
+        cancels: Default::default(),
+        booted: Default::default(),
     };
     let app = Router::new()
         .route("/servers", get(list_servers))
@@ -1039,6 +1117,7 @@ async fn main() {
         .route("/servers/{slug}/files/mkdir", post(files::mkdir))
         .route("/servers/{slug}/files/rename", post(files::rename))
         .route("/servers/{slug}/backups", get(backups::list).post(backups::create))
+        .route("/servers/{slug}/backups/running", axum::routing::delete(backups::cancel))
         .route("/servers/{slug}/backups/{name}", axum::routing::delete(backups::delete))
         .route("/servers/{slug}/backups/{name}/restore", post(backups::restore_backup))
         .route("/servers/{slug}/backups/{name}/lock", post(backups::lock))
@@ -1185,6 +1264,16 @@ mod tests {
         assert_eq!(pack("MODRINTH", json!("https://modrinth.com/modpack/cobblemon-fabric/version/1.6")).validate(), Ok(()));
         assert!(pack("MODRINTH", json!("cobblemon-fabric")).env().contains(&"MODRINTH_MODPACK=cobblemon-fabric".to_owned()));
         assert!(pack("AUTO_CURSEFORGE", json!("all-the-mods-10")).env().contains(&"CF_API_KEY=$2a$10$key".to_owned()));
+        let ftb = config(|value| {
+            value["server_type"] = json!("FTBA");
+            value["modpack"] = json!("100");
+            value["modpack_version"] = json!("100359");
+        })
+        .unwrap();
+        assert_eq!(ftb.validate(), Ok(()));
+        assert!(ftb.env().contains(&"FTB_MODPACK_ID=100".to_owned()) && ftb.env().contains(&"FTB_MODPACK_VERSION_ID=100359".to_owned()));
+        assert_eq!(pack("FTBA", json!("stoneblock")).validate(), Err("server_type"));
+        assert_eq!(config(|value| value["modpack_version"] = json!("1.2; x")).unwrap().validate(), Err("modpack_version"));
         assert_eq!(pack("MODRINTH", Value::Null).validate(), Err("server_type"));
         assert_eq!(pack("PAPER", json!("some-pack")).validate(), Err("server_type"));
         assert_eq!(pack("MODRINTH", json!("https://evil.example/pack.mrpack")).validate(), Err("server_type"));

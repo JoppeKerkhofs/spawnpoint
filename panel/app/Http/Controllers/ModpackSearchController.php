@@ -33,4 +33,22 @@ class ModpackSearchController extends Controller
             return response()->json(['message' => __('The modpack list could not be loaded.')], 502);
         }
     }
+
+    /**
+     * List the versions of one pack, so a specific one can be installed instead of the newest.
+     */
+    public function versions(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'platform' => ['required', Rule::in(['MODRINTH', 'FTBA'])],
+            // A slug or number only: it becomes part of an address on the platform's API.
+            'project' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9._-]+$/'],
+        ]);
+
+        try {
+            return response()->json(['versions' => Modpacks::versions($input['platform'], $input['project'])]);
+        } catch (ConnectionException|RequestException) {
+            return response()->json(['versions' => []]);
+        }
+    }
 }

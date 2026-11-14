@@ -12,7 +12,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { Server, States } from '@/lib/servers';
-import { files } from '@/routes/servers';
+import { files, power } from '@/routes/servers';
 import {
     destroy,
     download,
@@ -34,6 +34,28 @@ const props = defineProps<{
 }>();
 
 const slug = computed(() => ({ server: props.server.slug }));
+
+const modsChanged = computed(
+    () => props.states?.servers[props.server.slug]?.mods_changed ?? 0,
+);
+
+// Lines the Configuration form owns: the image rewrites them on every start.
+const managedKeys = [
+    'motd',
+    'difficulty',
+    'gamemode',
+    'max-players',
+    'white-list',
+    'enforce-whitelist',
+    'level-seed',
+];
+const managedLines = computed(() =>
+    props.file?.path === 'server.properties'
+        ? managedKeys.filter((key) =>
+              new RegExp(`^${key}=`, 'm').test(draft.value),
+          )
+        : [],
+);
 const join = (name: string) => (props.path ? `${props.path}/${name}` : name);
 
 const crumbs = computed(() => {
@@ -186,6 +208,34 @@ const size = (entry: Entry) => {
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="files" />
+
+        <div
+            v-if="modsChanged"
+            role="status"
+            class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-card px-4 py-3 text-sm"
+        >
+            <span class="min-w-0 flex-1">
+                {{ modsChanged }} mod or plugin
+                {{ modsChanged === 1 ? 'file was' : 'files were' }} added or
+                replaced since the last start.
+                {{ modsChanged === 1 ? 'It loads' : 'They load' }} on the next
+                restart.
+            </span>
+            <Button
+                type="button"
+                variant="outline"
+                class="border-primary"
+                @click="
+                    router.post(
+                        power.url({ ...slug, action: 'restart' }),
+                        {},
+                        { preserveScroll: true, only: ['states'] },
+                    )
+                "
+            >
+                Restart now
+            </Button>
+        </div>
 
         <p
             v-if="error"
@@ -441,9 +491,15 @@ const size = (entry: Entry) => {
                 <div
                     class="border-t border-divider px-4 py-2.5 text-[0.8125rem] text-muted-foreground"
                 >
-                    In server.properties, the settings from the Configuration
-                    form are rewritten on every start, so change those there.
-                    Other changes apply on the next restart.
+                    <template v-if="managedLines.length">
+                        These lines are set in Configuration and rewritten on
+                        every start, so change them there:
+                        <code class="font-mono">{{
+                            managedLines.join(', ')
+                        }}</code
+                        >.
+                    </template>
+                    Changes apply on the next restart.
                 </div>
             </section>
         </div>

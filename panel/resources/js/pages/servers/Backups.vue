@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Form, Head, router } from '@inertiajs/vue3';
+import { Form, Head, router, usePage } from '@inertiajs/vue3';
 import { Download, Lock, LockOpen, Plus, Trash2 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
@@ -12,6 +13,7 @@ import type { Server, States } from '@/lib/servers';
 import { title } from '@/lib/servers';
 import { importMethod } from '@/routes/servers';
 import {
+    cancel,
     destroy,
     download,
     lock,
@@ -25,7 +27,15 @@ import {
     update as updateSchedule,
 } from '@/routes/servers/schedules';
 
-type Backup = { name: string; size: number; created: number; locked: boolean };
+type Backup = {
+    name: string;
+    size: number;
+    created: number;
+    locked: boolean;
+    status: 'completed' | 'running' | 'failed';
+    by: string | null;
+    reason: string | null;
+};
 type Schedule = {
     id: number;
     action: string;
@@ -41,6 +51,7 @@ const props = defineProps<{
     backups: Backup[];
     imports: string[];
     schedules: Schedule[];
+    upload: { url: string };
     error: string | null;
     timezone: string;
 }>();
@@ -79,9 +90,22 @@ const removeSchedule = (schedule: Schedule) => {
     );
 };
 
-const totalSize = computed(() =>
-    props.backups.reduce((total, backup) => total + backup.size, 0),
+const completed = computed(() =>
+    props.backups.filter((backup) => backup.status === 'completed'),
 );
+
+const totalSize = computed(() =>
+    completed.value.reduce((total, backup) => total + backup.size, 0),
+);
+
+// A rough figure: how far the archive is, measured against the size of the last finished one.
+const progress = (backup: Backup) => {
+    const previous = completed.value[0]?.size;
+
+    return previous
+        ? `about ${Math.min(99, Math.round((backup.size / previous) * 100))}%`
+        : size(backup.size);
+};
 
 const size = (bytes: number) =>
     bytes >= 1024 ** 3
@@ -129,14 +153,59 @@ const toggleLock = (backup: Backup) => {
     );
 };
 
-const confirmImport = (event: Event) => {
+const page = usePage();
+const zipFile = ref<HTMLInputElement>();
+const hostWorld = ref(props.imports[0] ?? '');
+const importing = ref('');
+
+const startImport = (path: string) => {
+    router.post(
+        importMethod.url(slug.value),
+        // A server that has never run was made to receive this world, so it is started afterwards.
+        { source: importSource.value, path, start: true },
+        { preserveScroll: true, onFinish: () => (importing.value = '') },
+    );
+};
+
+const submitImport = () => {
+    const file = zipFile.value?.files?.[0];
+
+    if (importSource.value === 'zip' && !file) {
+        return;
+    }
     if (
         !confirm(
-            "Replace this server's world? The server stops, the current state is backed up first, then the world is replaced.",
+            "Replace this server's world? The server stops, its current files are backed up first, then the world is replaced.",
         )
     ) {
-        event.preventDefault();
+        return;
     }
+    if (importSource.value === 'host') {
+        importing.value = 'Starting the import…';
+        startImport(hostWorld.value);
+
+        return;
+    }
+
+    // The zip goes straight to the Rust service, so its size is not limited by PHP.
+    importing.value = `Uploading ${file!.name}…`;
+    router.reload({
+        only: ['upload'],
+        onSuccess: async () => {
+            const response = await fetch(
+                `${props.upload.url}&path=&name=world-import.zip`,
+                { method: 'PUT', body: file },
+            ).catch(() => null);
+
+            if (response?.ok) {
+                startImport('world-import.zip');
+            } else {
+                importing.value = '';
+                toast.error('The zip could not be uploaded.');
+            }
+        },
+        onError: () => (importing.value = ''),
+    });
 };
 </script>
 
@@ -188,7 +257,13 @@ const confirmImport = (event: Event) => {
                                     Created
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
+                                    Status
+                                </th>
+                                <th scope="col" class="px-4 py-2 font-normal">
                                     Size
+                                </th>
+                                <th scope="col" class="px-4 py-2 font-normal">
+                                    By
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
                                     Actions
@@ -201,26 +276,81 @@ const confirmImport = (event: Event) => {
                                 :key="backup.name"
                                 class="border-t border-divider"
                             >
-                                <td class="px-4 py-2">
+                                <td class="px-4 py-2 whitespace-nowrap">
                                     {{ when(backup) }}
-                                    <span
-                                        v-if="backup.locked"
-                                        class="ml-2 inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground"
+                                </td>
+                                <td class="px-4 py-2 text-sm">
+                                    <template
+                                        v-if="backup.status === 'running'"
                                     >
-                                        <Lock
-                                            class="size-3"
-                                            aria-hidden="true"
-                                        />
-                                        Locked
-                                    </span>
+                                        Running, {{ progress(backup) }}
+                                    </template>
+                                    <template
+                                        v-else-if="backup.status === 'failed'"
+                                    >
+                                        <span
+                                            class="font-semibold text-destructive"
+                                            >Failed</span
+                                        >
+                                        <span
+                                            class="block break-words text-muted-foreground"
+                                            >{{ backup.reason }}</span
+                                        >
+                                    </template>
+                                    <template v-else>
+                                        Completed
+                                        <span
+                                            v-if="backup.locked"
+                                            class="ml-1 inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground"
+                                        >
+                                            <Lock
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            Locked
+                                        </span>
+                                    </template>
                                 </td>
                                 <td
                                     class="px-4 py-2 text-sm whitespace-nowrap text-muted-foreground tabular-nums"
                                 >
-                                    {{ size(backup.size) }}
+                                    {{
+                                        backup.status === 'completed'
+                                            ? size(backup.size)
+                                            : '—'
+                                    }}
+                                </td>
+                                <td
+                                    class="px-4 py-2 text-sm text-muted-foreground"
+                                >
+                                    {{ backup.by ?? '—' }}
                                 </td>
                                 <td class="px-4 py-2">
-                                    <div class="flex flex-wrap gap-2">
+                                    <Button
+                                        v-if="backup.status === 'running'"
+                                        type="button"
+                                        variant="outline"
+                                        class="border-primary"
+                                        @click="
+                                            router.delete(
+                                                cancel.url(slug),
+                                                reloadList,
+                                            )
+                                        "
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        v-else-if="backup.status === 'failed'"
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        :aria-label="`Remove the failed backup from ${when(backup)}`"
+                                        @click="deleteBackup(backup)"
+                                    >
+                                        <Trash2 aria-hidden="true" />
+                                    </Button>
+                                    <div v-else class="flex flex-wrap gap-2">
                                         <Button
                                             type="button"
                                             variant="outline"
@@ -278,7 +408,7 @@ const confirmImport = (event: Event) => {
                             </tr>
                             <tr v-if="!backups.length">
                                 <td
-                                    colspan="3"
+                                    colspan="5"
                                     class="border-t border-divider px-4 py-3 text-sm text-muted-foreground"
                                 >
                                     No backups yet.
@@ -472,8 +602,8 @@ const confirmImport = (event: Event) => {
                             <dt class="text-muted-foreground">Using</dt>
                             <dd class="tabular-nums">
                                 {{ size(totalSize) }} for
-                                {{ backups.length }} backup{{
-                                    backups.length === 1 ? '' : 's'
+                                {{ completed.length }} backup{{
+                                    completed.length === 1 ? '' : 's'
                                 }}
                             </dd>
                         </dl>
@@ -485,12 +615,9 @@ const confirmImport = (event: Event) => {
                 </SectionCard>
 
                 <SectionCard title="Import a world">
-                    <Form
-                        v-bind="importMethod.form(slug)"
-                        :options="{ preserveScroll: true }"
+                    <form
                         class="flex flex-col gap-3"
-                        v-slot="{ errors, processing }"
-                        @submit.capture="confirmImport"
+                        @submit.prevent="submitImport"
                     >
                         <div
                             role="radiogroup"
@@ -501,17 +628,15 @@ const confirmImport = (event: Event) => {
                                 <input
                                     v-model="importSource"
                                     type="radio"
-                                    name="source"
                                     value="zip"
                                     class="size-4 accent-primary"
                                 />
-                                A .zip uploaded in Files
+                                A world .zip from this computer
                             </label>
                             <label class="flex items-center gap-2 text-sm">
                                 <input
                                     v-model="importSource"
                                     type="radio"
-                                    name="source"
                                     value="host"
                                     class="size-4 accent-primary"
                                 />
@@ -520,19 +645,21 @@ const confirmImport = (event: Event) => {
                         </div>
 
                         <div v-if="importSource === 'zip'" class="grid gap-2">
-                            <Label for="import_zip">Path of the zip</Label>
-                            <Input
+                            <Label for="import_zip">World .zip</Label>
+                            <input
                                 id="import_zip"
-                                name="path"
+                                ref="zipFile"
+                                type="file"
+                                accept=".zip,application/zip"
                                 required
-                                placeholder="world.zip"
+                                class="text-sm file:mr-3 file:h-9 file:cursor-pointer file:rounded-md file:border file:border-solid file:border-primary file:bg-card file:px-3 file:text-sm file:text-primary"
                             />
                         </div>
                         <div v-else class="grid gap-2">
                             <Label for="import_host">Folder on the host</Label>
                             <select
                                 id="import_host"
-                                name="path"
+                                v-model="hostWorld"
                                 required
                                 class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
                             >
@@ -554,19 +681,31 @@ const confirmImport = (event: Event) => {
                                 }}
                             </span>
                         </div>
-                        <InputError :message="errors.path || errors.source" />
+                        <InputError
+                            :message="
+                                page.props.errors.path ||
+                                page.props.errors.source
+                            "
+                        />
+                        <p
+                            v-if="importing"
+                            role="status"
+                            class="text-sm text-muted-foreground"
+                        >
+                            {{ importing }}
+                        </p>
 
                         <Button
                             variant="outline"
                             class="self-start border-primary"
                             :disabled="
-                                processing ||
+                                !!importing ||
                                 (importSource === 'host' && !imports.length)
                             "
                         >
                             Import and replace world
                         </Button>
-                    </Form>
+                    </form>
                 </SectionCard>
             </aside>
         </div>

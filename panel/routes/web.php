@@ -25,6 +25,7 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
         Route::get('servers/{server}/configuration', [ServerController::class, 'configuration'])->name('servers.configuration');
         Route::get('modpacks/search', ModpackSearchController::class)->name('modpacks.search');
+        Route::get('modpacks/versions', [ModpackSearchController::class, 'versions'])->name('modpacks.versions');
         Route::get('servers/{server}/files', [FileController::class, 'index'])->name('servers.files');
         Route::put('servers/{server}/files/content', [FileController::class, 'save'])->name('servers.files.save');
         Route::post('servers/{server}/files/folder', [FileController::class, 'folder'])->name('servers.files.folder');
@@ -33,6 +34,7 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::get('servers/{server}/files/download', [FileController::class, 'download'])->name('servers.files.download');
         Route::get('servers/{server}/backups', [BackupController::class, 'index'])->name('servers.backups');
         Route::post('servers/{server}/backups', [BackupController::class, 'store'])->name('servers.backups.store');
+        Route::delete('servers/{server}/backups/running', [BackupController::class, 'cancel'])->name('servers.backups.cancel');
         Route::put('servers/{server}/backups/retention', [BackupController::class, 'retention'])->name('servers.backups.retention');
         Route::post('servers/{server}/schedules', [ScheduleController::class, 'store'])->name('servers.schedules.store');
         Route::put('servers/{server}/schedules/{schedule}', [ScheduleController::class, 'update'])->name('servers.schedules.update');
@@ -43,8 +45,11 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
             Route::post('servers/{server}/backups/{backup}/restore', [BackupController::class, 'restore'])->name('servers.backups.restore');
             Route::post('servers/{server}/backups/{backup}/lock', [BackupController::class, 'lock'])->name('servers.backups.lock');
             Route::get('servers/{server}/backups/{backup}/download', [BackupController::class, 'download'])->name('servers.backups.download');
-            Route::delete('servers/{server}/backups/{backup}', [BackupController::class, 'destroy'])->name('servers.backups.destroy');
         });
+        // Also the record of a failed backup, which has no archive.
+        Route::delete('servers/{server}/backups/{backup}', [BackupController::class, 'destroy'])
+            ->where('backup', '[0-9]{1,12}((\.locked)?\.tar\.gz|\.failed)')
+            ->name('servers.backups.destroy');
         Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
         Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
         Route::post('servers/{server}/power/{action}', [ServerController::class, 'power'])

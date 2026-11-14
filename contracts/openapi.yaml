@@ -139,6 +139,98 @@ paths:
               schema: { $ref: "#/components/schemas/Message" }
         "403": { description: The token lacks backups:manage, or its owner is not an admin }
         "502": { description: The Rust service did not answer or refused }
+  /servers/{slug}/files:
+    get:
+      summary: List a folder, or read a text file
+      description: >
+        Needs files:read and an admin owner. With "file=1" the path is read as a text file of up to
+        1 MB; otherwise it is listed as a folder.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: path, in: query, description: Inside the server's folder; empty for its top., schema: { type: string } }
+        - { name: file, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Either "entries", or "content"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        dir: { type: boolean }
+                        size: { type: integer, description: Bytes, or the number of items for a folder. }
+                        modified: { type: integer, description: Unix seconds. }
+                  content: { type: string }
+        "403": { description: The token lacks files:read, its owner is not an admin, or the path leaves the folder }
+        "404": { description: No such file or folder }
+        "413": { description: Too large to read as text; download it instead }
+        "415": { description: Not a text file }
+        "422": { description: Not a path inside the server's folder }
+    put:
+      summary: Write a text file
+      description: Needs files:write and an admin owner.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string }
+                content: { type: string, maxLength: 1048576 }
+      responses:
+        "200": { description: Saved }
+        "403": { description: The token lacks files:write, or its owner is not an admin }
+        "409": { description: The folder is missing, or the path is a folder }
+    delete:
+      summary: Delete a file, or a folder with everything in it
+      description: Needs files:write and an admin owner.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string }
+      responses:
+        "200": { description: Deleted }
+        "403": { description: The token lacks files:write, or its owner is not an admin }
+        "404": { description: No such file or folder }
+  /servers/{slug}/files/transfer:
+    get:
+      summary: Get addresses for uploading and downloading files of any size
+      description: >
+        Needs files:write and an admin owner. Both addresses hold a token that is valid for five
+        minutes. Upload with PUT to the upload address plus "&path=<folder>&name=<file name>" and the
+        file as the body; download with GET from the download address plus "&path=<file>".
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The two addresses
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload, download]
+                properties:
+                  upload: { type: string }
+                  download: { type: string }
+        "403": { description: The token lacks files:write, or its owner is not an admin }
   /servers/{slug}/power/{action}:
     post:
       summary: Start, stop, restart or kill a server
@@ -175,7 +267,7 @@ components:
         hostname: { type: string, examples: [survival.mc.example.com] }
         server_type:
           type: string
-          enum: [VANILLA, PAPER, FABRIC, FORGE, NEOFORGE, MODRINTH, AUTO_CURSEFORGE]
+          enum: [VANILLA, PAPER, FABRIC, FORGE, NEOFORGE, MODRINTH, AUTO_CURSEFORGE, FTBA]
         mc_version: { type: string, examples: [LATEST, "1.21.10"] }
         state:
           type: string
@@ -198,6 +290,12 @@ components:
             cpu: { type: number, description: Percent of one core. }
             memory: { type: integer, description: Bytes. }
             memory_limit: { type: integer, description: Bytes. }
+        disk_bytes:
+          type: [integer, "null"]
+          description: Size of the server's folder, measured about once a minute while it runs.
+        last_backup:
+          type: [integer, "null"]
+          description: Unix seconds of the newest backup.
     Message:
       type: object
       required: [message]

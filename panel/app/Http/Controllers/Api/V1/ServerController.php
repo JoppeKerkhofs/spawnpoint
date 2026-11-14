@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\FileRequest;
 use App\Http\Requests\LogRequest;
 use App\Models\ActivityLog;
 use App\Models\Server;
@@ -85,10 +86,64 @@ class ServerController extends Controller
     {
         abort_unless($request->user()->tokenCan('backups:manage'), 403, 'This token lacks the backups:manage ability.');
 
-        (new NodeClient($server->node))->createBackup($server);
+        (new NodeClient($server->node))->createBackup($server, "{$request->user()->name} (API)");
         ActivityLog::record('backup.create', $server);
 
         return response()->json(['message' => "Accepted: backup of {$server->slug}."], 202);
+    }
+
+    /**
+     * List a folder, or with ?file=1 return a text file. Both take ?path=.
+     */
+    public function files(FileRequest $request, Server $server): JsonResponse
+    {
+        abort_unless($request->user()->tokenCan('files:read'), 403, 'This token lacks the files:read ability.');
+
+        $client = new NodeClient($server->node);
+
+        return response()->json($request->boolean('file')
+            ? ['path' => $request->path(), 'content' => $client->readFile($server, $request->path())]
+            : ['path' => $request->path(), 'entries' => $client->files($server, $request->path())]);
+    }
+
+    /**
+     * Write a text file of up to 1 MB.
+     */
+    public function writeFile(FileRequest $request, Server $server): JsonResponse
+    {
+        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
+
+        (new NodeClient($server->node))->writeFile($server, $request->path(), (string) $request->validated('content'));
+        ActivityLog::record('file.save', $server, ['path' => $request->path()]);
+
+        return response()->json(['message' => 'Saved.']);
+    }
+
+    /**
+     * Delete a file, or a folder with everything in it.
+     */
+    public function deleteFile(FileRequest $request, Server $server): JsonResponse
+    {
+        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
+
+        (new NodeClient($server->node))->deleteFile($server, $request->path());
+        ActivityLog::record('file.delete', $server, ['path' => $request->path()]);
+
+        return response()->json(['message' => 'Deleted.']);
+    }
+
+    /**
+     * Get addresses for sending a file of any size to a folder, or fetching one; valid for five minutes.
+     * Upload with PUT to the upload address plus "&path=<folder>&name=<file name>"; download with
+     * GET from the download address plus "&path=<file>".
+     */
+    public function transfer(Request $request, Server $server): JsonResponse
+    {
+        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
+
+        $client = new NodeClient($server->node);
+
+        return response()->json(['upload' => $client->fileUrl($server, 'upload'), 'download' => $client->fileUrl($server, 'download')]);
     }
 
     /**
@@ -109,6 +164,8 @@ class ServerController extends Controller
             'detail' => $live['detail'] ?? null,
             'players' => $live['players'] ?? null,
             'usage' => $live['usage'] ?? null,
+            'disk_bytes' => $live['disk_bytes'] ?? null,
+            'last_backup' => $live['last_backup'] ?? null,
         ];
     }
 

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { Modpack } from '@/lib/servers';
-import { search } from '@/routes/modpacks';
+import type { Modpack, PackPlatform } from '@/lib/servers';
+import { search, versions as versionsRoute } from '@/routes/modpacks';
 
 type Pack = Modpack & { description: string; downloads: number };
 
@@ -14,14 +14,19 @@ const props = defineProps<{
     error?: string;
 }>();
 
-const platform = defineModel<'MODRINTH' | 'AUTO_CURSEFORGE'>('platform', {
+const platform = defineModel<PackPlatform>('platform', {
     required: true,
 });
 
 const platforms = [
     { value: 'MODRINTH', label: 'Modrinth' },
     { value: 'AUTO_CURSEFORGE', label: 'CurseForge' },
+    { value: 'FTBA', label: 'FTB' },
 ] as const;
+
+const platformLabel = computed(
+    () => platforms.find((option) => option.value === platform.value)!.label,
+);
 
 const query = ref('');
 const packs = ref<Pack[]>([]);
@@ -92,6 +97,44 @@ const pick = (pack: Pack) => {
     link.value = '';
 };
 
+// CurseForge has no version choice here, and a pasted link already names its version.
+const versions = ref<{ id: string; name: string }[]>([]);
+const version = ref(props.initial?.version ?? '');
+
+watch(
+    () => picked.value?.project,
+    async (project, before) => {
+        if (before !== undefined) {
+            version.value = '';
+        }
+        versions.value = [];
+
+        if (
+            !project ||
+            platform.value === 'AUTO_CURSEFORGE' ||
+            project.startsWith('https://')
+        ) {
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                versionsRoute.url({
+                    query: { platform: platform.value, project },
+                }),
+                { headers: { Accept: 'application/json' } },
+            );
+
+            if (response.ok && picked.value?.project === project) {
+                versions.value = (await response.json()).versions;
+            }
+        } catch {
+            // Without the list the newest version is installed, which is the default anyway.
+        }
+    },
+    { immediate: true },
+);
+
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
 </script>
 
@@ -100,6 +143,11 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
         <input type="hidden" name="modpack_project" :value="picked?.project" />
         <input type="hidden" name="modpack_name" :value="picked?.name" />
         <input type="hidden" name="modpack_icon" :value="picked?.icon" />
+        <input
+            type="hidden"
+            name="modpack_version_name"
+            :value="versions.find((entry) => entry.id === version)?.name"
+        />
         <input type="hidden" name="mc_version" value="LATEST" />
 
         <div
@@ -137,7 +185,7 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                     id="pack_search"
                     v-model="query"
                     type="search"
-                    :placeholder="`Search ${platform === 'MODRINTH' ? 'Modrinth' : 'CurseForge'}`"
+                    :placeholder="`Search ${platformLabel}`"
                 />
             </div>
 
@@ -212,6 +260,25 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                 Files.
             </p>
         </template>
+
+        <div v-if="picked && versions.length" class="grid gap-2">
+            <Label for="modpack_version">Pack version</Label>
+            <select
+                id="modpack_version"
+                v-model="version"
+                name="modpack_version"
+                class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
+            >
+                <option value="">Newest</option>
+                <option
+                    v-for="entry in versions"
+                    :key="entry.id"
+                    :value="entry.id"
+                >
+                    {{ entry.name }}
+                </option>
+            </select>
+        </div>
 
         <p v-if="picked" class="text-sm">
             <span class="text-muted-foreground">Selected:</span>

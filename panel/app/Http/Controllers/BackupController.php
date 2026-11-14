@@ -35,6 +35,8 @@ class BackupController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'backups' => $backups ?? [],
             'imports' => $imports ?? [],
+            // A closure, so an upload can ask for a fresh token first.
+            'upload' => fn () => ['url' => $client->fileUrl($server, 'upload')],
             'schedules' => $server->schedules()->orderBy('time')->get(['id', 'action', 'time', 'weekday', 'command', 'is_active']),
             'error' => $error ?? null,
             'timezone' => config('app.timezone'),
@@ -44,12 +46,25 @@ class BackupController extends Controller
     /**
      * Start a backup now.
      */
-    public function store(Server $server): RedirectResponse
+    public function store(Request $request, Server $server): RedirectResponse
     {
-        $this->attempt(function () use ($server): void {
-            (new NodeClient($server->node))->createBackup($server);
+        $this->attempt(function () use ($request, $server): void {
+            (new NodeClient($server->node))->createBackup($server, $request->user()->name);
             ActivityLog::record('backup.create', $server);
         }, __('Backup started.'));
+
+        return back();
+    }
+
+    /**
+     * Stop the backup that is running.
+     */
+    public function cancel(Server $server): RedirectResponse
+    {
+        $this->attempt(function () use ($server): void {
+            (new NodeClient($server->node))->cancelBackup($server);
+            ActivityLog::record('backup.cancel', $server);
+        }, __('Backup cancelled.'), [404 => __('No backup is running any more.')]);
 
         return back();
     }
@@ -122,11 +137,12 @@ class BackupController extends Controller
      */
     public function import(FileRequest $request, Server $server): RedirectResponse
     {
-        $source = $request->validate(['source' => ['required', Rule::in(['zip', 'host'])]])['source'];
+        $input = $request->validate(['source' => ['required', Rule::in(['zip', 'host'])], 'start' => ['nullable', 'boolean']]);
+        $source = $input['source'];
 
         $this->attempt(
-            function () use ($server, $source, $request): void {
-                (new NodeClient($server->node))->importWorld($server, $source, $request->path());
+            function () use ($server, $source, $input, $request): void {
+                (new NodeClient($server->node))->importWorld($server, $source, $request->path(), (bool) ($input['start'] ?? false));
                 ActivityLog::record('world.import', $server, ['source' => $source, 'path' => $request->path()]);
             },
             __('Import started. The current world is backed up first.'),

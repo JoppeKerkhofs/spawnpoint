@@ -10,7 +10,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
     $this->server = Server::factory()->create(['slug' => 'survival', 'backup_keep' => 7]);
-    $this->actingAs(User::factory()->admin()->create());
+    $this->admin = User::factory()->admin()->create(['name' => 'Joppe']);
+    $this->actingAs($this->admin);
 });
 
 test('the backups page lists backups and importable worlds from the node', function () {
@@ -37,7 +38,8 @@ test('a manual backup passes the retention count to the node', function () {
 
     Http::assertSent(fn (Request $request) => $request->method() === 'POST'
         && str_ends_with($request->url(), '/servers/survival/backups')
-        && $request['keep'] === 7);
+        && $request['keep'] === 7
+        && $request['by'] === $this->admin->name);
 });
 
 test('restore, lock, delete and download address the backup by its name', function () {
@@ -56,6 +58,32 @@ test('restore, lock, delete and download address the backup by its name', functi
     $this->get(route('servers.backups.download', [$this->server, $name]))
         ->assertRedirect("http://node.test:8080/servers/survival/backups/{$name}/download?token="
             .NodeClient::token('files', $this->server->node->token, 'survival', now()->getTimestamp() + 300, false));
+});
+
+test('a running backup can be cancelled and the record of a failed one deleted', function () {
+    Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
+
+    $this->delete(route('servers.backups.cancel', $this->server))->assertRedirect();
+    $this->delete(route('servers.backups.destroy', [$this->server, '1794600000.failed']))->assertRedirect();
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && str_ends_with($request->url(), '/backups/running'));
+    Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && str_ends_with($request->url(), '/backups/1794600000.failed'));
+    // A failure record cannot be restored or downloaded.
+    $this->post('/servers/survival/backups/1794600000.failed/restore')->assertNotFound();
+    $this->get('/servers/survival/backups/1794600000.failed/download')->assertNotFound();
+});
+
+test('a server made for a world zip is created without starting and lands on backups', function () {
+    Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
+
+    $this->post(route('servers.store'), [
+        'name' => 'Zipped', 'slug' => 'zipped', 'server_type' => 'PAPER', 'mc_version' => 'LATEST', 'java_version' => '25',
+        'memory_mb' => '2048', 'motd' => 'Hi', 'difficulty' => 'normal', 'mode' => 'survival', 'max_players' => '20', 'eula' => '1', 'world_zip' => '1',
+    ])->assertRedirect(route('servers.backups', 'zipped'));
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['start'] === false);
+
+    $this->post(route('servers.import', 'zipped'), ['source' => 'zip', 'path' => 'world-import.zip', 'start' => '1']);
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/zipped/import') && $request['start'] === true);
 });
 
 test('a backup name that the node did not write is not routed', function (string $name) {
@@ -81,7 +109,7 @@ test('only the schedules due this minute and weekday run, each with its own acti
     $this->artisan('schedules:run')->assertSuccessful();
 
     Http::assertSentCount(3);
-    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/backups') && $request['keep'] === 7);
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/backups') && $request['keep'] === 7 && $request['by'] === 'Schedule');
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/command') && $request['command'] === 'say Backup starting');
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/restart'));
     expect(ActivityLog::query()->where('event', 'schedule.run')->pluck('actor')->unique()->all())->toBe(['System']);
@@ -146,7 +174,7 @@ test('a world import is passed to the node and paths cannot step out', function 
 
     $this->post(route('servers.import', $this->server), ['source' => 'zip', 'path' => 'uploads/world.zip'])->assertSessionHasNoErrors();
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/import')
-        && $request->data() === ['source' => 'zip', 'path' => 'uploads/world.zip']);
+        && $request->data() === ['source' => 'zip', 'path' => 'uploads/world.zip', 'start' => false]);
 });
 
 test('turning bluemap on is passed to the node and shown on the console page', function () {

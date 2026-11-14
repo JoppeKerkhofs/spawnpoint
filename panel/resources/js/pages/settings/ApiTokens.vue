@@ -38,6 +38,8 @@ const abilityLabels: Record<string, string> = {
     'console:use': 'Open the live console',
     'logs:read': 'Read the logs',
     'backups:manage': 'List and start backups',
+    'files:read': 'List folders and read text files',
+    'files:write': 'Write, delete, upload and download files',
 };
 
 const revoke = (token: Token) => {

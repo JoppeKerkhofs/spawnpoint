@@ -17,7 +17,7 @@ class NodeClient
     /**
      * Get the live state of every server on every node, keyed by slug.
      *
-     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null}>}
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
      */
     public static function states(): array
     {
@@ -40,7 +40,7 @@ class NodeClient
     /**
      * Get the live state of the servers on this node, keyed by slug.
      *
-     * @return array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null}>
+     * @return array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -57,6 +57,11 @@ class NodeClient
                 'players' => $server['players'] ?? null,
                 // The latest sample of a running server: CPU percent and memory in bytes.
                 'usage' => $server['usage'] ?? null,
+                'disk_bytes' => $server['disk_bytes'] ?? null,
+                // Unix seconds of the newest backup.
+                'last_backup' => $server['last_backup'] ?? null,
+                // Mod or plugin jars put in place since the server started, so not loaded yet.
+                'mods_changed' => $server['mods_changed'] ?? 0,
             ];
         }
 
@@ -82,7 +87,8 @@ class NodeClient
             'difficulty' => $server->settings['difficulty'],
             'mode' => $server->settings['mode'],
             'max_players' => $server->settings['max_players'],
-            'modpack' => $server->modpack['project'] ?? null,
+            'modpack' => self::modpackReference($server),
+            'modpack_version' => $server->server_type === 'FTBA' ? ($server->modpack['version'] ?? null) : null,
             'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? Setting::value('curseforge_key') : null,
             'bluemap' => $server->bluemap_enabled,
             'ops' => $server->settings['ops'] ?? [],
@@ -254,6 +260,23 @@ class NodeClient
     }
 
     /**
+     * What the node is told to install. A chosen Modrinth version goes in as a link to that version's
+     * page, the one form the Minecraft image accepts for a fixed version.
+     */
+    private static function modpackReference(Server $server): ?string
+    {
+        $pack = $server->modpack;
+
+        if ($pack === null) {
+            return null;
+        }
+
+        return $server->server_type === 'MODRINTH' && filled($pack['version'] ?? null) && ! str_starts_with($pack['project'], 'https://')
+            ? "https://modrinth.com/modpack/{$pack['project']}/version/{$pack['version']}"
+            : $pack['project'];
+    }
+
+    /**
      * Get the memory of the machine the node runs on, in MB.
      *
      * @throws ConnectionException
@@ -267,7 +290,7 @@ class NodeClient
     /**
      * List a server's backups, newest first.
      *
-     * @return list<array{name: string, size: int, created: int, locked: bool}>
+     * @return list<array{name: string, size: int, created: int, locked: bool, status: string, by: string|null, reason: string|null}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -283,9 +306,20 @@ class NodeClient
      * @throws ConnectionException
      * @throws RequestException
      */
-    public function createBackup(Server $server): void
+    public function createBackup(Server $server, string $by): void
     {
-        $this->send('POST', "/servers/{$server->slug}/backups", ['keep' => $server->backup_keep]);
+        $this->send('POST', "/servers/{$server->slug}/backups", ['keep' => $server->backup_keep, 'by' => $by]);
+    }
+
+    /**
+     * Stop the backup that is running.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function cancelBackup(Server $server): void
+    {
+        $this->send('DELETE', "/servers/{$server->slug}/backups/running");
     }
 
     /**
@@ -346,9 +380,9 @@ class NodeClient
      * @throws ConnectionException
      * @throws RequestException
      */
-    public function importWorld(Server $server, string $source, string $path): void
+    public function importWorld(Server $server, string $source, string $path, bool $start = false): void
     {
-        $this->send('POST', "/servers/{$server->slug}/import", ['source' => $source, 'path' => $path]);
+        $this->send('POST', "/servers/{$server->slug}/import", ['source' => $source, 'path' => $path, 'start' => $start]);
     }
 
     /**

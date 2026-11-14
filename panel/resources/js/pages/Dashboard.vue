@@ -6,7 +6,13 @@ import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { Button } from '@/components/ui/button';
 import type { Server, States } from '@/lib/servers';
-import { serverState, software, toneOf, typeLabels } from '@/lib/servers';
+import {
+    bytesLabel,
+    serverState,
+    software,
+    toneOf,
+    typeLabels,
+} from '@/lib/servers';
 import { dashboard } from '@/routes';
 import { create, show } from '@/routes/servers';
 
@@ -59,6 +65,16 @@ const visibleCards = computed(() => {
             (!statusFilter.value || current.state === statusFilter.value),
     );
 });
+
+const lastBackup = computed(() =>
+    Math.max(0, ...cards.value.map((card) => card.current.last_backup ?? 0)),
+);
+
+const shortTime = (seconds: number) =>
+    new Date(seconds * 1000).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    });
 
 const gigabytes = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
 const selectClass =
@@ -138,6 +154,17 @@ const memoryGb = computed(
                 </div>
                 <div class="text-2xl font-bold text-primary tabular-nums">
                     {{ playersOnline }}
+                </div>
+            </div>
+            <div
+                v-if="canManage"
+                class="flex-[1_1_200px] rounded-md border border-border bg-card px-4 py-3.5"
+            >
+                <div class="text-[0.8125rem] text-muted-foreground">
+                    Last backup
+                </div>
+                <div class="text-2xl font-bold text-primary tabular-nums">
+                    {{ lastBackup ? shortTime(lastBackup) : 'None yet' }}
                 </div>
             </div>
             <div
@@ -328,6 +355,25 @@ const memoryGb = computed(
                             >
                         </Button>
                     </ServerPowerButtons>
+                </div>
+
+                <div
+                    v-if="canManage && !current.detail"
+                    class="flex flex-wrap gap-x-4 gap-y-1 border-t border-divider px-4 py-2.5 text-sm text-muted-foreground"
+                >
+                    <span>{{
+                        current.last_backup
+                            ? `Last backup ${shortTime(current.last_backup)}`
+                            : 'No backup yet'
+                    }}</span>
+                    <span v-if="current.disk_bytes"
+                        >{{ bytesLabel(current.disk_bytes) }} on disk</span
+                    >
+                    <span v-if="current.mods_changed"
+                        >{{ current.mods_changed }} mod
+                        {{ current.mods_changed === 1 ? 'file' : 'files' }}
+                        waiting for a restart</span
+                    >
                 </div>
 
                 <div
