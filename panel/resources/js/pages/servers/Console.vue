@@ -4,15 +4,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import Sparkline from '@/components/Sparkline.vue';
-import type { Players, Server, States } from '@/lib/servers';
+import type { Players, Server, States, Usage } from '@/lib/servers';
 
 type Line = { id: number; text: string; kind: 'log' | 'command' | 'reply' };
-type Sample = { cpu: number; memory: number; memory_limit: number };
 
 const props = defineProps<{
     server: Server;
     states?: States;
     console: { url: string };
+    canManage: boolean;
     bluemapUrl: string | null;
 }>();
 
@@ -21,11 +21,14 @@ const ANSI_CODES = new RegExp(
     'g',
 );
 const MAX_LINES = 2000;
-// About ten minutes at one sample a second.
-const MAX_SAMPLES = 600;
+// Ten minutes at one point every ten seconds, the rate the service samples at.
+const MAX_SAMPLES = 60;
+const SAMPLE_SECONDS = 10;
 
 const lines = ref<Line[]>([]);
-const samples = ref<Sample[]>([]);
+const samples = ref<Usage[]>([]);
+// The number next to each graph follows the live stream; the graph itself keeps the slower pace.
+const live = ref<Usage | null>(null);
 const players = ref<Players | null>(null);
 const connected = ref(false);
 const paused = ref(false);
@@ -40,7 +43,7 @@ let partialLine = '';
 let nextId = 0;
 let closing = false;
 
-const latest = computed(() => samples.value.at(-1));
+const latest = computed(() => live.value ?? samples.value.at(-1));
 const gigabytes = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
 
 const append = (text: string, kind: Line['kind']) => {
@@ -67,9 +70,15 @@ const receive = (event: MessageEvent<string>) => {
 
     if (frame.t === 'players') {
         players.value = frame.d;
+    } else if (frame.t === 'history') {
+        samples.value = frame.d;
     } else if (frame.t === 'stats') {
-        samples.value.push(frame);
-        samples.value.splice(0, samples.value.length - MAX_SAMPLES);
+        live.value = frame;
+
+        if (frame.at - (samples.value.at(-1)?.at ?? 0) >= SAMPLE_SECONDS) {
+            samples.value.push(frame);
+            samples.value.splice(0, samples.value.length - MAX_SAMPLES);
+        }
     } else if (frame.t === 'log') {
         // A chunk can end in the middle of a line; keep the rest for the next one.
         const parts = (partialLine + frame.d).split('\n');
@@ -162,7 +171,12 @@ onBeforeUnmount(() => {
     <Head :title="`${server.name} console`" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
-        <ServerHeader :server="server" :states="states" tab="console" />
+        <ServerHeader
+            :server="server"
+            :states="states"
+            :can-manage="canManage"
+            tab="console"
+        />
 
         <div class="flex flex-wrap items-start gap-5">
             <section
@@ -217,7 +231,14 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
+                <p
+                    v-if="!canManage"
+                    class="border-t border-white/10 bg-white/5 px-3.5 py-2.5 text-[0.8125rem] text-white/75"
+                >
+                    You can watch this console. Sending commands is for admins.
+                </p>
                 <form
+                    v-else
                     class="flex flex-wrap items-center gap-2 border-t border-white/10 bg-white/5 px-3.5 py-2.5"
                     @submit.prevent="send"
                 >
@@ -294,7 +315,7 @@ onBeforeUnmount(() => {
                                         ...samples.map((sample) => sample.cpu),
                                     )
                                 "
-                                label="CPU use since this page was opened"
+                                label="CPU use over the last ten minutes"
                             />
                         </div>
                         <div>
@@ -312,12 +333,11 @@ onBeforeUnmount(() => {
                             <Sparkline
                                 :values="samples.map((sample) => sample.memory)"
                                 :max="latest.memory_limit"
-                                label="Memory use since this page was opened"
+                                label="Memory use over the last ten minutes"
                             />
                         </div>
                         <p class="text-[0.8125rem] text-muted-foreground">
-                            Measured while this page is open, up to the last 10
-                            minutes.
+                            The last 10 minutes, measured every 10 seconds.
                         </p>
                     </div>
                 </SectionCard>

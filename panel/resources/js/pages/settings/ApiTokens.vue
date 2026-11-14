@@ -35,6 +35,9 @@ defineOptions({
 const abilityLabels: Record<string, string> = {
     'servers:read': 'List servers and their state',
     'servers:power': 'Start, stop, restart and kill servers',
+    'console:use': 'Open the live console',
+    'logs:read': 'Read the logs',
+    'backups:manage': 'List and start backups',
 };
 
 const revoke = (token: Token) => {

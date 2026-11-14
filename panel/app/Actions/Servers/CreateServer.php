@@ -36,7 +36,7 @@ class CreateServer
                 'mc_version' => $data['mc_version'],
                 'java_version' => $data['java_version'],
                 'memory_mb' => $data['memory_mb'],
-                'settings' => UpdateServer::settings($data),
+                'settings' => [...UpdateServer::settings($data), 'seed' => $data['seed'] ?? null],
                 'modpack' => UpdateServer::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
                 'is_default' => (bool) ($data['is_default'] ?? false),
@@ -44,8 +44,8 @@ class CreateServer
             ]);
 
             UpdateServer::demoteOtherDefaults($server);
-            (new NodeClient($server->node))->apply($server, start: true);
-            ActivityLog::record('server.create', $server);
+            (new NodeClient($server->node))->apply($server, start: true, importHost: $data['import_path'] ?? null);
+            ActivityLog::record('server.create', $server, array_filter(['imported_world' => $data['import_path'] ?? null]));
 
             return $server;
         });

@@ -9,6 +9,7 @@ use App\Actions\Servers\UpdateServer;
 use App\Http\Requests\LogRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
+use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Services\MemoryLimit;
@@ -17,6 +18,7 @@ use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -28,7 +30,10 @@ class ServerController extends Controller
      */
     public function create(): Response
     {
-        return Inertia::render('servers/Create', $this->options());
+        return Inertia::render('servers/Create', [
+            ...$this->options(),
+            'imports' => rescue(fn () => (new NodeClient(Node::query()->firstOrFail()))->imports(), [], report: false),
+        ]);
     }
 
     /**
@@ -48,13 +53,17 @@ class ServerController extends Controller
     /**
      * Show a server's live console.
      */
-    public function show(Server $server): Response
+    public function show(Request $request, Server $server): Response
     {
+        $canManage = $request->user()->can('manage-servers');
+
         return Inertia::render('servers/Console', [
             'server' => $server,
+            'canManage' => $canManage,
             'states' => Inertia::defer(fn () => NodeClient::states()),
             // A closure, so a reconnect can ask for a fresh token on its own.
-            'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: true)],
+            // Viewers get a token that streams output but refuses commands.
+            'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: $canManage)],
             'bluemapUrl' => $server->bluemap_enabled ? rtrim(Setting::value('bluemap_url'), '/')."/{$server->slug}/" : null,
         ]);
     }
@@ -89,6 +98,7 @@ class ServerController extends Controller
 
         return Inertia::render('servers/Logs', [
             'server' => $server,
+            'canManage' => $request->user()->can('manage-servers'),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'files' => $files ?? [],
             'file' => $file ?? null,

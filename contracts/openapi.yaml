@@ -33,6 +33,112 @@ paths:
         "401": { description: No valid token }
         "403": { description: The token lacks servers:read }
         "429": { description: More than 60 requests in a minute }
+  /servers/{slug}:
+    get:
+      summary: Show one server with its live state, players and resource use
+      description: Needs servers:read. A viewer can only ask for a server shared with them.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The server
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Server" }
+        "403": { description: The token lacks servers:read, or the server is not shared with its owner }
+        "404": { description: No such server }
+  /servers/{slug}/console:
+    get:
+      summary: Get the WebSocket address of the live console
+      description: >
+        Needs console:use. The address holds a token that is valid for one minute, so connect at once.
+        The socket sends JSON frames: {t: "log", d: text}, {t: "stats", cpu, memory, memory_limit},
+        {t: "history", d: [samples]}, {t: "players", d: {online, max, names}} and {t: "out", d: text} for
+        the answer to a command. Send a command as a plain text frame; it is ignored unless "write" is true.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Where to connect
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, write]
+                properties:
+                  url: { type: string, examples: ["wss://panel.example.com/node/servers/survival/console?token=..."] }
+                  write: { type: boolean, description: True when the token's owner is an admin. }
+        "403": { description: The token lacks console:use, or the server is not shared with its owner }
+  /servers/{slug}/logs:
+    get:
+      summary: List the log files, or read one
+      description: Needs logs:read. Without "file" it lists the files; with it, it returns that file as text.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: file, in: query, schema: { type: string, examples: [latest.log, 2026-11-14-1.log.gz] } }
+        - { name: q, in: query, description: Only lines containing this text., schema: { type: string } }
+      responses:
+        "200":
+          description: Either "files", or "file" and "content"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        size: { type: integer }
+                        modified: { type: integer, description: Unix seconds. }
+                  file: { type: string }
+                  content: { type: string }
+        "403": { description: The token lacks logs:read, or the server is not shared with its owner }
+        "422": { description: Not a log file name }
+  /servers/{slug}/backups:
+    get:
+      summary: List the backups, newest first
+      description: Needs backups:manage and an admin owner.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The backups
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string, examples: ["1794600000.tar.gz"] }
+                        size: { type: integer }
+                        created: { type: integer, description: Unix seconds. }
+                        locked: { type: boolean }
+        "403": { description: The token lacks backups:manage, or its owner is not an admin }
+    post:
+      summary: Start a backup
+      description: Needs backups:manage and an admin owner. The backup runs in the background.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "403": { description: The token lacks backups:manage, or its owner is not an admin }
+        "502": { description: The Rust service did not answer or refused }
   /servers/{slug}/power/{action}:
     post:
       summary: Start, stop, restart or kill a server
@@ -62,7 +168,7 @@ components:
   schemas:
     Server:
       type: object
-      required: [slug, name, hostname, server_type, mc_version, state, detail]
+      required: [slug, name, hostname, server_type, mc_version, state, detail, players, usage]
       properties:
         slug: { type: string, examples: [survival] }
         name: { type: string }
@@ -77,6 +183,21 @@ components:
         detail:
           type: [string, "null"]
           description: Why the server is in an error state, when known.
+        players:
+          type: [object, "null"]
+          description: Only for a running server that answers.
+          properties:
+            online: { type: integer }
+            max: { type: integer }
+            names: { type: array, items: { type: string }, description: At most a dozen. }
+        usage:
+          type: [object, "null"]
+          description: The latest sample of a running server.
+          properties:
+            at: { type: integer, description: Unix seconds. }
+            cpu: { type: number, description: Percent of one core. }
+            memory: { type: integer, description: Bytes. }
+            memory_limit: { type: integer, description: Bytes. }
     Message:
       type: object
       required: [message]

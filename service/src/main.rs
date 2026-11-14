@@ -2,7 +2,7 @@ mod backups;
 mod files;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::File,
     future::Future,
     io::Read,
@@ -28,8 +28,8 @@ use bollard::{
     errors::Error as DockerError,
     exec::{CreateExecOptions, StartExecResults},
     models::{
-        ContainerCreateBody, ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, HealthStatusEnum,
-        HostConfig,
+        ContainerCreateBody, ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse,
+        HealthStatusEnum, HostConfig,
     },
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptions, KillContainerOptions,
@@ -62,6 +62,9 @@ const MAX_SKEW_SECS: u64 = 60;
 const CONSOLE_BACKLOG_LINES: &str = "200";
 // How long a player count is reused before the server is asked again.
 const PLAYERS_MAX_AGE_SECS: u64 = 10;
+// One usage sample every ten seconds, kept for ten minutes.
+const USAGE_INTERVAL_SECS: u64 = 10;
+const USAGE_SAMPLES: usize = 60;
 const MAX_COMMAND_CHARS: usize = 500;
 // Also bounds what a gzipped log may expand to.
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
@@ -86,6 +89,8 @@ pub struct AppState {
     pub tasks: Tasks,
     // Player counts by server, with the time they were read.
     players: Arc<Mutex<HashMap<String, (u64, Value)>>>,
+    // CPU and memory of each running server over the last ten minutes, oldest first.
+    usage: Arc<Mutex<HashMap<String, VecDeque<Value>>>>,
 }
 
 #[cfg(test)]
@@ -100,6 +105,7 @@ impl AppState {
             import_dir: "/nonexistent".into(),
             tasks: Tasks::default(),
             players: Default::default(),
+            usage: Default::default(),
         }
     }
 }
@@ -140,6 +146,12 @@ struct ServerConfig {
     // In cores; none means no limit.
     #[serde(default)]
     cpu_limit: Option<f64>,
+    // Used when the world is first generated.
+    #[serde(default)]
+    seed: Option<String>,
+    // A world in the import folder to begin with; only looked at when the server is first created.
+    #[serde(default)]
+    import_host: Option<String>,
     #[serde(default)]
     start: bool,
 }
@@ -210,6 +222,8 @@ impl ServerConfig {
             Err("jvm_opts")
         } else if self.cpu_limit.is_some_and(|cores| !(0.25..=64.0).contains(&cores)) {
             Err("cpu_limit")
+        } else if self.seed.as_deref().is_some_and(|seed| seed.chars().count() > 64 || seed.chars().any(char::is_control)) {
+            Err("seed")
         } else {
             Ok(())
         }
@@ -236,6 +250,9 @@ impl ServerConfig {
         env.push(format!("ENFORCE_WHITELIST={}", self.whitelist_on));
         if !self.jvm_opts.is_empty() {
             env.push(format!("JVM_OPTS={}", self.jvm_opts));
+        }
+        if let Some(seed) = self.seed.as_deref().filter(|seed| !seed.is_empty()) {
+            env.push(format!("SEED={seed}"));
         }
 
         env
@@ -407,7 +424,20 @@ async fn stop_and_remove(docker: &Docker, name: &str) -> Result<(), DockerError>
     docker.remove_container(name, None::<RemoveContainerOptions>).await
 }
 
-async fn apply(docker: Docker, data_dir: Arc<str>, slug: String, config: ServerConfig, existing: Option<bool>) -> Result<(), DockerError> {
+type TaskError = Box<dyn std::error::Error + Send + Sync>;
+
+async fn apply(
+    state: AppState,
+    slug: String,
+    config: ServerConfig,
+    existing: Option<bool>,
+    import: Option<PathBuf>,
+) -> Result<(), TaskError> {
+    let (docker, data_dir) = (state.docker.clone(), state.data_dir.clone());
+    if let (None, Some(source)) = (existing, &import) {
+        backups::seed_world(&state, &slug, source).await?;
+    }
+
     let image = format!("{IMAGE}:java{}", config.java_version);
     // ponytail: pulled only when missing, so image updates need a manual pull; add an update action later.
     if docker.inspect_image(&image).await.is_err() {
@@ -486,10 +516,14 @@ async fn put_server(
         .await
         .map_err(|status| (status, String::new()))?
         .map(|container| container.state.and_then(|state| state.running).unwrap_or(false));
+    let import = match config.import_host.as_deref().filter(|path| !path.is_empty()) {
+        Some(path) => Some(backups::host_world(&state, path).map_err(|status| (status, "import_host".into()))?),
+        None => None,
+    };
     if config.start {
         set_stopped(&state, &slug, false);
     }
-    let work = apply(state.docker.clone(), state.data_dir.clone(), slug.clone(), config, existing);
+    let work = apply(state.clone(), slug.clone(), config, existing, import);
 
     Ok(run_task(&state.tasks, slug, "installing", work))
 }
@@ -581,13 +615,16 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
         servers.insert(slug.clone(), entry);
     }
 
+    let usage = state.usage.lock().unwrap().clone();
+
     Ok(Json(Value::Array(
         servers
             .into_iter()
             .map(|(slug, (state, detail))| {
                 // A busy server (backing up, restarting) reports no players, even if it had some a moment ago.
                 let players = if state == "running" { player_counts.remove(&slug) } else { None };
-                json!({ "slug": slug, "state": state, "detail": detail, "players": players })
+                let usage = if state == "running" { usage.get(&slug).and_then(|samples| samples.back().cloned()) } else { None };
+                json!({ "slug": slug, "state": state, "detail": detail, "players": players, "usage": usage })
             })
             .collect(),
     )))
@@ -704,6 +741,84 @@ async fn players(state: &AppState, slug: &str) -> Value {
     value
 }
 
+// CPU is the share of one core used since the previous sample, so the first sample reads 0.
+fn usage_sample(previous_cpu: &mut Option<(u64, u64)>, sample: ContainerStatsResponse) -> Value {
+    let cpu = sample.cpu_stats.unwrap_or_default();
+    let now = (cpu.cpu_usage.and_then(|usage| usage.total_usage).unwrap_or(0), cpu.system_cpu_usage.unwrap_or(0));
+    let percent = match previous_cpu.replace(now) {
+        Some((total, system)) if now.1 > system => {
+            now.0.saturating_sub(total) as f64 / (now.1 - system) as f64 * f64::from(cpu.online_cpus.unwrap_or(1)) * 100.0
+        }
+        _ => 0.0,
+    };
+    let memory = sample.memory_stats.unwrap_or_default();
+    // Like "docker stats": file cache the kernel can drop is not counted as used.
+    let cache = memory.stats.as_ref().and_then(|stats| stats.get("inactive_file")).copied().unwrap_or(0);
+
+    json!({
+        "at": unix_now(),
+        "cpu": (percent * 10.0).round() / 10.0,
+        "memory": memory.usage.unwrap_or(0).saturating_sub(cache),
+        "memory_limit": memory.limit.unwrap_or(0),
+    })
+}
+
+// Samples every running server in the background, so the Servers page and a console that has just
+// been opened can show the last ten minutes without anyone having had a page open.
+async fn monitor(state: AppState) {
+    let mut previous_cpu: HashMap<String, Option<(u64, u64)>> = HashMap::new();
+    let mut tick = tokio::time::interval(Duration::from_secs(USAGE_INTERVAL_SECS));
+    let label = format!("{MANAGED_LABEL}=true");
+
+    loop {
+        tick.tick().await;
+
+        let filters = HashMap::from([("label", vec![label.as_str()]), ("status", vec!["running"])]);
+        let options = ListContainersOptionsBuilder::default().filters(&filters).build();
+        let Ok(containers) = state.docker.list_containers(Some(options)).await else { continue };
+        let running: Vec<String> = containers
+            .into_iter()
+            .filter_map(|container| container.names?.first()?.strip_prefix("/mc-").map(str::to_owned))
+            .collect();
+
+        for slug in &running {
+            let options = StatsOptionsBuilder::default().stream(false).one_shot(true).build();
+            let Some(Ok(stats)) = state.docker.stats(&container_name(slug), Some(options)).next().await else { continue };
+            let previous = previous_cpu.entry(slug.clone()).or_default();
+            let first = previous.is_none();
+            let sample = usage_sample(previous, stats);
+
+            // The first sample has no CPU reading yet.
+            if !first {
+                let mut usage = state.usage.lock().unwrap();
+                let samples = usage.entry(slug.clone()).or_default();
+                samples.push_back(sample);
+                while samples.len() > USAGE_SAMPLES {
+                    samples.pop_front();
+                }
+            }
+            players(&state, slug).await;
+        }
+
+        previous_cpu.retain(|slug, _| running.contains(slug));
+        state.usage.lock().unwrap().retain(|slug, _| running.contains(slug));
+    }
+}
+
+#[derive(Deserialize)]
+struct CommandBody {
+    command: String,
+}
+
+// For scheduled commands; the console sends its commands over the WebSocket.
+async fn command(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<CommandBody>) -> Result<String, StatusCode> {
+    if !valid_slug(&slug) || managed(&state.docker, &slug).await?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    Ok(run_command(&state.docker, &container_name(&slug), &body.command).await)
+}
+
 async fn console_session(state: AppState, slug: String, write: bool, mut socket: WebSocket) {
     let docker = state.docker.clone();
     let name = container_name(&slug);
@@ -727,6 +842,11 @@ async fn console_session(state: AppState, slug: String, write: bool, mut socket:
     let mut previous_cpu: Option<(u64, u64)> = None;
     let mut player_check = tokio::time::interval(Duration::from_secs(PLAYERS_MAX_AGE_SECS));
 
+    let history: Vec<Value> = state.usage.lock().unwrap().get(&slug).map(|samples| samples.iter().cloned().collect()).unwrap_or_default();
+    if socket.send(Message::Text(json!({ "t": "history", "d": history }).to_string().into())).await.is_err() {
+        return;
+    }
+
     loop {
         let frame = tokio::select! {
             message = socket.recv() => match message {
@@ -739,26 +859,9 @@ async fn console_session(state: AppState, slug: String, write: bool, mut socket:
             Some(chunk) = logs.next() => json!({ "t": "log", "d": chunk.to_string() }),
             _ = player_check.tick() => json!({ "t": "players", "d": players(&state, &slug).await }),
             Some(sample) = stats.next() => {
-                let cpu = sample.cpu_stats.unwrap_or_default();
-                let now = (cpu.cpu_usage.and_then(|usage| usage.total_usage).unwrap_or(0), cpu.system_cpu_usage.unwrap_or(0));
-                let percent = match previous_cpu.replace(now) {
-                    Some((total, system)) if now.1 > system => {
-                        now.0.saturating_sub(total) as f64 / (now.1 - system) as f64
-                            * f64::from(cpu.online_cpus.unwrap_or(1))
-                            * 100.0
-                    }
-                    _ => 0.0,
-                };
-                let memory = sample.memory_stats.unwrap_or_default();
-                // Like "docker stats": file cache the kernel can drop is not counted as used.
-                let cache = memory.stats.as_ref().and_then(|stats| stats.get("inactive_file")).copied().unwrap_or(0);
-
-                json!({
-                    "t": "stats",
-                    "cpu": (percent * 10.0).round() / 10.0,
-                    "memory": memory.usage.unwrap_or(0).saturating_sub(cache),
-                    "memory_limit": memory.limit.unwrap_or(0),
-                })
+                let mut frame = usage_sample(&mut previous_cpu, sample);
+                frame["t"] = json!("stats");
+                frame
             }
         };
 
@@ -922,11 +1025,13 @@ async fn main() {
         import_dir: import_dir.into(),
         tasks: Tasks::default(),
         players: Default::default(),
+        usage: Default::default(),
     };
     let app = Router::new()
         .route("/servers", get(list_servers))
         .route("/servers/{slug}", put(put_server).delete(delete_server))
         .route("/servers/{slug}/{action}", post(power))
+        .route("/servers/{slug}/command", post(command))
         .route("/servers/{slug}/logs", get(list_logs))
         .route("/servers/{slug}/logs/{name}", get(read_log))
         .route("/servers/{slug}/files", get(files::list).delete(files::delete))
@@ -948,7 +1053,8 @@ async fn main() {
         .route("/servers/{slug}/backups/{name}/download", get(backups::download))
         .with_state(state.clone());
 
-    tokio::spawn(start_after_boot(state));
+    tokio::spawn(start_after_boot(state.clone()));
+    tokio::spawn(monitor(state));
 
     let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
     println!("listening on {listen}");
@@ -1048,11 +1154,14 @@ mod tests {
             assert!(players.env().contains(&expected.to_owned()), "{expected}");
         }
         assert!(valid.env().contains(&"ENABLE_WHITELIST=false".to_owned()));
+        assert!(!valid.env().iter().any(|entry| entry.starts_with("SEED=")));
+        assert!(config(|value| value["seed"] = json!("-4172144997902289642")).unwrap().env().contains(&"SEED=-4172144997902289642".to_owned()));
         for (field, bad) in [
             ("ops", json!(["name with space"])),
             ("whitelist", json!(["a,b"])),
             ("jvm_opts", json!("-Xmx1G\n-evil")),
             ("cpu_limit", json!(0.01)),
+            ("seed", json!("a\nb")),
         ] {
             assert_eq!(config(|value| value[field] = bad).unwrap().validate(), Err(field));
         }

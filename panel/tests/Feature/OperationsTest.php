@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\NodeClient;
@@ -66,27 +67,74 @@ test('a backup name that the node did not write is not routed', function (string
     Http::assertNothingSent();
 })->with(['..%2F..%2Fetc%2Fpasswd', 'world.tar.gz', '1794600000.zip', '1794600000.tar.gz.sh']);
 
-test('the daily backup starts only for servers whose time is this minute', function () {
-    $this->travelTo(now()->setTime(4, 0, 30));
-    $this->server->update(['backup_at' => '04:00']);
-    Server::factory()->for($this->server->node)->create(['slug' => 'later', 'backup_at' => '05:00']);
-    Server::factory()->for($this->server->node)->create(['slug' => 'never', 'backup_at' => null]);
+test('only the schedules due this minute and weekday run, each with its own action', function () {
+    $this->travelTo(now()->next('Monday')->setTime(4, 0, 30));
+    $due = fn (array $attributes) => $this->server->schedules()->create(['time' => '04:00', ...$attributes]);
+    $due(['action' => 'backup']);
+    $due(['action' => 'command', 'command' => 'say Backup starting']);
+    $due(['action' => 'restart', 'weekday' => 1]);
+    $due(['action' => 'stop', 'weekday' => 2]);
+    $due(['action' => 'start', 'is_active' => false]);
+    $due(['action' => 'backup', 'time' => '05:00']);
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
 
-    $this->artisan('backups:run')->assertSuccessful();
+    $this->artisan('schedules:run')->assertSuccessful();
 
-    Http::assertSentCount(1);
-    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/backups'));
+    Http::assertSentCount(3);
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/backups') && $request['keep'] === 7);
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/command') && $request['command'] === 'say Backup starting');
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/survival/restart'));
+    expect(ActivityLog::query()->where('event', 'schedule.run')->pluck('actor')->unique()->all())->toBe(['System']);
 });
 
-test('the backup schedule is validated and saved', function () {
-    $this->put(route('servers.backups.schedule', $this->server), ['backup_at' => '25:99', 'backup_keep' => 0])
-        ->assertSessionHasErrors(['backup_at', 'backup_keep']);
+test('schedules are validated, added, paused and removed', function () {
+    $this->post(route('servers.schedules.store', $this->server), ['action' => 'format', 'time' => '25:99', 'weekday' => 9])
+        ->assertSessionHasErrors(['action', 'time', 'weekday']);
+    $this->post(route('servers.schedules.store', $this->server), ['action' => 'command', 'time' => '03:55'])
+        ->assertSessionHasErrors('command');
+    $this->post(route('servers.schedules.store', $this->server), ['action' => 'command', 'time' => '03:55', 'command' => '--help'])
+        ->assertSessionHasErrors('command');
 
-    $this->put(route('servers.backups.schedule', $this->server), ['backup_at' => '04:30', 'backup_keep' => 10])
+    $this->post(route('servers.schedules.store', $this->server), ['action' => 'command', 'time' => '03:55', 'command' => '/say Backup in 5 minutes'])
         ->assertSessionHasNoErrors();
+    $schedule = $this->server->schedules()->sole();
+    expect($schedule->only('action', 'time', 'weekday', 'command', 'is_active'))
+        ->toBe(['action' => 'command', 'time' => '03:55', 'weekday' => null, 'command' => 'say Backup in 5 minutes', 'is_active' => true]);
 
-    expect($this->server->refresh()->only('backup_at', 'backup_keep'))->toBe(['backup_at' => '04:30', 'backup_keep' => 10]);
+    $this->put(route('servers.schedules.update', [$this->server, $schedule]), ['is_active' => false]);
+    expect($schedule->refresh()->is_active)->toBeFalse();
+
+    // A schedule cannot be reached through another server's address.
+    $other = Server::factory()->for($this->server->node)->create();
+    $this->delete(route('servers.schedules.destroy', [$other, $schedule]))->assertNotFound();
+    $this->delete(route('servers.schedules.destroy', [$this->server, $schedule]));
+    expect($this->server->schedules()->count())->toBe(0);
+});
+
+test('retention is validated and saved', function () {
+    $this->put(route('servers.backups.retention', $this->server), ['backup_keep' => 0])->assertSessionHasErrors('backup_keep');
+    $this->put(route('servers.backups.retention', $this->server), ['backup_keep' => 10])->assertSessionHasNoErrors();
+
+    expect($this->server->refresh()->backup_keep)->toBe(10);
+});
+
+test('a new server can start from a seed or from a world in the import folder', function () {
+    Http::fake(['node.test:8080/imports' => Http::response(['old/world']), 'node.test:8080/*' => Http::response(status: 202)]);
+    $form = [
+        'name' => 'Imported', 'slug' => 'imported', 'server_type' => 'PAPER', 'mc_version' => 'LATEST', 'java_version' => '25',
+        'memory_mb' => '2048', 'motd' => 'Hi', 'difficulty' => 'normal', 'mode' => 'survival', 'max_players' => '20', 'eula' => '1',
+    ];
+
+    $this->get(route('servers.create'))->assertInertia(fn (Assert $page) => $page->where('imports', ['old/world']));
+    $this->post(route('servers.store'), [...$form, 'import_path' => '../../etc'])->assertSessionHasErrors('import_path');
+
+    $this->post(route('servers.store'), [...$form, 'seed' => '12345', 'import_path' => 'old/world'])->assertSessionHasNoErrors();
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['seed'] === '12345' && $request['import_host'] === 'old/world');
+
+    // A later settings change keeps the seed and never imports again.
+    $created = Server::firstWhere('slug', 'imported');
+    $this->put(route('servers.update', $created), [...$form, 'motd' => 'Changed'])->assertSessionHasNoErrors();
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['motd'] === 'Changed' && $request['seed'] === '12345' && $request['import_host'] === null);
 });
 
 test('a world import is passed to the node and paths cannot step out', function () {

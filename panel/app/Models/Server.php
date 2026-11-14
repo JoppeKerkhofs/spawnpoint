@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,12 +28,11 @@ use Illuminate\Support\Carbon;
  * @property array{project: string, name: string, icon: string|null}|null $modpack
  * @property bool $bluemap_enabled
  * @property bool $is_default
- * @property string|null $backup_at
  * @property int $backup_keep
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_at', 'backup_keep', 'eula_accepted_at'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'eula_accepted_at'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -64,6 +64,14 @@ class Server extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * @return HasMany<Schedule, $this>
+     */
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class);
     }
 
     /**

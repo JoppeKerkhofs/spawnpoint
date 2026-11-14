@@ -2,9 +2,13 @@
 
 use App\Models\Server;
 use App\Models\User;
+use App\Services\NodeClient;
+use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
 
@@ -30,7 +34,7 @@ test('a viewer sees only the servers shared with them, and only their states', f
         ->assertInertia(fn (Assert $page) => $page
             ->has('servers', 1)
             ->where('servers.0.slug', 'shared')
-            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null]])),
+            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null]])),
         );
 });
 
@@ -38,11 +42,42 @@ test('a viewer cannot control a server that is shared with them', function () {
     $this->actingAs($this->viewer);
 
     $this->post(route('servers.power', [$this->shared, 'stop']))->assertForbidden();
-    $this->get(route('servers.show', $this->shared))->assertForbidden();
+    $this->get(route('servers.configuration', $this->shared))->assertForbidden();
+    $this->get(route('servers.files', $this->shared))->assertForbidden();
+    $this->post(route('servers.schedules.store', $this->shared), ['action' => 'stop', 'time' => '04:00'])->assertForbidden();
     $this->get(route('users.index'))->assertForbidden();
     $this->post(route('users.store'), ['name' => 'x', 'email' => 'x@example.com', 'password' => 'password', 'role' => 'admin'])->assertForbidden();
 
     Http::assertNothingSent();
+});
+
+test('a viewer can watch the console and read the logs of a shared server only, without sending commands', function () {
+    $this->freezeTime();
+    Http::swap(new HttpFactory);
+    Http::fake(['node.test:8080/servers/shared/logs' => Http::response([]), 'node.test:8080/servers' => Http::response([])]);
+    $this->actingAs($this->viewer);
+
+    $this->get(route('servers.show', $this->shared))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canManage', false)
+            ->where('console.url', 'ws://node.test:8080/servers/shared/console?token='
+                .NodeClient::token('console', $this->shared->node->token, 'shared', now()->getTimestamp() + 60, false)),
+        );
+    $this->get(route('servers.logs', $this->shared))->assertOk();
+
+    $this->get(route('servers.show', $this->hidden))->assertForbidden();
+    $this->get(route('servers.logs', $this->hidden))->assertForbidden();
+    $this->get(route('servers.logs.download', [$this->hidden, 'file' => 'latest.log']))->assertForbidden();
+});
+
+test('a user created without a password is emailed a link to set one', function () {
+    Notification::fake();
+
+    $this->actingAs($this->admin)
+        ->post(route('users.store'), ['name' => 'Lien', 'email' => 'lien@example.com', 'role' => 'viewer'])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentTo(User::firstWhere('email', 'lien@example.com'), ResetPassword::class);
 });
 
 test('an admin creates a viewer and shares servers with them', function () {
@@ -129,6 +164,43 @@ test('the api shows a viewer only their shared servers', function () {
     $this->getJson('/api/v1/servers')->assertJsonCount(1, 'data')->assertJsonPath('data.0.slug', 'shared');
     // The ability is on the token, but the role still decides.
     $this->postJson('/api/v1/servers/shared/power/stop')->assertForbidden();
+});
+
+test('the api gives console, logs and backups only with the matching ability and role', function () {
+    Http::swap(new HttpFactory);
+    Http::fake([
+        'node.test:8080/servers' => Http::response([['slug' => 'shared', 'state' => 'running', 'detail' => null]]),
+        'node.test:8080/servers/shared/backups' => Http::sequence()->push([])->push(status: 202)->push([]),
+        'node.test:8080/servers/shared/logs' => Http::response([['name' => 'latest.log', 'size' => 1, 'modified' => 1]]),
+        'node.test:8080/servers/shared/logs/latest.log?q=joined' => Http::response("Steve joined the game\n"),
+    ]);
+
+    Sanctum::actingAs($this->viewer, ['servers:read', 'console:use', 'logs:read', 'backups:manage']);
+    $this->getJson('/api/v1/servers/shared')->assertJsonPath('data.state', 'running');
+    $this->getJson('/api/v1/servers/hidden')->assertForbidden();
+    $this->getJson('/api/v1/servers/shared/console')->assertJsonPath('write', false);
+    $this->getJson('/api/v1/servers/shared/logs')->assertJsonPath('files.0.name', 'latest.log');
+    $this->getJson('/api/v1/servers/shared/logs?file=latest.log&q=joined')->assertJsonPath('content', "Steve joined the game\n");
+    $this->getJson('/api/v1/servers/shared/logs?file=../ops.json')->assertStatus(422);
+    $this->getJson('/api/v1/servers/shared/backups')->assertForbidden();
+
+    Sanctum::actingAs($this->admin, ['servers:read']);
+    $this->getJson('/api/v1/servers/shared/console')->assertForbidden();
+    $this->getJson('/api/v1/servers/shared/logs')->assertForbidden();
+    $this->postJson('/api/v1/servers/shared/backups')->assertForbidden();
+
+    Sanctum::actingAs($this->admin, ['console:use', 'backups:manage']);
+    $this->getJson('/api/v1/servers/shared/console')->assertJsonPath('write', true);
+    $this->getJson('/api/v1/servers/shared/backups')->assertOk();
+    $this->postJson('/api/v1/servers/shared/backups')->assertStatus(202);
+});
+
+test('the api answers 502 when the rust service is down', function () {
+    Http::swap(new HttpFactory);
+    Http::fake(['node.test:8080/*' => Http::failedConnection()]);
+    Sanctum::actingAs($this->admin, ['backups:manage']);
+
+    $this->getJson('/api/v1/servers/shared/backups')->assertStatus(502)->assertJsonStructure(['message']);
 });
 
 test('the api starts and stops servers only with the power ability', function () {

@@ -17,7 +17,7 @@ class NodeClient
     /**
      * Get the live state of every server on every node, keyed by slug.
      *
-     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array{online: int, max: int, names: list<string>}|null}>}
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null}>}
      */
     public static function states(): array
     {
@@ -40,7 +40,7 @@ class NodeClient
     /**
      * Get the live state of the servers on this node, keyed by slug.
      *
-     * @return array<string, array{state: string, detail: string|null, players: array{online: int, max: int, names: list<string>}|null}>
+     * @return array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -55,6 +55,8 @@ class NodeClient
                 'detail' => $server['detail'],
                 // Only for a running server that answers: online, max and up to a dozen names.
                 'players' => $server['players'] ?? null,
+                // The latest sample of a running server: CPU percent and memory in bytes.
+                'usage' => $server['usage'] ?? null,
             ];
         }
 
@@ -67,7 +69,7 @@ class NodeClient
      * @throws ConnectionException
      * @throws RequestException
      */
-    public function apply(Server $server, bool $start = false): void
+    public function apply(Server $server, bool $start = false, ?string $importHost = null): void
     {
         $this->send('PUT', "/servers/{$server->slug}", [
             'hostname' => $server->hostname,
@@ -88,6 +90,9 @@ class NodeClient
             'whitelist_on' => (bool) ($server->settings['whitelist'] ?? false),
             'jvm_opts' => $server->settings['jvm_opts'] ?? '',
             'cpu_limit' => $server->settings['cpu_limit'] ?? null,
+            'seed' => $server->settings['seed'] ?? null,
+            // Only when the server is created: a world from the import folder to begin with.
+            'import_host' => $importHost,
             'is_default' => $server->is_default,
             'start' => $start,
         ]);
@@ -100,6 +105,17 @@ class NodeClient
     public function power(Server $server, string $action): void
     {
         $this->send('POST', "/servers/{$server->slug}/{$action}");
+    }
+
+    /**
+     * Run a console command on the server and return what it answered.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function command(Server $server, string $command): string
+    {
+        return $this->send('POST', "/servers/{$server->slug}/command", ['command' => $command])->body();
     }
 
     /**

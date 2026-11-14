@@ -7,6 +7,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ModpackSearchController;
 use App\Http\Controllers\PanelSettingsController;
+use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServiceStatusController;
 use App\Http\Controllers\UserController;
@@ -22,10 +23,7 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
     Route::middleware('can:manage-servers')->group(function () {
         Route::get('servers/create', [ServerController::class, 'create'])->name('servers.create');
         Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
-        Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
         Route::get('servers/{server}/configuration', [ServerController::class, 'configuration'])->name('servers.configuration');
-        Route::get('servers/{server}/logs', [ServerController::class, 'logs'])->name('servers.logs');
-        Route::get('servers/{server}/logs/download', [ServerController::class, 'downloadLog'])->name('servers.logs.download');
         Route::get('modpacks/search', ModpackSearchController::class)->name('modpacks.search');
         Route::get('servers/{server}/files', [FileController::class, 'index'])->name('servers.files');
         Route::put('servers/{server}/files/content', [FileController::class, 'save'])->name('servers.files.save');
@@ -35,7 +33,10 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::get('servers/{server}/files/download', [FileController::class, 'download'])->name('servers.files.download');
         Route::get('servers/{server}/backups', [BackupController::class, 'index'])->name('servers.backups');
         Route::post('servers/{server}/backups', [BackupController::class, 'store'])->name('servers.backups.store');
-        Route::put('servers/{server}/backups/schedule', [BackupController::class, 'schedule'])->name('servers.backups.schedule');
+        Route::put('servers/{server}/backups/retention', [BackupController::class, 'retention'])->name('servers.backups.retention');
+        Route::post('servers/{server}/schedules', [ScheduleController::class, 'store'])->name('servers.schedules.store');
+        Route::put('servers/{server}/schedules/{schedule}', [ScheduleController::class, 'update'])->name('servers.schedules.update');
+        Route::delete('servers/{server}/schedules/{schedule}', [ScheduleController::class, 'destroy'])->name('servers.schedules.destroy');
         Route::post('servers/{server}/import', [BackupController::class, 'import'])->name('servers.import');
         // The name becomes part of a path on the node, so only the form the node itself writes is routed.
         Route::where(['backup' => '[0-9]{1,12}(\.locked)?\.tar\.gz'])->group(function () {
@@ -49,6 +50,13 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::post('servers/{server}/power/{action}', [ServerController::class, 'power'])
             ->whereIn('action', PowerServer::ACTIONS)
             ->name('servers.power');
+    });
+
+    // After servers/create above, so "create" is never taken for a server name.
+    Route::middleware('can:view,server')->group(function () {
+        Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
+        Route::get('servers/{server}/logs', [ServerController::class, 'logs'])->name('servers.logs');
+        Route::get('servers/{server}/logs/download', [ServerController::class, 'downloadLog'])->name('servers.logs.download');
     });
 });
 

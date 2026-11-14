@@ -8,39 +8,52 @@ import { serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
 import { backups, configuration, files, logs, show } from '@/routes/servers';
 
-const props = defineProps<{
-    server: Server;
-    states?: States;
-    tab: 'console' | 'configuration' | 'files' | 'logs' | 'backups';
-}>();
+const props = withDefaults(
+    defineProps<{
+        server: Server;
+        states?: States;
+        tab: 'console' | 'configuration' | 'files' | 'logs' | 'backups';
+        // Viewers only get the console and the logs, and nothing to press.
+        canManage?: boolean;
+    }>(),
+    { canManage: true },
+);
 
 usePoll(4000, { only: ['states'] });
 
 const current = computed(() => serverState(props.states, props.server.slug));
 
-const tabs = computed(() => [
-    {
-        key: 'console',
-        title: 'Console',
-        href: show({ server: props.server.slug }),
-    },
-    {
-        key: 'configuration',
-        title: 'Configuration',
-        href: configuration({ server: props.server.slug }),
-    },
-    {
-        key: 'files',
-        title: 'Files',
-        href: files({ server: props.server.slug }),
-    },
-    { key: 'logs', title: 'Logs', href: logs({ server: props.server.slug }) },
-    {
-        key: 'backups',
-        title: 'Backups',
-        href: backups({ server: props.server.slug }),
-    },
-]);
+const tabs = computed(() =>
+    [
+        {
+            key: 'console',
+            title: 'Console',
+            href: show({ server: props.server.slug }),
+        },
+        {
+            key: 'configuration',
+            title: 'Configuration',
+            href: configuration({ server: props.server.slug }),
+        },
+        {
+            key: 'files',
+            title: 'Files',
+            href: files({ server: props.server.slug }),
+        },
+        {
+            key: 'logs',
+            title: 'Logs',
+            href: logs({ server: props.server.slug }),
+        },
+        {
+            key: 'backups',
+            title: 'Backups',
+            href: backups({ server: props.server.slug }),
+        },
+    ].filter(
+        (item) => props.canManage || ['console', 'logs'].includes(item.key),
+    ),
+);
 </script>
 
 <template>
@@ -64,7 +77,11 @@ const tabs = computed(() => [
                 {{ software(server) }}
             </span>
             <span class="flex-1" />
-            <ServerPowerButtons :slug="server.slug" :state="current.state" />
+            <ServerPowerButtons
+                :slug="server.slug"
+                :state="current.state"
+                :can-manage="canManage"
+            />
         </div>
 
         <p

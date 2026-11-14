@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Head, Link, usePage, usePoll } from '@inertiajs/vue3';
 import { Plus } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { Button } from '@/components/ui/button';
 import type { Server, States } from '@/lib/servers';
-import { serverState, software, toneOf } from '@/lib/servers';
+import { serverState, software, toneOf, typeLabels } from '@/lib/servers';
 import { dashboard } from '@/routes';
 import { create, show } from '@/routes/servers';
 
@@ -38,6 +38,31 @@ const cards = computed(() =>
         current: serverState(props.states, server.slug),
     })),
 );
+
+const search = ref('');
+const typeFilter = ref('');
+const statusFilter = ref('');
+
+const types = computed(() => [
+    ...new Set(props.servers.map((server) => server.server_type)),
+]);
+
+const visibleCards = computed(() => {
+    const text = search.value.trim().toLowerCase();
+
+    return cards.value.filter(
+        ({ server, current }) =>
+            (!text ||
+                server.name.toLowerCase().includes(text) ||
+                server.hostname.toLowerCase().includes(text)) &&
+            (!typeFilter.value || server.server_type === typeFilter.value) &&
+            (!statusFilter.value || current.state === statusFilter.value),
+    );
+});
+
+const gigabytes = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
+const selectClass =
+    'h-9 flex-[2_1_160px] rounded-md border border-input bg-card px-2.5 text-sm';
 
 const runningCount = computed(
     () => cards.value.filter((card) => card.current.state === 'running').length,
@@ -156,9 +181,60 @@ const memoryGb = computed(
             }}
         </p>
 
+        <form
+            v-if="servers.length > 1"
+            role="search"
+            class="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-3"
+            @submit.prevent
+            @reset="
+                search = '';
+                typeFilter = '';
+                statusFilter = '';
+            "
+        >
+            <label for="filter-text" class="sr-only">Name or hostname</label>
+            <input
+                id="filter-text"
+                v-model="search"
+                type="search"
+                placeholder="Name or hostname"
+                class="h-9 flex-[3_1_220px] rounded-md border border-input bg-card px-3 text-sm"
+            />
+            <label for="filter-type" class="sr-only">Server type</label>
+            <select id="filter-type" v-model="typeFilter" :class="selectClass">
+                <option value="">All types</option>
+                <option v-for="type in types" :key="type" :value="type">
+                    {{ typeLabels[type] ?? type }}
+                </option>
+            </select>
+            <label for="filter-status" class="sr-only">Status</label>
+            <select
+                id="filter-status"
+                v-model="statusFilter"
+                :class="selectClass"
+            >
+                <option value="">Any status</option>
+                <option value="running">Running</option>
+                <option value="starting">Starting</option>
+                <option value="offline">Offline</option>
+                <option value="error">Error</option>
+            </select>
+            <Button type="reset" variant="outline" class="border-primary">
+                Clear
+            </Button>
+        </form>
+
+        <p
+            v-if="servers.length && !visibleCards.length"
+            role="status"
+            class="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+        >
+            No server matches these filters.
+        </p>
+
         <div class="flex flex-col gap-3">
             <article
-                v-for="{ server, current } in cards"
+                v-for="{ server, current } in visibleCards"
                 :key="server.id"
                 class="overflow-hidden rounded-md border border-border bg-card"
             >
@@ -166,13 +242,9 @@ const memoryGb = computed(
                     class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
                 >
                     <h2 class="text-lg leading-[1.35] font-bold text-primary">
-                        <Link
-                            v-if="canManage"
-                            :href="show({ server: server.slug })"
-                        >
+                        <Link :href="show({ server: server.slug })">
                             {{ server.name }}
                         </Link>
-                        <template v-else>{{ server.name }}</template>
                     </h2>
                     <span
                         v-if="server.is_default"
@@ -211,14 +283,40 @@ const memoryGb = computed(
                         <div class="text-[0.8125rem] text-muted-foreground">
                             Memory
                         </div>
-                        <div class="tabular-nums">
+                        <template v-if="current.usage">
+                            <div class="tabular-nums">
+                                {{ gigabytes(current.usage.memory) }} /
+                                {{ server.memory_mb / 1024 }} GB
+                            </div>
+                            <div
+                                class="mt-1 h-1 overflow-hidden rounded-full bg-divider"
+                                aria-hidden="true"
+                            >
+                                <div
+                                    class="h-full bg-primary"
+                                    :style="{
+                                        width: `${Math.min(100, (current.usage.memory / (server.memory_mb * 1024 ** 2)) * 100)}%`,
+                                    }"
+                                />
+                            </div>
+                        </template>
+                        <div v-else class="tabular-nums">
                             {{ server.memory_mb / 1024 }} GB
                         </div>
                     </div>
+                    <div class="flex-[1_1_90px]">
+                        <div class="text-[0.8125rem] text-muted-foreground">
+                            CPU
+                        </div>
+                        <div v-if="current.usage" class="tabular-nums">
+                            {{ current.usage.cpu.toFixed(0) }}%
+                        </div>
+                        <div v-else class="text-muted-foreground">—</div>
+                    </div>
                     <ServerPowerButtons
-                        v-if="canManage"
                         :slug="server.slug"
                         :state="current.state"
+                        :can-manage="canManage"
                     >
                         <Button
                             variant="outline"

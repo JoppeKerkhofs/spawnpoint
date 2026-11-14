@@ -35,6 +35,7 @@ class BackupController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'backups' => $backups ?? [],
             'imports' => $imports ?? [],
+            'schedules' => $server->schedules()->orderBy('time')->get(['id', 'action', 'time', 'weekday', 'command', 'is_active']),
             'error' => $error ?? null,
             'timezone' => config('app.timezone'),
         ]);
@@ -104,17 +105,14 @@ class BackupController extends Controller
     }
 
     /**
-     * Save the daily backup time and how many backups to keep.
+     * Save how many backups to keep.
      */
-    public function schedule(Request $request, Server $server): RedirectResponse
+    public function retention(Request $request, Server $server): RedirectResponse
     {
-        $server->update($request->validate([
-            'backup_at' => ['nullable', 'date_format:H:i'],
-            'backup_keep' => ['required', 'integer', 'between:1,365'],
-        ]));
+        $server->update($request->validate(['backup_keep' => ['required', 'integer', 'between:1,365']]));
 
-        ActivityLog::record('backup.schedule', $server, $server->only('backup_at', 'backup_keep'));
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Backup schedule saved.')]);
+        ActivityLog::record('backup.retention', $server, $server->only('backup_keep'));
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
         return back();
     }

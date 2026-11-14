@@ -16,10 +16,12 @@ defineProps<{
     baseDomain: string;
     options: ServerOptions;
     memory: MemoryBudget;
+    imports: string[];
 }>();
 
 const slug = ref('');
 const javaVersion = ref(25);
+const worldSource = ref<'new' | 'host'>('new');
 </script>
 
 <template>
@@ -100,6 +102,76 @@ const javaVersion = ref(25);
                     :memory="memory"
                     :errors="errors"
                 />
+
+                <SectionCard title="World">
+                    <div class="flex flex-col gap-3">
+                        <div
+                            role="radiogroup"
+                            aria-label="World source"
+                            class="flex flex-col gap-2"
+                        >
+                            <label class="flex items-center gap-2">
+                                <input
+                                    v-model="worldSource"
+                                    type="radio"
+                                    value="new"
+                                    class="size-4 accent-primary"
+                                />
+                                Generate a new world
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input
+                                    v-model="worldSource"
+                                    type="radio"
+                                    value="host"
+                                    :disabled="!imports.length"
+                                    class="size-4 accent-primary"
+                                />
+                                Start from a world folder on the host
+                            </label>
+                        </div>
+
+                        <div v-if="worldSource === 'new'" class="grid gap-2">
+                            <Label for="seed"
+                                >Seed
+                                <span class="font-normal text-muted-foreground"
+                                    >(optional)</span
+                                ></Label
+                            >
+                            <Input
+                                id="seed"
+                                name="seed"
+                                maxlength="64"
+                                placeholder="Random"
+                            />
+                            <InputError :message="errors.seed" />
+                        </div>
+                        <div v-else class="grid gap-2">
+                            <Label for="import_path">Folder on the host</Label>
+                            <select
+                                id="import_path"
+                                name="import_path"
+                                class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
+                            >
+                                <option
+                                    v-for="world in imports"
+                                    :key="world"
+                                    :value="world"
+                                >
+                                    {{ world }}
+                                </option>
+                            </select>
+                            <InputError :message="errors.import_path" />
+                        </div>
+                        <span class="text-[0.8125rem] text-muted-foreground">
+                            {{
+                                imports.length
+                                    ? 'Only worlds in the mounted import folder are listed. A world from a .zip can be imported on the Backups tab once the server exists.'
+                                    : 'No worlds are in the import folder. A world from a .zip can be imported on the Backups tab once the server exists.'
+                            }}
+                        </span>
+                    </div>
+                </SectionCard>
 
                 <section
                     class="flex flex-col gap-3 rounded-md border border-border bg-card px-4 py-4"

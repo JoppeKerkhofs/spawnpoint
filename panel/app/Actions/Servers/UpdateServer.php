@@ -28,7 +28,8 @@ class UpdateServer
                 'mc_version' => $data['mc_version'],
                 'java_version' => $data['java_version'],
                 'memory_mb' => $data['memory_mb'],
-                'settings' => self::settings($data),
+                // The seed is chosen once, when the server is created.
+                'settings' => [...self::settings($data), 'seed' => $server->settings['seed'] ?? null],
                 'modpack' => self::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
                 'is_default' => (bool) ($data['is_default'] ?? false),

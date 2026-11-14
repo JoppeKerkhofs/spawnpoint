@@ -12,7 +12,6 @@ export type Server = {
     modpack: Modpack | null;
     bluemap_enabled: boolean;
     is_default: boolean;
-    backup_at: string | null;
     backup_keep: number;
     settings: {
         motd: string;
@@ -42,10 +41,19 @@ export type MemoryBudget = { limitMb: number | null; freeMb: number | null };
 
 export type Players = { online: number; max: number; names: string[] };
 
+// One sample: CPU as a percentage of one core, memory in bytes.
+export type Usage = {
+    at: number;
+    cpu: number;
+    memory: number;
+    memory_limit: number;
+};
+
 export type ServerState = {
     state: string;
     detail: string | null;
     players?: Players | null;
+    usage?: Usage | null;
 };
 
 export type States = {

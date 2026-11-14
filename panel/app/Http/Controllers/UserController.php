@@ -7,6 +7,8 @@ use App\Models\Server;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password as PasswordBroker;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -41,15 +43,24 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', Password::defaults()],
+            'password' => ['nullable', 'string', Password::defaults()],
             ...$this->accessRules(),
         ]);
 
-        $user = User::create(['name' => $data['name'], 'email' => $data['email'], 'password' => $data['password']]);
+        // Without a password the user is invited: they get an email with a link to choose their own.
+        $invited = blank($data['password'] ?? null);
+        $user = User::create(['name' => $data['name'], 'email' => $data['email'], 'password' => $invited ? Str::password(40) : $data['password']]);
+        $user->forceFill(['email_verified_at' => now()])->save();
         $this->grant($user, $data);
-        ActivityLog::record('user.create', properties: ['email' => $user->email, 'role' => $data['role']]);
+        ActivityLog::record('user.create', properties: ['email' => $user->email, 'role' => $data['role'], 'invited' => $invited]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('User created. Give them the password; they can change it after logging in.')]);
+        if ($invited) {
+            PasswordBroker::sendResetLink(['email' => $user->email]);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $invited
+            ? __('User created. They get an email with a link to set their password.')
+            : __('User created. Give them the password; they can change it after logging in.')]);
 
         return back();
     }

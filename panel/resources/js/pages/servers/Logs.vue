@@ -11,6 +11,7 @@ import { download } from '@/routes/servers/logs';
 const props = defineProps<{
     server: Server;
     states?: States;
+    canManage: boolean;
     files: { name: string; size: number; modified: number }[];
     file: string | null;
     q: string;
@@ -30,7 +31,12 @@ const kilobytes = (bytes: number) =>
     <Head :title="`${server.name} logs`" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
-        <ServerHeader :server="server" :states="states" tab="logs" />
+        <ServerHeader
+            :server="server"
+            :states="states"
+            :can-manage="canManage"
+            tab="logs"
+        />
 
         <p
             v-if="error"

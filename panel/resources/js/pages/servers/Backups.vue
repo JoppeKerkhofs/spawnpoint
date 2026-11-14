@@ -9,23 +9,38 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Server, States } from '@/lib/servers';
+import { title } from '@/lib/servers';
 import { importMethod } from '@/routes/servers';
 import {
     destroy,
     download,
     lock,
     restore,
-    schedule,
+    retention,
     store,
 } from '@/routes/servers/backups';
+import {
+    destroy as destroySchedule,
+    store as storeSchedule,
+    update as updateSchedule,
+} from '@/routes/servers/schedules';
 
 type Backup = { name: string; size: number; created: number; locked: boolean };
+type Schedule = {
+    id: number;
+    action: string;
+    time: string;
+    weekday: number | null;
+    command: string | null;
+    is_active: boolean;
+};
 
 const props = defineProps<{
     server: Server;
     states?: States;
     backups: Backup[];
     imports: string[];
+    schedules: Schedule[];
     error: string | null;
     timezone: string;
 }>();
@@ -33,6 +48,36 @@ const props = defineProps<{
 const slug = computed(() => ({ server: props.server.slug }));
 const reloadList = { preserveScroll: true, only: ['backups', 'error'] };
 const importSource = ref<'zip' | 'host'>(props.imports.length ? 'host' : 'zip');
+
+const weekdays = [
+    'Sundays',
+    'Mondays',
+    'Tuesdays',
+    'Wednesdays',
+    'Thursdays',
+    'Fridays',
+    'Saturdays',
+];
+const scheduleAction = ref('backup');
+const reloadSchedules = { preserveScroll: true, only: ['schedules'] };
+
+const when2 = (schedule: Schedule) =>
+    `${schedule.weekday === null ? 'Every day' : weekdays[schedule.weekday]} at ${schedule.time}`;
+
+const toggleSchedule = (schedule: Schedule) => {
+    router.put(
+        updateSchedule.url({ ...slug.value, schedule: schedule.id }),
+        { is_active: !schedule.is_active },
+        reloadSchedules,
+    );
+};
+
+const removeSchedule = (schedule: Schedule) => {
+    router.delete(
+        destroySchedule.url({ ...slug.value, schedule: schedule.id }),
+        reloadSchedules,
+    );
+};
 
 const totalSize = computed(() =>
     props.backups.reduce((total, backup) => total + backup.size, 0),
@@ -253,32 +298,154 @@ const confirmImport = (event: Event) => {
             </section>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <SectionCard title="Schedule and retention">
+                <SectionCard title="Schedules">
+                    <ul v-if="schedules.length" class="mb-4">
+                        <li
+                            v-for="schedule in schedules"
+                            :key="schedule.id"
+                            class="flex items-center gap-3 border-t border-divider py-2 first:border-t-0 first:pt-0"
+                        >
+                            <div class="min-w-0 flex-1">
+                                <div class="font-medium">
+                                    {{
+                                        schedule.action === 'command'
+                                            ? 'Command'
+                                            : title(schedule.action)
+                                    }}
+                                </div>
+                                <div
+                                    class="text-[0.8125rem] break-words text-muted-foreground"
+                                >
+                                    {{ when2(schedule) }}
+                                    <template v-if="schedule.command">
+                                        · runs
+                                        <code class="font-mono">{{
+                                            schedule.command
+                                        }}</code>
+                                    </template>
+                                    <template v-if="!schedule.is_active">
+                                        · paused
+                                    </template>
+                                </div>
+                            </div>
+                            <label class="flex items-center gap-1.5 text-sm">
+                                <input
+                                    type="checkbox"
+                                    role="switch"
+                                    :checked="schedule.is_active"
+                                    :aria-label="`${title(schedule.action)} ${when2(schedule)} active`"
+                                    class="size-4 accent-primary"
+                                    @change="toggleSchedule(schedule)"
+                                />
+                                On
+                            </label>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                class="text-destructive hover:text-destructive"
+                                :aria-label="`Delete the schedule ${title(schedule.action)} ${when2(schedule)}`"
+                                @click="removeSchedule(schedule)"
+                            >
+                                <Trash2 aria-hidden="true" />
+                            </Button>
+                        </li>
+                    </ul>
+                    <p v-else class="mb-4 text-sm text-muted-foreground">
+                        Nothing is scheduled.
+                    </p>
+
                     <Form
-                        v-bind="schedule.form(slug)"
+                        v-bind="storeSchedule.form(slug)"
+                        :options="reloadSchedules"
+                        reset-on-success
+                        class="flex flex-col gap-3 border-t border-divider pt-4"
+                        v-slot="{ errors, processing }"
+                    >
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="grid gap-1.5">
+                                <Label for="schedule_action">Do</Label>
+                                <select
+                                    id="schedule_action"
+                                    v-model="scheduleAction"
+                                    name="action"
+                                    class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
+                                >
+                                    <option value="backup">Backup</option>
+                                    <option value="restart">Restart</option>
+                                    <option value="stop">Stop</option>
+                                    <option value="start">Start</option>
+                                    <option value="command">
+                                        Run a command
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="grid gap-1.5">
+                                <Label for="schedule_time">At</Label>
+                                <Input
+                                    id="schedule_time"
+                                    name="time"
+                                    type="time"
+                                    required
+                                    default-value="04:00"
+                                />
+                            </div>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <Label for="schedule_weekday">On</Label>
+                            <select
+                                id="schedule_weekday"
+                                name="weekday"
+                                class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
+                            >
+                                <option value="">Every day</option>
+                                <option
+                                    v-for="(day, index) in weekdays"
+                                    :key="day"
+                                    :value="index"
+                                >
+                                    {{ day }}
+                                </option>
+                            </select>
+                        </div>
+                        <div
+                            v-if="scheduleAction === 'command'"
+                            class="grid gap-1.5"
+                        >
+                            <Label for="schedule_command">Command</Label>
+                            <Input
+                                id="schedule_command"
+                                name="command"
+                                required
+                                maxlength="500"
+                                class="font-mono"
+                                placeholder="say Backup in 5 minutes"
+                            />
+                        </div>
+                        <InputError
+                            :message="
+                                errors.action ||
+                                errors.time ||
+                                errors.weekday ||
+                                errors.command
+                            "
+                        />
+                        <span class="text-[0.8125rem] text-muted-foreground">
+                            Times are in the panel's time zone ({{ timezone }}).
+                        </span>
+                        <Button :disabled="processing" class="self-start"
+                            >Add schedule</Button
+                        >
+                    </Form>
+                </SectionCard>
+
+                <SectionCard title="Retention">
+                    <Form
+                        v-bind="retention.form(slug)"
                         :options="{ preserveScroll: true }"
                         class="flex flex-col gap-4"
                         v-slot="{ errors, processing }"
                     >
-                        <div class="grid gap-2">
-                            <Label for="backup_at">Daily backup at</Label>
-                            <Input
-                                id="backup_at"
-                                name="backup_at"
-                                type="time"
-                                :default-value="server.backup_at ?? ''"
-                                aria-describedby="backup_at_hint"
-                            />
-                            <span
-                                id="backup_at_hint"
-                                class="text-[0.8125rem] text-muted-foreground"
-                            >
-                                In the panel's time zone ({{ timezone }}). Leave
-                                empty for no scheduled backup.
-                            </span>
-                            <InputError :message="errors.backup_at" />
-                        </div>
-
                         <div class="grid gap-2">
                             <Label for="backup_keep">Keep the newest</Label>
                             <div class="flex items-center gap-2">

@@ -172,10 +172,17 @@ const remove = (user: User) => {
                             <PasswordInput
                                 id="password"
                                 name="password"
-                                required
                                 autocomplete="new-password"
                                 :passwordrules="passwordRules"
+                                aria-describedby="password_hint"
                             />
+                            <span
+                                id="password_hint"
+                                class="text-[0.8125rem] text-muted-foreground"
+                            >
+                                Leave empty to email them a link to choose their
+                                own. That needs outgoing mail to be set up.
+                            </span>
                             <InputError :message="errors.password" />
                         </div>
                         <div class="grid gap-2">

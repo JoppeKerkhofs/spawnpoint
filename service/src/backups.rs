@@ -344,6 +344,32 @@ pub async fn list_imports(State(state): State<AppState>) -> Json<Value> {
     Json(json!(found))
 }
 
+// A world folder inside the import folder, by its path relative to it.
+pub fn host_world(state: &AppState, relative: &str) -> Result<PathBuf, StatusCode> {
+    let root = FsPath::new(&*state.import_dir).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+    let world = resolve_in(&root, relative)?;
+
+    if world.join("level.dat").is_file() {
+        Ok(world)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+// Gives a server that is about to be created a world from the import folder to start with.
+pub async fn seed_world(state: &AppState, slug: &str, source: &FsPath) -> Result<(), String> {
+    let target = server_dir(state, slug);
+    std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    // Never over a world that is already there, such as one left by a deleted server of the same name.
+    if target.join("world").exists() {
+        return Ok(());
+    }
+
+    run("cp", &["-a".as_ref(), source.as_ref(), target.join("world").as_ref()], &[0]).await?;
+    // The image runs Minecraft as user 1000 unless told otherwise.
+    run("chown", &["-R".as_ref(), "1000:1000".as_ref(), target.as_ref()], &[0]).await
+}
+
 #[derive(Deserialize)]
 pub struct ImportBody {
     // "zip": a .zip inside the server's own folder; "host": a world folder inside the import folder.
@@ -360,24 +386,18 @@ pub async fn import_world(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let server = server_dir(&state, &slug).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
     let (source, is_zip) = match body.source.as_str() {
-        "zip" => (resolve_in(&server, &body.path)?, true),
-        "host" => {
-            let root = FsPath::new(&*state.import_dir).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
-            (resolve_in(&root, &body.path)?, false)
+        "zip" => {
+            let server = server_dir(&state, &slug).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+            let zip = resolve_in(&server, &body.path)?;
+            if !zip.is_file() || !body.path.to_lowercase().ends_with(".zip") {
+                return Err(StatusCode::NOT_FOUND);
+            }
+            (zip, true)
         }
+        "host" => (host_world(&state, &body.path)?, false),
         _ => return Err(StatusCode::UNPROCESSABLE_ENTITY),
     };
-
-    let usable = if is_zip {
-        source.is_file() && body.path.to_lowercase().ends_with(".zip")
-    } else {
-        source.join("level.dat").is_file()
-    };
-    if !usable {
-        return Err(StatusCode::NOT_FOUND);
-    }
 
     let tasks = state.tasks.clone();
     Ok(run_task(&tasks, slug.clone(), "importing", import(state, slug, source, is_zip)))

@@ -6,10 +6,14 @@ import type { PowerAction } from '@/lib/servers';
 import { powerActions, title } from '@/lib/servers';
 import { power } from '@/routes/servers';
 
-const props = defineProps<{
-    slug: string;
-    state: string;
-}>();
+const props = withDefaults(
+    defineProps<{
+        slug: string;
+        state: string;
+        canManage?: boolean;
+    }>(),
+    { canManage: true },
+);
 
 const sending = ref(false);
 
@@ -30,7 +34,7 @@ const send = (action: PowerAction) => {
 <template>
     <div class="flex flex-wrap gap-2">
         <Button
-            v-for="action in powerActions(state)"
+            v-for="action in canManage ? powerActions(state) : []"
             :key="action"
             type="button"
             :variant="action === 'start' ? 'default' : 'outline'"
