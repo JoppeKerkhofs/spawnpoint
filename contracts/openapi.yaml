@@ -1,0 +1,84 @@
+openapi: 3.1.0
+info:
+  title: Minecraft Panel API
+  version: "1"
+  description: >
+    Lets other apps use the panel. Create a token under Settings, API tokens, and send it
+    as a bearer token. A token can never do more than its owner's role allows.
+servers:
+  - url: /api/v1
+security:
+  - token: []
+paths:
+  /servers:
+    get:
+      summary: List the servers the token's owner may see, with their live state
+      description: Needs the servers:read ability. A viewer gets only the servers shared with them.
+      responses:
+        "200":
+          description: The servers, ordered by name
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service_online, data]
+                properties:
+                  service_online:
+                    type: boolean
+                    description: False when the Rust service did not answer; states are then "unknown".
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Server"
+        "401": { description: No valid token }
+        "403": { description: The token lacks servers:read }
+        "429": { description: More than 60 requests in a minute }
+  /servers/{slug}/power/{action}:
+    post:
+      summary: Start, stop, restart or kill a server
+      description: Needs the servers:power ability and an admin owner. The action runs in the background.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - name: action
+          in: path
+          required: true
+          schema: { type: string, enum: [start, stop, restart, kill] }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "401": { description: No valid token }
+        "403": { description: The token lacks servers:power, or its owner is not an admin }
+        "404": { description: No such server or action }
+        "409": { description: The server is busy with another task }
+        "502": { description: The Rust service did not answer or refused }
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+  schemas:
+    Server:
+      type: object
+      required: [slug, name, hostname, server_type, mc_version, state, detail]
+      properties:
+        slug: { type: string, examples: [survival] }
+        name: { type: string }
+        hostname: { type: string, examples: [survival.mc.example.com] }
+        server_type:
+          type: string
+          enum: [VANILLA, PAPER, FABRIC, FORGE, NEOFORGE, MODRINTH, AUTO_CURSEFORGE]
+        mc_version: { type: string, examples: [LATEST, "1.21.10"] }
+        state:
+          type: string
+          enum: [running, starting, stopping, restarting, installing, "backing up", restoring, importing, deleting, offline, error, unknown]
+        detail:
+          type: [string, "null"]
+          description: Why the server is in an error state, when known.
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }

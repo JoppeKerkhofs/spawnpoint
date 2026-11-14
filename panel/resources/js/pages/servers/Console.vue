@@ -13,6 +13,7 @@ const props = defineProps<{
     server: Server;
     states?: States;
     console: { url: string };
+    bluemapUrl: string | null;
 }>();
 
 const ANSI_CODES = new RegExp(
@@ -253,6 +254,20 @@ onBeforeUnmount(() => {
                     <div class="font-mono text-sm break-all text-primary">
                         {{ server.hostname }}
                     </div>
+                    <template v-if="bluemapUrl">
+                        <div
+                            class="mt-3 text-[0.8125rem] text-muted-foreground"
+                        >
+                            BlueMap
+                        </div>
+                        <a
+                            :href="bluemapUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-sm break-all text-primary underline"
+                            >{{ bluemapUrl.replace(/^https?:\/\//, '') }}</a
+                        >
+                    </template>
                 </SectionCard>
 
                 <SectionCard title="Resources">

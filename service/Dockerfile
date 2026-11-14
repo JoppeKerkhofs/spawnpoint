@@ -7,6 +7,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked && cp target/release/mcpanel-service /mcpanel-service
 
 FROM debian:bookworm-slim
+# World imports unpack .zip files; tar and gzip for backups are already in the base image.
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 COPY --from=build /mcpanel-service /usr/local/bin/mcpanel-service
 EXPOSE 8080
 ENTRYPOINT ["mcpanel-service"]

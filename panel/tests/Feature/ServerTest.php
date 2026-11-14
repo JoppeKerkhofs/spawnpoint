@@ -57,6 +57,7 @@ test('an admin creates a server and its node is told to create and start it', fu
             'max_players' => 20,
             'modpack' => null,
             'cf_api_key' => null,
+            'bluemap' => false,
             'start' => true,
         ]);
 });
@@ -135,6 +136,11 @@ test('viewers cannot create, change, control or delete servers', function () {
     $this->put(route('servers.update', $server), serverForm())->assertForbidden();
     $this->post(route('servers.power', [$server, 'stop']))->assertForbidden();
     $this->delete(route('servers.destroy', $server))->assertForbidden();
+
+    Http::assertNothingSent();
+    $this->get(route('servers.backups', $server))->assertForbidden();
+    $this->post(route('servers.backups.store', $server))->assertForbidden();
+    $this->post(route('servers.import', $server), ['source' => 'host', 'path' => 'old'])->assertForbidden();
 
     Http::assertNothingSent();
     $this->get(route('dashboard'))->assertInertia(fn (Assert $page) => $page->where('servers', []));

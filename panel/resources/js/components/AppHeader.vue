@@ -12,6 +12,7 @@ import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard, serviceStatus } from '@/routes';
+import { index as users } from '@/routes/users';
 import type { BreadcrumbItem, NavItem } from '@/types';
 
 type Props = {
@@ -70,12 +71,15 @@ onMounted(() => {
 
 onBeforeUnmount(() => timers.forEach(clearInterval));
 
-const mainNavItems: NavItem[] = [
+const mainNavItems = computed<NavItem[]>(() => [
     {
         title: 'Servers',
         href: dashboard(),
     },
-];
+    ...(auth.value.user.role === 'admin'
+        ? [{ title: 'Users', href: users() }]
+        : []),
+]);
 </script>
 
 <template>

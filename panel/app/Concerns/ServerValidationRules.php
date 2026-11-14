@@ -42,6 +42,7 @@ trait ServerValidationRules
                     }
                 },
             ],
+            'bluemap' => ['nullable', 'boolean'],
             'modpack_name' => ['nullable', 'string', 'max:120'],
             'modpack_icon' => ['nullable', 'string', 'max:500', 'starts_with:https://'],
         ];

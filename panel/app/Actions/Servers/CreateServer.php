@@ -36,6 +36,7 @@ class CreateServer
                 'memory_mb' => $data['memory_mb'],
                 'settings' => UpdateServer::settings($data),
                 'modpack' => UpdateServer::modpack($data),
+                'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
                 'eula_accepted_at' => now(),
             ]);
 

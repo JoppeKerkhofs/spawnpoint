@@ -6,12 +6,18 @@ services:
     environment:
       MCPANEL_TOKEN: ${MCPANEL_TOKEN:?run "php artisan node:register" in panel/ and put the token in .env}
       MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
+      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
       - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+      # Outside the data folder, so the file manager can never reach the archives.
+      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      # Host worlds offered for import; read-only.
+      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
 
   # Players connect here; it forwards each connection to the server whose hostname they typed.
   router:
@@ -29,7 +35,23 @@ services:
       - minecraft
       - socket
 
-  # Gives the router read-only container discovery instead of the full Docker socket.
+  # Serves each server's BlueMap at /<server>/, for servers that have it switched on.
+  maps:
+    image: traefik:v3
+    restart: unless-stopped
+    depends_on:
+      - socket-proxy
+    command:
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.bluemap.address=:8100
+    ports:
+      - "8100:8100"
+    networks:
+      - minecraft
+      - socket
+
+  # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
   socket-proxy:
     image: tecnativa/docker-socket-proxy
     restart: unless-stopped

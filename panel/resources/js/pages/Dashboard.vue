@@ -76,9 +76,11 @@ const memoryGb = computed(
             role="alert"
             class="rounded-md border border-destructive bg-card px-4 py-3 text-sm text-destructive"
         >
-            The Rust service did not answer, so server states are unknown and
-            controls will fail. Check that it is running and that a node is
-            registered (php artisan node:register).
+            The Rust service did not answer, so server states are unknown{{
+                canManage
+                    ? ' and controls will fail. Check that it is running and that a node is registered (php artisan node:register).'
+                    : '.'
+            }}
         </p>
 
         <div v-if="servers.length" class="flex flex-wrap gap-3">
@@ -111,7 +113,11 @@ const memoryGb = computed(
             v-if="!servers.length"
             class="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
         >
-            No servers yet.
+            {{
+                canManage
+                    ? 'No servers yet.'
+                    : 'No servers are shared with you yet.'
+            }}
         </p>
 
         <div class="flex flex-col gap-3">
@@ -124,9 +130,13 @@ const memoryGb = computed(
                     class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
                 >
                     <h2 class="text-lg leading-[1.35] font-bold text-primary">
-                        <Link :href="show({ server: server.slug })">
+                        <Link
+                            v-if="canManage"
+                            :href="show({ server: server.slug })"
+                        >
                             {{ server.name }}
                         </Link>
+                        <template v-else>{{ server.name }}</template>
                     </h2>
                     <StatusPill :tone="toneOf(current.state)">
                         {{ current.state }}
@@ -155,6 +165,7 @@ const memoryGb = computed(
                         </div>
                     </div>
                     <ServerPowerButtons
+                        v-if="canManage"
                         :slug="server.slug"
                         :state="current.state"
                     >

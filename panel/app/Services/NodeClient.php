@@ -76,6 +76,7 @@ class NodeClient
             'max_players' => $server->settings['max_players'],
             'modpack' => $server->modpack['project'] ?? null,
             'cf_api_key' => $server->server_type === 'AUTO_CURSEFORGE' ? config('panel.curseforge_key') : null,
+            'bluemap' => $server->bluemap_enabled,
             'start' => $start,
         ]);
     }
@@ -222,6 +223,93 @@ class NodeClient
     public static function signature(string $token, int $timestamp, string $method, string $path, string $body): string
     {
         return hash_hmac('sha256', "{$timestamp}\n{$method}\n{$path}\n{$body}", $token);
+    }
+
+    /**
+     * List a server's backups, newest first.
+     *
+     * @return list<array{name: string, size: int, created: int, locked: bool}>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function backups(Server $server): array
+    {
+        return $this->send('GET', "/servers/{$server->slug}/backups")->json();
+    }
+
+    /**
+     * Start a backup; afterwards the node keeps only the newest unlocked ones.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function createBackup(Server $server): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/backups", ['keep' => $server->backup_keep]);
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function restoreBackup(Server $server, string $name): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/backups/{$name}/restore");
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function lockBackup(Server $server, string $name, bool $locked): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/backups/{$name}/lock", ['locked' => $locked]);
+    }
+
+    /**
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function deleteBackup(Server $server, string $name): void
+    {
+        $this->send('DELETE', "/servers/{$server->slug}/backups/{$name}");
+    }
+
+    /**
+     * Get the address the browser downloads a backup from, with a token that is valid for five minutes.
+     */
+    public function backupUrl(Server $server, string $name): string
+    {
+        $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 300, false);
+
+        return "{$this->node->base_url}/servers/{$server->slug}/backups/{$name}/download?token={$token}";
+    }
+
+    /**
+     * List the worlds in the node's import folder, as paths inside it.
+     *
+     * @return list<string>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function imports(): array
+    {
+        return $this->send('GET', '/imports')->json();
+    }
+
+    /**
+     * Replace the server's world with one from a zip in its folder or from the import folder.
+     *
+     * @param  'zip'|'host'  $source
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function importWorld(Server $server, string $source, string $path): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/import", ['source' => $source, 'path' => $path]);
     }
 
     /**

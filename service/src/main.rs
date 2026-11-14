@@ -1,3 +1,4 @@
+mod backups;
 mod files;
 
 use std::{
@@ -49,9 +50,11 @@ const MANAGED_LABEL: &str = "mcpanel.managed";
 const IMAGE: &str = "itzg/minecraft-server";
 // Shared with mc-router (compose.yaml), which routes players to servers by hostname.
 const NETWORK: &str = "minecraft";
+// BlueMap's built-in web server listens here unless its config says otherwise.
+const BLUEMAP_PORT: &str = "8100";
 const JAVA_VERSIONS: [u8; 4] = [8, 17, 21, 25];
 // Long enough for the server to save the world on SIGTERM.
-const STOP_TIMEOUT_SECS: i32 = 60;
+pub const STOP_TIMEOUT_SECS: i32 = 60;
 const MAX_SKEW_SECS: u64 = 60;
 const CONSOLE_BACKLOG_LINES: &str = "200";
 const MAX_COMMAND_CHARS: usize = 500;
@@ -60,20 +63,22 @@ const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 // ponytail: bodies are buffered to verify the signature; file uploads will need a streamed scheme.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-enum Task {
+pub enum Task {
     Busy(&'static str),
     Failed(String),
 }
 
 // ponytail: running and failed tasks live in memory, so a service restart forgets them; persist if that hurts.
-type Tasks = Arc<Mutex<HashMap<String, Task>>>;
+pub type Tasks = Arc<Mutex<HashMap<String, Task>>>;
 
 #[derive(Clone)]
 pub struct AppState {
-    docker: Docker,
+    pub docker: Docker,
     pub token: Arc<[u8]>,
     pub data_dir: Arc<str>,
-    tasks: Tasks,
+    pub backup_dir: Arc<str>,
+    pub import_dir: Arc<str>,
+    pub tasks: Tasks,
 }
 
 #[cfg(test)]
@@ -84,6 +89,8 @@ impl AppState {
             docker: Docker::connect_with_http("http://127.0.0.1:1", 1, bollard::API_DEFAULT_VERSION).expect("docker client"),
             token: Arc::from(&b"0123456789abcdef0123456789abcdef"[..]),
             data_dir: data_dir.into(),
+            backup_dir: "/nonexistent".into(),
+            import_dir: "/nonexistent".into(),
             tasks: Tasks::default(),
         }
     }
@@ -107,6 +114,9 @@ struct ServerConfig {
     modpack: Option<String>,
     #[serde(default)]
     cf_api_key: Option<String>,
+    // Publishes the server's BlueMap web map under /<slug>/ on the map port.
+    #[serde(default)]
+    bluemap: bool,
     #[serde(default)]
     start: bool,
 }
@@ -205,7 +215,7 @@ pub fn valid_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
-fn container_name(slug: &str) -> String {
+pub fn container_name(slug: &str) -> String {
     format!("mc-{slug}")
 }
 
@@ -236,7 +246,7 @@ fn is_not_found(error: &DockerError) -> bool {
 }
 
 // None when there is no such container; an error when one exists that the panel does not manage.
-async fn managed(docker: &Docker, slug: &str) -> Result<Option<ContainerInspectResponse>, StatusCode> {
+pub async fn managed(docker: &Docker, slug: &str) -> Result<Option<ContainerInspectResponse>, StatusCode> {
     match docker.inspect_container(&container_name(slug), None::<InspectContainerOptions>).await {
         Ok(container) => {
             let labels = container.config.as_ref().and_then(|config| config.labels.as_ref());
@@ -255,9 +265,10 @@ async fn managed(docker: &Docker, slug: &str) -> Result<Option<ContainerInspectR
 }
 
 // Runs slow Docker work in the background so the panel's request returns at once.
-fn run_task<F>(tasks: &Tasks, slug: String, label: &'static str, work: F) -> StatusCode
+pub fn run_task<F, E>(tasks: &Tasks, slug: String, label: &'static str, work: F) -> StatusCode
 where
-    F: Future<Output = Result<(), DockerError>> + Send + 'static,
+    F: Future<Output = Result<(), E>> + Send + 'static,
+    E: std::fmt::Display,
 {
     {
         let mut tasks = tasks.lock().unwrap();
@@ -311,10 +322,7 @@ async fn apply(docker: Docker, data_dir: Arc<str>, slug: String, config: ServerC
     let body = ContainerCreateBody {
         image: Some(image),
         env: Some(config.env()),
-        labels: Some(HashMap::from([
-            (MANAGED_LABEL.to_owned(), "true".to_owned()),
-            ("mc-router.host".to_owned(), config.hostname.clone()),
-        ])),
+        labels: Some(labels(&slug, &config)),
         host_config: Some(HostConfig {
             binds: Some(vec![format!("{data_dir}/{slug}:/data")]),
             memory: Some(i64::from(config.memory_mb) * 1024 * 1024),
@@ -330,6 +338,29 @@ async fn apply(docker: Docker, data_dir: Arc<str>, slug: String, config: ServerC
     }
 
     Ok(())
+}
+
+fn labels(slug: &str, config: &ServerConfig) -> HashMap<String, String> {
+    let mut labels = HashMap::from([
+        (MANAGED_LABEL.to_owned(), "true".to_owned()),
+        ("mc-router.host".to_owned(), config.hostname.clone()),
+    ]);
+
+    if config.bluemap {
+        let router = format!("traefik.http.routers.bluemap-{slug}");
+        let strip = format!("bluemap-{slug}-strip");
+        labels.extend([
+            ("traefik.enable".to_owned(), "true".to_owned()),
+            ("traefik.docker.network".to_owned(), NETWORK.to_owned()),
+            (format!("{router}.rule"), format!("PathPrefix(`/{slug}/`)")),
+            (format!("{router}.entrypoints"), "bluemap".to_owned()),
+            (format!("{router}.middlewares"), strip.clone()),
+            (format!("traefik.http.middlewares.{strip}.stripprefix.prefixes"), format!("/{slug}")),
+            (format!("traefik.http.services.bluemap-{slug}.loadbalancer.server.port"), BLUEMAP_PORT.to_owned()),
+        ]);
+    }
+
+    labels
 }
 
 async fn put_server(
@@ -489,7 +520,7 @@ fn valid_command(command: &str) -> bool {
         && !command.chars().any(char::is_control)
 }
 
-async fn run_command(docker: &Docker, name: &str, command: &str) -> String {
+pub async fn run_command(docker: &Docker, name: &str, command: &str) -> String {
     let command = command.trim().trim_start_matches('/');
     if !valid_command(command) {
         return "That command cannot be sent.\n".into();
@@ -716,10 +747,22 @@ async fn main() {
     let data_dir = std::env::var("MCPANEL_DATA_DIR").unwrap_or_else(|_| "/srv/mc".into());
     assert!(FsPath::new(&data_dir).is_dir(), "MCPANEL_DATA_DIR ({data_dir}) is not mounted");
 
+    let backup_dir = std::env::var("MCPANEL_BACKUP_DIR").unwrap_or_else(|_| "/srv/mc-backups".into());
+    assert!(FsPath::new(&backup_dir).is_dir(), "MCPANEL_BACKUP_DIR ({backup_dir}) is not mounted");
+    // Inside the data folder, the file manager could reach the archives.
+    assert!(
+        !FsPath::new(&backup_dir).starts_with(&data_dir) && !FsPath::new(&data_dir).starts_with(&backup_dir),
+        "MCPANEL_BACKUP_DIR and MCPANEL_DATA_DIR must not contain each other"
+    );
+    // Optional: host worlds offered for import. Nothing is listed when it is not mounted.
+    let import_dir = std::env::var("MCPANEL_IMPORT_DIR").unwrap_or_else(|_| "/srv/mc-import".into());
+
     let state = AppState {
         docker: Docker::connect_with_local_defaults().expect("docker socket"),
         token: token.into_bytes().into(),
         data_dir: data_dir.into(),
+        backup_dir: backup_dir.into(),
+        import_dir: import_dir.into(),
         tasks: Tasks::default(),
     };
     let app = Router::new()
@@ -732,11 +775,18 @@ async fn main() {
         .route("/servers/{slug}/files/content", get(files::read_text).put(files::write_text))
         .route("/servers/{slug}/files/mkdir", post(files::mkdir))
         .route("/servers/{slug}/files/rename", post(files::rename))
+        .route("/servers/{slug}/backups", get(backups::list).post(backups::create))
+        .route("/servers/{slug}/backups/{name}", axum::routing::delete(backups::delete))
+        .route("/servers/{slug}/backups/{name}/restore", post(backups::restore_backup))
+        .route("/servers/{slug}/backups/{name}/lock", post(backups::lock))
+        .route("/servers/{slug}/import", post(backups::import_world))
+        .route("/imports", get(backups::list_imports))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_signature))
         // Authenticated by its console token instead of a signed request.
         .route("/servers/{slug}/console", get(console))
         .route("/servers/{slug}/upload", put(files::upload).merge(options(files::upload_preflight)))
         .route("/servers/{slug}/download", get(files::download))
+        .route("/servers/{slug}/backups/{name}/download", get(backups::download))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
@@ -823,6 +873,10 @@ mod tests {
         ] {
             assert_eq!(config(|value| value[field] = bad).unwrap().validate(), Err(field));
         }
+
+        let with_map = config(|value| value["bluemap"] = json!(true)).unwrap();
+        assert_eq!(labels("survival", &with_map)["traefik.http.routers.bluemap-survival.rule"], "PathPrefix(`/survival/`)");
+        assert!(!labels("survival", &valid).contains_key("traefik.enable"));
 
         let pack = |server_type: &str, modpack: Value| {
             config(|value| {

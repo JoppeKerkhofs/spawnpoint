@@ -243,6 +243,28 @@ const selectClass =
                 />
                 <InputError :message="errors.max_players" />
             </div>
+
+            <div class="grid content-start gap-1 sm:col-span-3">
+                <label class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        name="bluemap"
+                        value="1"
+                        :checked="server?.bluemap_enabled"
+                        class="size-4 accent-primary"
+                        aria-describedby="bluemap_hint"
+                    />
+                    Publish this server's BlueMap web map
+                </label>
+                <span
+                    id="bluemap_hint"
+                    class="text-[0.8125rem] text-muted-foreground"
+                >
+                    The map is public. Install the BlueMap mod or plugin
+                    yourself, in Files; this only opens the way to it.
+                </span>
+                <InputError :message="errors.bluemap" />
+            </div>
         </div>
     </SectionCard>
 </template>

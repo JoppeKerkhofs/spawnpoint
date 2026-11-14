@@ -53,6 +53,7 @@ class ServerController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::states()),
             // A closure, so a reconnect can ask for a fresh token on its own.
             'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: true)],
+            'bluemapUrl' => $server->bluemap_enabled ? rtrim(config('panel.bluemap_url'), '/')."/{$server->slug}/" : null,
         ]);
     }
 

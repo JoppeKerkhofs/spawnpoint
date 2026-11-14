@@ -53,8 +53,12 @@ fn server_root(state: &AppState, slug: &str) -> Result<PathBuf, StatusCode> {
 // Turns a path from the panel into one inside the server's folder, refusing anything that could leave it.
 // ponytail: checked then used, so a mod swapping in a symlink at that instant could win the race; use openat2 if that matters.
 pub fn resolve(state: &AppState, slug: &str, relative: &str) -> Result<PathBuf, StatusCode> {
-    let root = server_root(state, slug)?;
-    let mut path = root.clone();
+    resolve_in(&server_root(state, slug)?, relative)
+}
+
+// The same check for any folder; the root must already be canonical.
+pub fn resolve_in(root: &FsPath, relative: &str) -> Result<PathBuf, StatusCode> {
+    let mut path = root.to_path_buf();
 
     for part in relative.split('/').filter(|part| !part.is_empty()) {
         if !valid_component(part) {
@@ -68,7 +72,7 @@ pub fn resolve(state: &AppState, slug: &str, relative: &str) -> Result<PathBuf, 
     while existing.symlink_metadata().is_err() {
         existing = existing.parent().ok_or(StatusCode::NOT_FOUND)?;
     }
-    if !existing.canonicalize().map_err(|_| StatusCode::FORBIDDEN)?.starts_with(&root) {
+    if !existing.canonicalize().map_err(|_| StatusCode::FORBIDDEN)?.starts_with(root) {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -276,19 +280,20 @@ pub async fn download(State(state): State<AppState>, Path(slug): Path<String>, Q
     claims(&state.token, "files", param(&query, "token"), &slug, unix_now()).ok_or(StatusCode::UNAUTHORIZED)?;
 
     let path = resolve(&state, &slug, param(&query, "path"))?;
-    let file = tokio::fs::File::open(&path).await.map_err(io_status)?;
+    let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+
+    send_file(&path, &name).await
+}
+
+// Streams a file as a download, so its size never matters for memory.
+pub async fn send_file(path: &FsPath, name: &str) -> Result<Response, StatusCode> {
+    let file = tokio::fs::File::open(path).await.map_err(io_status)?;
     let metadata = file.metadata().await.map_err(io_status)?;
     if !metadata.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let name: String = path
-        .file_name()
-        .map(|name| name.to_string_lossy().replace(['"', '\\'], "_"))
-        .unwrap_or_default()
-        .chars()
-        .filter(char::is_ascii)
-        .collect();
+    let name: String = name.replace(['"', '\\'], "_").chars().filter(char::is_ascii).collect();
 
     Ok((
         [

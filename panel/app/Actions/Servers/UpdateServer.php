@@ -29,6 +29,7 @@ class UpdateServer
                 'memory_mb' => $data['memory_mb'],
                 'settings' => self::settings($data),
                 'modpack' => self::modpack($data),
+                'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
             ]);
 
             (new NodeClient($server->node))->apply($server);

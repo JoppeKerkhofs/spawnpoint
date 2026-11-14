@@ -15,12 +15,18 @@ class DashboardController extends Controller
      */
     public function __invoke(Request $request): Response
     {
-        // ponytail: viewers see no servers until the server_user sharing table exists.
-        $canManage = $request->user()->can('manage-servers');
+        // Admins see every server; viewers only the ones shared with them.
+        $servers = Server::query()->visibleTo($request->user())->orderBy('name')->get();
 
         return Inertia::render('Dashboard', [
-            'servers' => $canManage ? Server::query()->orderBy('name')->get() : [],
-            'states' => Inertia::defer(fn () => $canManage ? NodeClient::states() : ['online' => true, 'servers' => []]),
+            'servers' => $servers,
+            'states' => Inertia::defer(function () use ($servers): array {
+                $states = NodeClient::states();
+                // A viewer must not learn about servers that are not shared with them.
+                $states['servers'] = array_intersect_key($states['servers'], $servers->keyBy('slug')->all());
+
+                return $states;
+            }),
         ]);
     }
 }

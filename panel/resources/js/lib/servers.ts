@@ -10,6 +10,9 @@ export type Server = {
     java_version: number;
     memory_mb: number;
     modpack: Modpack | null;
+    bluemap_enabled: boolean;
+    backup_at: string | null;
+    backup_keep: number;
     settings: {
         motd: string;
         difficulty: string;
