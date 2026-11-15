@@ -13,6 +13,7 @@ use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServiceStatusController;
+use App\Http\Controllers\SupportController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +23,7 @@ Route::redirect('/', '/dashboard')->name('home');
 Route::get('node-upstream/{node}', [NodeController::class, 'upstream'])->whereNumber('node')->name('nodes.upstream');
 // Public: anyone can read what the panel keeps about them, signed in or not.
 Route::get('privacy', PrivacyController::class)->name('privacy');
+Route::get('support', SupportController::class)->name('support');
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

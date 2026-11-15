@@ -276,7 +276,7 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                     <span id="privacy_contact_hint" :class="hint">
                         {{
                             t(
-                                'Shown on the public privacy policy as the one people can turn to about their data. The policy describes what the panel stores and which services it contacts; check it against your own situation and the law that applies to you.',
+                                'Shown on the public privacy policy and support page as the one people can turn to about their data and for help. The policy describes what the panel stores and which services it contacts; check it against your own situation and the law that applies to you.',
                             )
                         }}
                         <a

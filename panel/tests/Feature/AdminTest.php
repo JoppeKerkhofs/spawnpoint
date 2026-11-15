@@ -195,3 +195,23 @@ test('the privacy policy is public and names who runs the installation', functio
     auth()->logout();
     $this->get(route('privacy'))->assertInertia(fn (Assert $page) => $page->where('operator', 'Jane Doe, jane@example.com'));
 });
+
+test('the support page is public and names who to contact', function () {
+    config(['mail.default' => 'log']);
+    $this->get(route('support'))->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('Support')
+        ->where('operator', null)
+        ->where('canResetPassword', false));
+
+    $this->actingAs(User::factory()->admin()->create())->put(route('panel-settings.update'), [
+        'base_domain' => 'mc.example.com', 'bluemap_url' => 'http://localhost:8100',
+        'privacy_contact' => 'Jane Doe, jane@example.com',
+    ])->assertSessionHasNoErrors();
+    config(['mail.default' => 'smtp']);
+
+    auth()->logout();
+    $this->get(route('support'))->assertInertia(fn (Assert $page) => $page
+        ->where('operator', 'Jane Doe, jane@example.com')
+        ->where('baseDomain', 'mc.example.com')
+        ->where('canResetPassword', true));
+});
