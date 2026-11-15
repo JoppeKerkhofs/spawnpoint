@@ -7,6 +7,7 @@ use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ModpackSearchController;
+use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PanelSettingsController;
 use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ScheduleController;
@@ -17,6 +18,8 @@ use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
+// Asked by the panel's own web server before it passes browser traffic on to a node.
+Route::get('node-upstream/{node}', [NodeController::class, 'upstream'])->whereNumber('node')->name('nodes.upstream');
 // Public: anyone can read what the panel keeps about them, signed in or not.
 Route::get('privacy', PrivacyController::class)->name('privacy');
 
@@ -94,6 +97,10 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class, 'can:manage-user
     Route::get('activity', [ActivityController::class, 'index'])->name('activity.index');
     Route::get('panel-settings', [PanelSettingsController::class, 'edit'])->name('panel-settings.edit');
     Route::put('panel-settings', [PanelSettingsController::class, 'update'])->name('panel-settings.update');
+    Route::get('nodes', [NodeController::class, 'index'])->name('nodes.index');
+    Route::post('nodes', [NodeController::class, 'store'])->name('nodes.store');
+    Route::put('nodes/{node}', [NodeController::class, 'update'])->name('nodes.update');
+    Route::delete('nodes/{node}', [NodeController::class, 'destroy'])->name('nodes.destroy');
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::post('users', [UserController::class, 'store'])->name('users.store');
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');

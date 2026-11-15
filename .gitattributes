@@ -2,5 +2,6 @@
 *.sh text eol=lf
 docker/* text eol=lf
 .env.compose.example text eol=lf
+.env.node.example text eol=lf
 Dockerfile text eol=lf
 *.ttf binary

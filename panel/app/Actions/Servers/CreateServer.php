@@ -31,7 +31,7 @@ class CreateServer
         // The row is rolled back when the node refuses, so the form can simply be sent again.
         $server = DB::transaction(function () use ($owner, $data): Server {
             $server = Server::create([
-                'node_id' => Node::query()->firstOrFail()->id,
+                'node_id' => $data['node_id'] ?? Node::query()->firstOrFail()->id,
                 'owner_id' => $owner->id,
                 'name' => $data['name'],
                 'slug' => $data['slug'],
@@ -58,7 +58,7 @@ class CreateServer
         // is reported but does not undo the server.
         if (CloudflareDns::enabled()) {
             try {
-                CloudflareDns::create($server->hostname);
+                CloudflareDns::create($server->hostname, $server->node->dns_target);
                 ActivityLog::record('dns.create', $server, ['hostname' => $server->hostname]);
             } catch (ConnectionException|RequestException $exception) {
                 report($exception);

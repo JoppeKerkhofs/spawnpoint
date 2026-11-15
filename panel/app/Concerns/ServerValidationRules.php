@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Actions\Servers\UpdateServer;
+use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Services\MemoryLimit;
@@ -29,12 +30,14 @@ trait ServerValidationRules
                 'between:1024,32768',
                 function (string $attribute, mixed $value, Closure $fail): void {
                     // On an update, the server's own current share does not count against it.
-                    $free = MemoryLimit::freeMb($this->route('server'));
+                    $server = $this->route('server');
+                    $node = $server instanceof Server ? $server->node : (Node::query()->whereKey($this->input('node_id'))->first() ?? Node::query()->first());
+                    $free = MemoryLimit::freeMb($node, $server instanceof Server ? $server : null);
 
                     if ($free !== null && (int) $value > $free) {
                         $fail(__('Only :free GB is left under the :limit GB memory limit.', [
                             'free' => max(0, round($free / 1024, 1)),
-                            'limit' => round((int) MemoryLimit::mb() / 1024, 1),
+                            'limit' => round((int) MemoryLimit::mb($node) / 1024, 1),
                         ]));
                     }
                 },

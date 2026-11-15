@@ -29,7 +29,7 @@ class SetupPanel extends Command
         }
 
         // The token can be rotated by changing the environment and restarting.
-        Node::updateOrCreate(['name' => 'local'], ['base_url' => config('panel.node_url'), 'token' => $token]);
+        Node::updateOrCreate(['name' => Node::LOCAL], ['base_url' => config('panel.node_url'), 'token' => $token]);
 
         if (User::query()->exists()) {
             return self::SUCCESS;

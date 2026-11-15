@@ -23,6 +23,8 @@ class StoreServerRequest extends FormRequest
             ...$this->serverRules(),
             'slug' => ['required', 'string', 'max:63', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/', 'unique:servers,slug'],
             'eula' => ['accepted'],
+            // The host the server runs on; the first node when there is only one to choose from.
+            'node_id' => ['nullable', 'integer', 'exists:nodes,id'],
             // The server is created without starting, so a world zip can be put in first.
             'world_zip' => ['nullable', 'boolean'],
             'seed' => ['nullable', 'string', 'max:64', 'regex:/^[^\x00-\x1F\x7F]*$/'],

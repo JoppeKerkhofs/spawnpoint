@@ -15,6 +15,7 @@ import { getInitials } from '@/composables/useInitials';
 import { t } from '@/lib/i18n';
 import { dashboard, serviceStatus } from '@/routes';
 import { index as activity } from '@/routes/activity';
+import { index as nodes } from '@/routes/nodes';
 import { edit as panelSettings } from '@/routes/panel-settings';
 import { index as users } from '@/routes/users';
 import type { BreadcrumbItem, NavItem } from '@/types';
@@ -31,7 +32,12 @@ const page = usePage();
 const auth = computed(() => page.props.auth);
 const { isCurrentUrl } = useCurrentUrl();
 
-const service = ref<{ online: boolean; last_seen_at: string | null }>();
+const service = ref<{
+    online: boolean;
+    nodes: number;
+    offline: string[];
+    last_seen_at: string | null;
+}>();
 const now = ref(Date.now());
 
 const lastContact = computed(() => {
@@ -83,6 +89,7 @@ const mainNavItems = computed<NavItem[]>(() => [
     ...(auth.value.user.role === 'admin'
         ? [
               { title: t('Users'), href: users() },
+              { title: t('Nodes'), href: nodes() },
               { title: t('Activity'), href: activity() },
               { title: t('Settings'), href: panelSettings() },
           ]
@@ -148,9 +155,17 @@ const mainNavItems = computed<NavItem[]>(() => [
                         "
                     />
                     <span>{{
-                        service.online
-                            ? t('Rust service online')
-                            : t('Rust service offline')
+                        service.nodes > 1
+                            ? service.online
+                                ? t(':count nodes online', {
+                                      count: service.nodes,
+                                  })
+                                : t('Not answering: :names', {
+                                      names: service.offline.join(', '),
+                                  })
+                            : service.online
+                              ? t('Rust service online')
+                              : t('Rust service offline')
                     }}</span>
                     <span class="text-white/60 tabular-nums"
                         >·

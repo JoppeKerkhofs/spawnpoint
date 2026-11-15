@@ -23,19 +23,16 @@ class WatchServers extends Command
     public function handle(): int
     {
         $states = NodeClient::states();
-
-        // With the service down nothing is known, which is not the same as every server being offline.
-        if (! $states['online']) {
-            return self::SUCCESS;
-        }
+        // ponytail: checked once a minute, so a crash and recovery inside one minute goes unnoticed.
+        $before = Cache::get('watched-server-states');
 
         $now = [];
         foreach (Server::all() as $server) {
-            $now[$server->slug] = $states['servers'][$server->slug]['state'] ?? 'offline';
+            $state = $states['servers'][$server->slug]['state'] ?? 'offline';
+            // A node that does not answer says nothing about its servers, so what was last known stands.
+            $now[$server->slug] = $state === 'unknown' ? ($before[$server->slug] ?? 'unknown') : $state;
         }
 
-        // ponytail: checked once a minute, so a crash and recovery inside one minute goes unnoticed.
-        $before = Cache::get('watched-server-states');
         Cache::forever('watched-server-states', $now);
 
         foreach ($before === null ? [] : Server::all() as $server) {

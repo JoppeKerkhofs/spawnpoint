@@ -86,7 +86,7 @@ test('the service status reports online with the time of last contact', function
 
     $this->actingAs(User::factory()->create())
         ->getJson(route('service-status'))
-        ->assertExactJson(['online' => true, 'last_seen_at' => now()->toIso8601String()]);
+        ->assertExactJson(['online' => true, 'nodes' => 1, 'offline' => [], 'last_seen_at' => now()->toIso8601String()]);
 
     expect($node->refresh()->last_seen_at->timestamp)->toBe(now()->timestamp);
 });
@@ -97,7 +97,7 @@ test('the service status reports offline and keeps the last contact time', funct
 
     $this->actingAs(User::factory()->create())
         ->getJson(route('service-status'))
-        ->assertExactJson(['online' => false, 'last_seen_at' => null]);
+        ->assertExactJson(['online' => false, 'nodes' => 1, 'offline' => [$node->name], 'last_seen_at' => null]);
 
     expect($node->refresh()->last_seen_at)->toBeNull();
 });

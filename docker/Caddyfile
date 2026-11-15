@@ -7,14 +7,24 @@
 	root * /app/public
 	encode zstd br gzip
 
-	# The browser talks to the Rust service only for what a token authorises: the live
-	# console, uploads and downloads. Its signed API is never reachable through here.
-	@node path_regexp ^/node/servers/[^/]+/(console|upload|download|backups/[^/]+/download)$
+	# The browser talks to a node only for what a token authorises: the live console, uploads
+	# and downloads. The address is /node/<number of the node>/..., and the panel says where
+	# that node is. A node's signed API is never reachable through here.
+	@node path_regexp node ^/node/([0-9]+)(/servers/[^/]+/(console|upload|download|backups/[^/]+/download))$
 	handle @node {
-		uri strip_prefix /node
-		reverse_proxy {$PANEL_NODE_URL} {
-			# Console output and file transfers are passed on as they come, whatever their size.
-			flush_interval -1
+		# In this order, whatever Caddy would otherwise make of it.
+		route {
+			# Whatever the browser sent under this name is dropped; only the panel's answer counts.
+			request_header -X-Node-Upstream
+			forward_auth 127.0.0.1:8080 {
+				uri /node-upstream/{re.node.1}
+				copy_headers X-Node-Upstream
+			}
+			uri strip_prefix /node/{re.node.1}
+			reverse_proxy {http.request.header.X-Node-Upstream} {
+				# Console output and file transfers are passed on as they come, whatever their size.
+				flush_interval -1
+			}
 		}
 	}
 

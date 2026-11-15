@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, Head, Link } from '@inertiajs/vue3';
+import { Form, Head, Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
@@ -19,7 +19,17 @@ defineProps<{
     options: ServerOptions;
     memory: MemoryBudget;
     imports: string[];
+    nodes: { id: number; name: string }[];
+    node: number | null;
 }>();
+
+// The memory that is left and the worlds on offer belong to a node, so they are asked for again.
+const chooseNode = (event: Event) => {
+    router.reload({
+        data: { node: (event.target as HTMLSelectElement).value },
+        only: ['node', 'memory', 'imports'],
+    });
+};
 
 const slug = ref('');
 const javaVersion = ref(25);
@@ -106,6 +116,47 @@ const worldSource = ref<'new' | 'host' | 'zip'>('new');
                         </div>
                     </div>
                 </SectionCard>
+
+                <SectionCard v-if="nodes.length > 1" :title="t('Node')">
+                    <div class="grid gap-2">
+                        <Label for="node_id">{{
+                            t('The host this server runs on')
+                        }}</Label>
+                        <select
+                            id="node_id"
+                            name="node_id"
+                            class="h-9 w-full max-w-xs rounded-md border border-input bg-card px-2.5 text-sm"
+                            aria-describedby="node_id_hint"
+                            @change="chooseNode"
+                        >
+                            <option
+                                v-for="each in nodes"
+                                :key="each.id"
+                                :value="each.id"
+                                :selected="each.id === node"
+                            >
+                                {{ each.name }}
+                            </option>
+                        </select>
+                        <span
+                            id="node_id_hint"
+                            class="text-[0.8125rem] text-muted-foreground"
+                        >
+                            {{
+                                t(
+                                    'A server stays on the node it was created on.',
+                                )
+                            }}
+                        </span>
+                        <InputError :message="errors.node_id" />
+                    </div>
+                </SectionCard>
+                <input
+                    v-else-if="node"
+                    type="hidden"
+                    name="node_id"
+                    :value="node"
+                />
 
                 <ServerFields
                     v-model:java-version="javaVersion"

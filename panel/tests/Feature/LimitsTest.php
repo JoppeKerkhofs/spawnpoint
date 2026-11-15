@@ -51,9 +51,9 @@ test('without a configured limit, nine tenths of the host memory is the limit', 
     Http::fake(['node.test:8080/host' => Http::response(['memory_mb' => 8192])]);
     Http::fake(['node.test:8080/servers/*' => Http::response(status: 202)]);
 
-    expect(MemoryLimit::mb())->toBe(7372)
-        ->and(MemoryLimit::freeMb())->toBe(7372 - 4096)
-        ->and(MemoryLimit::freeMb($this->existing))->toBe(7372);
+    expect(MemoryLimit::mb(Node::first()))->toBe(7372)
+        ->and(MemoryLimit::freeMb(Node::first()))->toBe(7372 - 4096)
+        ->and(MemoryLimit::freeMb(Node::first(), $this->existing))->toBe(7372);
 
     $this->get(route('servers.create'))
         ->assertInertia(fn (Assert $page) => $page->where('memory', ['limitMb' => 7372, 'freeMb' => 3276]));
@@ -64,7 +64,7 @@ test('there is no limit when the host memory cannot be read', function () {
     Http::fake(['node.test:8080/host' => Http::failedConnection()]);
     Http::fake(['node.test:8080/servers/*' => Http::response(status: 202)]);
 
-    expect(MemoryLimit::mb())->toBeNull();
+    expect(MemoryLimit::mb(Node::first()))->toBeNull();
     $this->post(route('servers.store'), limitForm(['memory_mb' => '32768']))->assertSessionHasNoErrors();
 });
 

@@ -59,9 +59,9 @@ test('browser addresses go through the panel when a public node path is set', fu
     $server = Server::factory()->create(['slug' => 'survival']);
     $client = new NodeClient($server->node);
 
-    expect($client->consoleUrl($server, true))->toStartWith('wss://panel.example.com/node/servers/survival/console?token=')
-        ->and($client->fileUrl($server, 'upload'))->toStartWith('https://panel.example.com/node/servers/survival/upload?token=')
-        ->and($client->backupUrl($server, '1.tar.gz'))->toStartWith('https://panel.example.com/node/servers/survival/backups/1.tar.gz/download?token=');
+    expect($client->consoleUrl($server, true))->toStartWith("wss://panel.example.com/node/{$server->node_id}/servers/survival/console?token=")
+        ->and($client->fileUrl($server, 'upload'))->toStartWith("https://panel.example.com/node/{$server->node_id}/servers/survival/upload?token=")
+        ->and($client->backupUrl($server, '1.tar.gz'))->toStartWith("https://panel.example.com/node/{$server->node_id}/servers/survival/backups/1.tar.gz/download?token=");
 });
 
 test('only a trusted proxy is believed about https and the visitor\'s address', function () {

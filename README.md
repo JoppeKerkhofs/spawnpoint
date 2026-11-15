@@ -57,6 +57,27 @@ docker compose -f compose.prod.yaml --env-file .env.compose up -d
 Server data lives in `/srv/mc`, backups in `/srv/mc-backups`, and worlds you want to import go in
 `/srv/mc-import`. The panel's own data is in the `database` volume.
 
+## More hosts
+
+Minecraft servers can run on more than one host. Each extra host runs a node, and the panel
+tells it what to do:
+
+1. In the panel, under Nodes, add the node with the address the host has for the panel, such as
+   `http://10.0.0.5:8080`. The panel shows a token once.
+2. On the host, copy `compose.node.yaml` and `.env.node.example`, save the example as `.env.node`
+   and fill in the token, the version and `NODE_BIND`.
+3. `docker compose -f compose.node.yaml --env-file .env.node up -d`
+
+- When creating a server you choose its node; a server stays on the node it was created on.
+- Players connect to the node's own host on port 25565, so each node needs its own public
+  address. Set it per node as "Point DNS records at" for Cloudflare, or point DNS there yourself.
+  The address of the web maps and the memory limit are per node too.
+- The panel reaches a node over plain http and signs every request, but does not encrypt it.
+  Put the panel and its nodes on a private network or a VPN, and never open the node's port to
+  the internet.
+- Browsers never talk to a node directly: the console and file transfers go through the panel.
+- Keep nodes on the same version as the panel.
+
 ## Versions
 
 The version is the `version` field of `panel/composer.json`. It is shown under the login form and

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ActivityLog;
+use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\User;
@@ -31,10 +32,10 @@ test('panel settings override the environment and an emptied one falls back to i
         ->assertSessionHasNoErrors();
 
     expect(Setting::value('base_domain'))->toBe('mc.example.com')
-        ->and(MemoryLimit::mb())->toBe(8192);
+        ->and(MemoryLimit::mb(Node::first()))->toBe(8192);
 
     $this->put(route('panel-settings.update'), settingsForm(['memory_limit_mb' => '']));
-    expect(MemoryLimit::mb())->toBe(4096);
+    expect(MemoryLimit::mb(Node::first()))->toBe(4096);
 
     // Turning on required two-factor is saved; this admin has none, so the next page sends them to set it up.
     $this->put(route('panel-settings.update'), settingsForm(['require_two_factor' => '1']));

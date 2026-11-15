@@ -21,7 +21,7 @@ class DashboardController extends Controller
 
         return Inertia::render('Dashboard', [
             'servers' => $servers->map(fn (Server $server): array => $server->forUser($request->user())),
-            'memoryLimitMb' => fn () => $request->user()->can('manage-servers') ? MemoryLimit::mb() : null,
+            'memoryLimitMb' => fn () => $request->user()->can('manage-servers') ? MemoryLimit::totalMb() : null,
             'states' => Inertia::defer(function () use ($servers): array {
                 $states = NodeClient::states();
                 // A viewer must not learn about servers that are not shared with them.

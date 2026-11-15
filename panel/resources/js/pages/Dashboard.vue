@@ -45,6 +45,9 @@ const page = usePage();
 const canManage = computed(() => page.props.auth.user.role === 'admin');
 const minecraftName = computed(() => page.props.auth.user.minecraft_name);
 const blocky = computed(() => page.props.theme === 'blocky');
+const nodeCount = computed(
+    () => new Set(props.servers.map((server) => server.node)).size,
+);
 
 const cards = computed(() =>
     props.servers.map((server) => ({
@@ -349,6 +352,11 @@ const memoryGb = computed(
                         "
                         class="rounded-full border border-brand px-2 py-px text-xs font-semibold text-primary"
                         >{{ t('You are online here') }}</span
+                    >
+                    <span
+                        v-if="nodeCount > 1"
+                        class="text-sm text-muted-foreground"
+                        >{{ t('on :node', { node: server.node }) }}</span
                     >
                     <span class="flex-1" />
                     <span

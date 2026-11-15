@@ -15,7 +15,8 @@ class NodeClient
     public function __construct(private Node $node) {}
 
     /**
-     * Get the live state of every server on every node, keyed by slug.
+     * Get the live state of every server on every node, keyed by slug. "online" is false when
+     * a node did not answer; its servers are then listed as "unknown".
      *
      * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
      */
@@ -31,6 +32,14 @@ class NodeClient
                 $node->forceFill(['last_seen_at' => now()])->save();
             } catch (ConnectionException|RequestException) {
                 $online = false;
+
+                // Nothing is known about this node's servers, which is not the same as them being offline.
+                foreach ($node->servers()->pluck('slug') as $slug) {
+                    $servers[$slug] = [
+                        'state' => 'unknown', 'detail' => (string) __('The node :name did not answer.', ['name' => $node->name]),
+                        'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0,
+                    ];
+                }
             }
         }
 
@@ -396,7 +405,8 @@ class NodeClient
     {
         $public = config('panel.node_public_url');
 
-        return filled($public) ? rtrim(url($public), '/') : $this->node->base_url;
+        // Through the panel's own web server, which passes it on to the right node by its number.
+        return filled($public) ? rtrim(url($public), '/').'/'.$this->node->id : $this->node->base_url;
     }
 
     /**

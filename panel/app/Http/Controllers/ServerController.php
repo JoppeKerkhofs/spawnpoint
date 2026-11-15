@@ -30,11 +30,17 @@ class ServerController extends Controller
     /**
      * Show the form for creating a server.
      */
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        // The memory that is left and the worlds on offer depend on the host the server will run on.
+        $nodes = Node::query()->orderBy('id')->get();
+        $node = $nodes->firstWhere('id', $request->integer('node')) ?? $nodes->first();
+
         return Inertia::render('servers/Create', [
-            ...$this->options(),
-            'imports' => rescue(fn () => (new NodeClient(Node::query()->firstOrFail()))->imports(), [], report: false),
+            ...$this->options(node: $node),
+            'nodes' => $nodes->map(fn (Node $each): array => ['id' => $each->id, 'name' => $each->name]),
+            'node' => $node?->id,
+            'imports' => $node === null ? [] : rescue(fn () => (new NodeClient($node))->imports(), [], report: false),
         ]);
     }
 
@@ -75,7 +81,7 @@ class ServerController extends Controller
             // A closure, so a reconnect can ask for a fresh token on its own.
             // Without the commands permission the token streams output but refuses commands.
             'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: $user->can('act', [$server, 'commands']))],
-            'bluemapUrl' => $server->bluemap_enabled ? rtrim(Setting::value('bluemap_url'), '/')."/{$server->slug}/" : null,
+            'bluemapUrl' => $server->bluemap_enabled ? rtrim($server->node->bluemap_url ?: Setting::value('bluemap_url'), '/')."/{$server->slug}/" : null,
         ]);
     }
 
@@ -172,7 +178,7 @@ class ServerController extends Controller
         abort_unless(CloudflareDns::enabled(), 404);
 
         try {
-            CloudflareDns::create($server->hostname);
+            CloudflareDns::create($server->hostname, $server->node->dns_target);
         } catch (ConnectionException|RequestException $exception) {
             report($exception);
             ActivityLog::record('dns.failed', $server, ['hostname' => $server->hostname]);
@@ -234,12 +240,14 @@ class ServerController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function options(?Server $server = null): array
+    private function options(?Server $server = null, ?Node $node = null): array
     {
+        $node = $server->node ?? $node;
+
         return [
             'baseDomain' => Setting::value('base_domain'),
-            // What this server may still be given: the limit minus what the other servers have.
-            'memory' => ['limitMb' => MemoryLimit::mb(), 'freeMb' => MemoryLimit::freeMb($server)],
+            // What this server may still be given: its node's limit minus what the other servers there have.
+            'memory' => ['limitMb' => MemoryLimit::mb($node), 'freeMb' => MemoryLimit::freeMb($node, $server)],
             'options' => [
                 'types' => Server::TYPES,
                 'mcVersions' => MinecraftVersions::releases(),

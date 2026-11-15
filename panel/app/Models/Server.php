@@ -113,7 +113,7 @@ class Server extends Model
      */
     public function forUser(User $user): array
     {
-        return [...$this->toArray(), 'can' => $this->permissionsFor($user)];
+        return [...$this->toArray(), 'can' => $this->permissionsFor($user), 'node' => $this->node->name];
     }
 
     /**

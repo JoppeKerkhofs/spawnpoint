@@ -22,15 +22,16 @@ class CloudflareDns
     }
 
     /**
-     * Add the record for a server's hostname, pointing at the target. Not proxied: Cloudflare's
+     * Add the record for a server's hostname, pointing at the node's target or the panel-wide one. Not proxied: Cloudflare's
      * proxy carries web traffic only, so a proxied record would break joining.
      *
      * @throws ConnectionException
      * @throws RequestException
      */
-    public static function create(string $hostname): void
+    public static function create(string $hostname, ?string $target = null): void
     {
-        $target = (string) Setting::value('dns_target');
+        // A node on another host has its own address; without one the panel-wide target is used.
+        $target = (string) ($target ?: Setting::value('dns_target'));
         $type = match (true) {
             filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false => 'A',
             filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false => 'AAAA',

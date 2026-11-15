@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Node;
 use App\Models\Setting;
 use App\Services\CloudflareDns;
 use App\Services\MemoryLimit;
@@ -31,7 +32,8 @@ class PanelSettingsController extends Controller
             'dnsEnabled' => CloudflareDns::enabled(),
             // The key itself never goes to the browser.
             'hasCurseforgeKey' => filled(Setting::value('curseforge_key')),
-            'effectiveMemoryLimitMb' => MemoryLimit::mb(),
+            // Of the first node: the others can each have their own limit, on the Nodes page.
+            'effectiveMemoryLimitMb' => MemoryLimit::mb(Node::query()->first()),
         ]);
     }
 

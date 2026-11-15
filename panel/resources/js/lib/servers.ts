@@ -26,6 +26,8 @@ export type Server = {
     backup_retention_days: number | null;
     // What the signed-in user may do here; "admin" on top of everything for an admin.
     can: string[];
+    // The name of the host it runs on.
+    node: string;
     settings: {
         motd: string;
         difficulty: string;

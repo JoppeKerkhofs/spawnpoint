@@ -1,0 +1,107 @@
+# A Spawnpoint node: an extra host that runs Minecraft servers for a panel elsewhere. It needs
+# nothing from the repository but this file and an env file.
+#
+#   1. In the panel, under Nodes, add the node with the address this host has for the panel,
+#      such as http://10.0.0.5:8080. The panel shows a token once.
+#   2. cp .env.node.example .env.node          # put the token and the version in it
+#   3. docker compose -f compose.node.yaml --env-file .env.node up -d
+#
+# The panel talks to the node on NODE_PORT. Every request is signed with the token, but not
+# encrypted: keep that port on a private network or a VPN, never open to the internet.
+# Players connect to this host directly on MINECRAFT_PORT, and web maps are on BLUEMAP_PORT.
+
+name: spawnpoint-node
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  # The only container with the Docker socket and the server folders.
+  node:
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:?Set PANEL_VERSION to the version of the panel, for example 1.4.0}
+    container_name: spawnpoint-node
+    init: true
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to the token the panel showed when the node was added}
+      SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
+    ports:
+      # The address of this host on the network it shares with the panel.
+      - "${NODE_BIND:?Set NODE_BIND to this host's address on the private network}:${NODE_PORT:-8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
+      - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      # Outside the data folder, so the file manager can never reach the archives.
+      - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Host worlds offered for import; read-only.
+      - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
+
+  # Players connect here; it forwards each connection to the server whose hostname they typed.
+  router:
+    image: itzg/mc-router:1.56.4
+    container_name: spawnpoint-router
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - socket-proxy
+    environment:
+      IN_DOCKER: "true"
+      DOCKER_SOCKET: tcp://socket-proxy:2375
+      DOCKER_NETWORK: minecraft
+    ports:
+      - "${MINECRAFT_PORT:-25565}:25565"
+    networks:
+      - minecraft
+      - socket
+
+  # Serves each server's BlueMap at /<server>/, for servers that have it switched on.
+  maps:
+    image: traefik:v3
+    container_name: spawnpoint-maps
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - socket-proxy
+    command:
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.bluemap.address=:8100
+    ports:
+      - "${BLUEMAP_PORT:-8100}:8100"
+    networks:
+      - minecraft
+      - socket
+
+  # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: spawnpoint-socket-proxy
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+
+networks:
+  # Fixed name: the node attaches every Minecraft container to it.
+  minecraft:
+    name: minecraft
+  socket:
+    internal: true

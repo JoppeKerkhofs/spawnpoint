@@ -16,25 +16,24 @@ class MemoryLimit
     private const float HOST_SHARE = 0.9;
 
     /**
-     * The most memory, in MB, that all servers together may be given; null when it cannot be known.
+     * The most memory, in MB, that the servers on a node together may be given; null when it cannot
+     * be known. The node's own limit comes first, then the panel-wide setting, then its host's memory.
      */
-    public static function mb(): ?int
+    public static function mb(?Node $node): ?int
     {
-        $configured = Setting::value('memory_limit_mb');
+        if ($node === null) {
+            return null;
+        }
+
+        $configured = $node->memory_limit_mb ?? Setting::value('memory_limit_mb');
 
         if (filled($configured)) {
             return (int) $configured;
         }
 
-        $node = Node::query()->first();
-
-        if ($node === null) {
-            return null;
-        }
-
         try {
             // A failed lookup is not cached, so it is tried again on the next request.
-            $host = Cache::remember('host-memory-mb', now()->addHour(), fn (): int => (new NodeClient($node))->hostMemoryMb());
+            $host = Cache::remember("host-memory-mb:{$node->id}", now()->addHour(), fn (): int => (new NodeClient($node))->hostMemoryMb());
         } catch (ConnectionException|RequestException) {
             return null;
         }
@@ -43,16 +42,36 @@ class MemoryLimit
     }
 
     /**
-     * The memory, in MB, still free under the limit, not counting the given server's own share.
+     * The memory, in MB, still free on a node, not counting the given server's own share.
      */
-    public static function freeMb(?Server $except = null): ?int
+    public static function freeMb(?Node $node, ?Server $except = null): ?int
     {
-        $limit = self::mb();
+        $limit = self::mb($node);
 
-        if ($limit === null) {
+        if ($limit === null || $node === null) {
             return null;
         }
 
-        return $limit - (int) Server::query()->when($except, fn ($query) => $query->whereKeyNot($except->getKey()))->sum('memory_mb');
+        return $limit - (int) $node->servers()->when($except, fn ($query) => $query->whereKeyNot($except->getKey()))->sum('memory_mb');
+    }
+
+    /**
+     * The limits of all nodes together, for the overview; null when one of them is unknown.
+     */
+    public static function totalMb(): ?int
+    {
+        $total = 0;
+
+        foreach (Node::all() as $node) {
+            $limit = self::mb($node);
+
+            if ($limit === null) {
+                return null;
+            }
+
+            $total += $limit;
+        }
+
+        return $total > 0 ? $total : null;
     }
 }
