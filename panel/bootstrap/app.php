@@ -4,6 +4,7 @@ use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PasskeysFollowTheAddress;
 use App\Http\Middleware\SetLocale;
+use App\Http\Middleware\TokenAbility;
 use App\Services\Languages;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -33,6 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // File contents from the editor must be saved exactly as typed, trailing newline included.
         $middleware->trimStrings(except: ['content']);
+
+        // Guards an API route by what the token may do; the can: middleware guards what its owner may do.
+        $middleware->alias(['ability' => TokenAbility::class]);
 
         $middleware->web(append: [
             PasskeysFollowTheAddress::class,

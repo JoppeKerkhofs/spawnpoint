@@ -1,7 +1,11 @@
 <?php
 
 use App\Api\Abilities;
+use App\Models\Server;
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\Sanctum;
 
 test('the catalogue lists every ability once, grouped, with a label for each', function () {
     $all = Abilities::all();
@@ -56,3 +60,61 @@ test('a viewer is not offered the administration abilities', function () {
         ->and($admin['groups'])->toBe(Abilities::groups())
         ->and($admin['presets'])->toBe(Abilities::presets());
 });
+
+test('a route guarded by an ability refuses a token without it and names what is missing', function () {
+    Http::fake(['node.test:8080/*' => Http::response([])]);
+    Route::middleware(['auth:sanctum', 'ability:files:write'])->get('/api/v1/testing-ability', fn (): array => ['ok' => true]);
+
+    $user = User::factory()->admin()->create();
+    $narrow = $user->createToken('Narrow', ['files:read'])->plainTextToken;
+    $wide = $user->createToken('Wide', ['files:write'])->plainTextToken;
+
+    $this->getJson('/api/v1/testing-ability', bearer($narrow))
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'This token lacks the files:write ability.');
+
+    $this->getJson('/api/v1/testing-ability', bearer($wide))->assertOk();
+
+    // Without a token; the guard must forget the one it just saw.
+    app('auth')->forgetGuards();
+    $this->getJson('/api/v1/testing-ability')->assertStatus(401);
+});
+
+test('a route that lists several abilities takes any one of them', function () {
+    Route::middleware(['auth:sanctum', 'ability:files:read,files:write'])->get('/api/v1/testing-either', fn (): array => ['ok' => true]);
+    $user = User::factory()->admin()->create();
+
+    foreach (['files:read', 'files:write'] as $ability) {
+        $token = $user->createToken($ability, [$ability])->plainTextToken;
+        $this->getJson('/api/v1/testing-either', bearer($token))->assertOk();
+    }
+
+    $neither = $user->createToken('Logs', ['logs:read'])->plainTextToken;
+    $this->getJson('/api/v1/testing-either', bearer($neither))
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'This token lacks the files:read ability.');
+});
+
+test('a token from Sanctum::actingAs passes the guard', function () {
+    // Such a token is a mock: it answers can() and has no abilities attribute to read.
+    Route::middleware(['auth:sanctum', 'ability:backups:read'])->get('/api/v1/testing-mock', fn (): array => ['ok' => true]);
+
+    Sanctum::actingAs(User::factory()->create(), ['backups:manage']);
+    $this->getJson('/api/v1/testing-mock')->assertOk();
+
+    Sanctum::actingAs(User::factory()->create(), ['files:read']);
+    $this->getJson('/api/v1/testing-mock')->assertStatus(403);
+});
+
+test('a token issued before 1.5.0 keeps working through the retired name', function () {
+    $server = Server::factory()->create(['slug' => 'survival']);
+    Http::fake(['node.test:8080/*' => Http::response([])]);
+    $token = User::factory()->admin()->create()->createToken('Old', ['backups:manage'])->plainTextToken;
+
+    $this->getJson("/api/v1/servers/{$server->slug}/backups", bearer($token))->assertOk();
+    $this->postJson("/api/v1/servers/{$server->slug}/backups", [], bearer($token))->assertStatus(202);
+    // But not the destructive ones it never had.
+    $this->postJson("/api/v1/servers/{$server->slug}/backups/1794600000.tar.gz/restore", [], bearer($token))
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'This token lacks the backups:restore ability.');
+})->skip('Until Task 6 adds the restore route.');
