@@ -25,6 +25,7 @@ class PanelSettingsController extends Controller
                 'memory_limit_mb' => Setting::value('memory_limit_mb'),
                 'require_two_factor' => (bool) Setting::value('require_two_factor'),
                 'dns_target' => Setting::value('dns_target'),
+                'privacy_contact' => Setting::value('privacy_contact'),
             ],
             'hasCloudflareToken' => filled(Setting::value('cloudflare_token')),
             'dnsEnabled' => CloudflareDns::enabled(),
@@ -48,6 +49,8 @@ class PanelSettingsController extends Controller
             'require_two_factor' => ['nullable', 'boolean'],
             'cloudflare_token' => ['nullable', 'string', 'max:200', 'regex:/^[\x21-\x7E]+$/'],
             'remove_cloudflare_token' => ['nullable', 'boolean'],
+            // Shown on the public privacy policy as the one responsible for this installation.
+            'privacy_contact' => ['nullable', 'string', 'max:200'],
             // An IP address, or a hostname for a CNAME record.
             'dns_target' => ['nullable', 'string', 'max:253', 'regex:/^([0-9a-fA-F:.]+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$/'],
         ]);
@@ -65,6 +68,7 @@ class PanelSettingsController extends Controller
         }
 
         Setting::put('dns_target', $data['dns_target'] ?? null);
+        Setting::put('privacy_contact', $data['privacy_contact'] ?? null);
         if ($data['remove_cloudflare_token'] ?? false) {
             Setting::put('cloudflare_token', null);
         } elseif (filled($data['cloudflare_token'] ?? null)) {

@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ModpackSearchController;
 use App\Http\Controllers\PanelSettingsController;
+use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServiceStatusController;
@@ -16,6 +17,8 @@ use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
+// Public: anyone can read what the panel keeps about them, signed in or not.
+Route::get('privacy', PrivacyController::class)->name('privacy');
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

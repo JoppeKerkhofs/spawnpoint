@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/lib/i18n';
+import { privacy } from '@/routes';
 import { update } from '@/routes/panel-settings';
 
 defineProps<{
@@ -15,6 +16,7 @@ defineProps<{
         memory_limit_mb: string | number | null;
         require_two_factor: boolean;
         dns_target: string | null;
+        privacy_contact: string | null;
     };
     hasCurseforgeKey: boolean;
     hasCloudflareToken: boolean;
@@ -255,6 +257,35 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                         </span>
                         <InputError :message="errors.dns_target" />
                     </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard :title="t('Privacy policy')">
+                <div class="grid gap-2">
+                    <Label for="privacy_contact">{{
+                        t('Who runs this installation')
+                    }}</Label>
+                    <Input
+                        id="privacy_contact"
+                        name="privacy_contact"
+                        maxlength="200"
+                        :placeholder="t('A name and an email address')"
+                        :default-value="settings.privacy_contact ?? ''"
+                        aria-describedby="privacy_contact_hint"
+                    />
+                    <span id="privacy_contact_hint" :class="hint">
+                        {{
+                            t(
+                                'Shown on the public privacy policy as the one people can turn to about their data. The policy describes what the panel stores and which services it contacts; check it against your own situation and the law that applies to you.',
+                            )
+                        }}
+                        <a
+                            :href="privacy.url()"
+                            class="text-primary underline"
+                            >{{ t('Read the privacy policy') }}</a
+                        >
+                    </span>
+                    <InputError :message="errors.privacy_contact" />
                 </div>
             </SectionCard>
 

@@ -177,3 +177,20 @@ test('the api documentation covers every api route', function () {
     $this->actingAs(User::factory()->create())->get(route('api-docs'))->assertOk();
     $this->get(route('api-docs.spec'))->assertOk()->assertJsonPath('openapi', '3.1.0');
 });
+
+test('the privacy policy is public and names who runs the installation', function () {
+    $this->get(route('privacy'))->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('Privacy')
+        ->where('operator', null)
+        ->where('addsDnsRecords', false));
+
+    $settings = [
+        'base_domain' => 'mc.example.com', 'bluemap_url' => 'http://localhost:8100',
+        'privacy_contact' => 'Jane Doe, jane@example.com',
+    ];
+    $this->actingAs(User::factory()->create())->put(route('panel-settings.update'), $settings)->assertForbidden();
+    $this->actingAs(User::factory()->admin()->create())->put(route('panel-settings.update'), $settings)->assertSessionHasNoErrors();
+
+    auth()->logout();
+    $this->get(route('privacy'))->assertInertia(fn (Assert $page) => $page->where('operator', 'Jane Doe, jane@example.com'));
+});

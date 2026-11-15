@@ -7,6 +7,9 @@ return [
     // Every server hostname is one label under this domain, covered by a wildcard DNS record.
     'base_domain' => env('PANEL_BASE_DOMAIN', 'mc.localhost'),
 
+    // Who runs this installation, for the privacy policy: a name and a way to reach them.
+    'privacy_contact' => env('PANEL_PRIVACY_CONTACT'),
+
     // The look of the panel: "default", or "blocky" for the Minecraft-style one.
     'theme' => in_array(env('PANEL_THEME'), ['blocky'], true) ? env('PANEL_THEME') : 'default',
 

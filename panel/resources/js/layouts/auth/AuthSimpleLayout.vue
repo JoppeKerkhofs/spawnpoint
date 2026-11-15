@@ -3,7 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import AppVersion from '@/components/AppVersion.vue';
 import { t } from '@/lib/i18n';
-import { home } from '@/routes';
+import { home, privacy } from '@/routes';
 
 defineProps<{
     title?: string;
@@ -41,7 +41,13 @@ defineProps<{
                     </div>
                 </div>
                 <slot />
-                <AppVersion class="-mt-2 text-center" />
+                <p class="-mt-2 text-center text-xs text-muted-foreground">
+                    <AppVersion />
+                    ·
+                    <a :href="privacy.url()" class="underline">{{
+                        t('Privacy policy')
+                    }}</a>
+                </p>
             </div>
         </div>
     </div>
