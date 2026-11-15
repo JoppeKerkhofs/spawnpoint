@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Api\Abilities;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use Illuminate\Http\RedirectResponse;
@@ -12,9 +13,6 @@ use Inertia\Response;
 
 class ApiTokenController extends Controller
 {
-    // What a token may do; it can never do more than its owner's role allows.
-    public const array ABILITIES = ['servers:read', 'servers:power', 'console:use', 'logs:read', 'backups:manage', 'files:read', 'files:write'];
-
     /**
      * Show the user's API tokens.
      */
@@ -28,7 +26,8 @@ class ApiTokenController extends Controller
                 'last_used' => $token->last_used_at?->diffForHumans(),
                 'created' => $token->created_at->diffForHumans(),
             ]),
-            'abilities' => self::ABILITIES,
+            // Only what this user could ever use: a viewer is not shown the administration group.
+            ...Abilities::offeredTo($request->user()),
             // Only the hash is stored, so this is the one time the token can be shown.
             'newToken' => $request->session()->get('new_token'),
         ]);
@@ -42,7 +41,7 @@ class ApiTokenController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:60'],
             'abilities' => ['required', 'array', 'min:1'],
-            'abilities.*' => [Rule::in(self::ABILITIES)],
+            'abilities.*' => [Rule::in(Abilities::all())],
         ]);
 
         $token = $request->user()->createToken($data['name'], $data['abilities']);

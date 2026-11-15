@@ -2,6 +2,8 @@
 import { ask } from '@/lib/dialogs';
 import { t } from '@/lib/i18n';
 import { Form, Head, Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import AbilityPicker from '@/components/AbilityPicker.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -18,9 +20,16 @@ type Token = {
     created: string;
 };
 
-defineProps<{
+type Group = {
+    key: string;
+    label: string;
+    abilities: { name: string; label: string; description: string }[];
+};
+
+const props = defineProps<{
     tokens: Token[];
-    abilities: string[];
+    groups: Group[];
+    presets: Record<string, string[]>;
     newToken: string | null;
 }>();
 
@@ -35,15 +44,8 @@ defineOptions({
     },
 });
 
-const abilityLabels: Record<string, string> = {
-    'servers:read': t('List servers and their state'),
-    'servers:power': t('Start, stop, restart and kill servers'),
-    'console:use': t('Open the live console'),
-    'logs:read': t('Read the logs'),
-    'backups:manage': t('List and start backups'),
-    'files:read': t('List folders and read text files'),
-    'files:write': t('Write, delete, upload and download files'),
-};
+// A new token starts read-only; the picker widens it.
+const abilities = ref<string[]>([...props.presets['read-only']]);
 
 const revoke = async (token: Token) => {
     if (
@@ -117,22 +119,11 @@ const revoke = async (token: Token) => {
                 <legend class="text-sm font-medium">
                     {{ t('This token may') }}
                 </legend>
-                <label
-                    v-for="ability in abilities"
-                    :key="ability"
-                    class="flex items-center gap-2 text-sm"
-                >
-                    <input
-                        type="checkbox"
-                        name="abilities[]"
-                        :value="ability"
-                        class="size-4 accent-primary"
-                    />
-                    {{ abilityLabels[ability] ?? ability }}
-                    <code class="font-mono text-xs text-muted-foreground">{{
-                        ability
-                    }}</code>
-                </label>
+                <AbilityPicker
+                    v-model="abilities"
+                    :groups="groups"
+                    :presets="presets"
+                />
                 <InputError :message="errors.abilities" />
             </fieldset>
 

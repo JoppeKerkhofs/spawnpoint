@@ -239,17 +239,11 @@
                                                     ]
                                                 },
                                                 "detail": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
+                                                    "type": ["string", "null"],
                                                     "description": "Why the server is in this state, when there is something to say."
                                                 },
                                                 "players": {
-                                                    "type": [
-                                                        "object",
-                                                        "null"
-                                                    ],
+                                                    "type": ["object", "null"],
                                                     "properties": {
                                                         "online": {
                                                             "type": "integer"
@@ -266,10 +260,7 @@
                                                     }
                                                 },
                                                 "usage": {
-                                                    "type": [
-                                                        "object",
-                                                        "null"
-                                                    ],
+                                                    "type": ["object", "null"],
                                                     "properties": {
                                                         "at": {
                                                             "type": "integer"
@@ -295,16 +286,10 @@
                                                     }
                                                 },
                                                 "disk_bytes": {
-                                                    "type": [
-                                                        "integer",
-                                                        "null"
-                                                    ]
+                                                    "type": ["integer", "null"]
                                                 },
                                                 "last_backup": {
-                                                    "type": [
-                                                        "integer",
-                                                        "null"
-                                                    ],
+                                                    "type": ["integer", "null"],
                                                     "description": "Unix seconds."
                                                 }
                                             }
@@ -371,12 +356,7 @@
                         "required": true,
                         "schema": {
                             "type": "string",
-                            "enum": [
-                                "start",
-                                "stop",
-                                "restart",
-                                "kill"
-                            ]
+                            "enum": ["start", "stop", "restart", "kill"]
                         }
                     }
                 ],
@@ -660,9 +640,7 @@
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "enum": [
-                                1
-                            ]
+                            "enum": [1]
                         },
                         "description": "Set to 1 to read the path as a text file of up to 1 MB."
                     }
@@ -735,10 +713,7 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "path",
-                                    "content"
-                                ],
+                                "required": ["path", "content"],
                                 "properties": {
                                     "path": {
                                         "type": "string",
@@ -803,9 +778,7 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "path"
-                                ],
+                                "required": ["path"],
                                 "properties": {
                                     "path": {
                                         "type": "string"
