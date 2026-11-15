@@ -43,7 +43,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('search-modpacks', fn (User $user): bool => $user->isAdmin()
             || $user->servers()->whereJsonContains('server_user.permissions', 'configure')->exists());
 
-        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)->by($request->user()?->id ?: $request->ip()));
+        // Per token, so two apps of one user do not eat each other's budget; an app polling
+        // server state would spend 60 a minute on polling alone.
+        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
+            $request->bearerToken() !== null ? hash('sha256', $request->bearerToken()) : (string) ($request->user()?->id ?: $request->ip()),
+        ));
     }
 
     /**

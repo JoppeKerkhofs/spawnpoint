@@ -21,8 +21,6 @@ class ServerController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('servers:read'), 403, 'This token lacks the servers:read ability.');
-
         $states = NodeClient::states();
 
         return response()->json([
@@ -34,10 +32,8 @@ class ServerController extends Controller
     /**
      * Show one server with its live state, player count and resource use.
      */
-    public function show(Request $request, Server $server): JsonResponse
+    public function show(Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('servers:read'), 403, 'This token lacks the servers:read ability.');
-
         return response()->json(['data' => self::describe($server, NodeClient::states())]);
     }
 
@@ -47,8 +43,6 @@ class ServerController extends Controller
      */
     public function console(Request $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('console:use'), 403, 'This token lacks the console:use ability.');
-
         $write = $request->user()->can('act', [$server, 'commands']);
 
         return response()->json(['url' => (new NodeClient($server->node))->consoleUrl($server, $write), 'write' => $write]);
@@ -59,8 +53,6 @@ class ServerController extends Controller
      */
     public function logs(LogRequest $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('logs:read'), 403, 'This token lacks the logs:read ability.');
-
         $client = new NodeClient($server->node);
         $file = $request->validated('file');
 
@@ -72,10 +64,8 @@ class ServerController extends Controller
     /**
      * List the backups.
      */
-    public function backups(Request $request, Server $server): JsonResponse
+    public function backups(Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('backups:manage'), 403, 'This token lacks the backups:manage ability.');
-
         return response()->json(['data' => (new NodeClient($server->node))->backups($server)]);
     }
 
@@ -84,8 +74,6 @@ class ServerController extends Controller
      */
     public function backup(Request $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('backups:manage'), 403, 'This token lacks the backups:manage ability.');
-
         (new NodeClient($server->node))->createBackup($server, "{$request->user()->name} (API)");
         ActivityLog::record('backup.create', $server);
 
@@ -97,8 +85,6 @@ class ServerController extends Controller
      */
     public function files(FileRequest $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('files:read'), 403, 'This token lacks the files:read ability.');
-
         $client = new NodeClient($server->node);
 
         return response()->json($request->boolean('file')
@@ -111,8 +97,6 @@ class ServerController extends Controller
      */
     public function writeFile(FileRequest $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
-
         (new NodeClient($server->node))->writeFile($server, $request->path(), (string) $request->validated('content'));
         ActivityLog::record('file.save', $server, ['path' => $request->path()]);
 
@@ -124,8 +108,6 @@ class ServerController extends Controller
      */
     public function deleteFile(FileRequest $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
-
         (new NodeClient($server->node))->deleteFile($server, $request->path());
         ActivityLog::record('file.delete', $server, ['path' => $request->path()]);
 
@@ -139,11 +121,13 @@ class ServerController extends Controller
      */
     public function transfer(Request $request, Server $server): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('files:write'), 403, 'This token lacks the files:write ability.');
-
         $client = new NodeClient($server->node);
 
-        return response()->json(['upload' => $client->fileUrl($server, 'upload'), 'download' => $client->fileUrl($server, 'download')]);
+        // The download address was always part of this answer; the upload one needs files:write.
+        return response()->json(array_filter([
+            'upload' => $request->user()->tokenCan('files:write') ? $client->fileUrl($server, 'upload') : null,
+            'download' => $client->fileUrl($server, 'download'),
+        ]));
     }
 
     /**
@@ -174,8 +158,6 @@ class ServerController extends Controller
      */
     public function power(Request $request, Server $server, string $action, PowerServer $powerServer): JsonResponse
     {
-        abort_unless($request->user()->tokenCan('servers:power'), 403, 'This token lacks the servers:power ability.');
-
         try {
             $powerServer($server, $action);
         } catch (ConnectionException) {

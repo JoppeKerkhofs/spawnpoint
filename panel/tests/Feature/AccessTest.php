@@ -217,7 +217,7 @@ test('the api reads and writes files only with the files abilities, for admins',
     $this->getJson('/api/v1/servers/shared/files?path=ops.json&file=1')->assertJsonPath('content', '[]');
     $this->getJson('/api/v1/servers/shared/files?path=../other')->assertStatus(422);
     $this->putJson('/api/v1/servers/shared/files', ['path' => 'ops.json', 'content' => '[]'])->assertForbidden();
-    $this->getJson('/api/v1/servers/shared/files/transfer')->assertForbidden();
+    $this->getJson('/api/v1/servers/shared/files/transfer')->assertJsonStructure(['download'])->assertJsonMissingPath('upload');
 
     Sanctum::actingAs($this->admin, ['files:write']);
     $this->putJson('/api/v1/servers/shared/files', ['path' => 'ops.json', 'content' => '[]'])->assertOk();
