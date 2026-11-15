@@ -1,0 +1,132 @@
+# Spawnpoint
+
+A self-hosted panel that creates and manages Minecraft Java servers, each in its own Docker
+container. This file explains how it fits together and what is easy to get wrong.
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `panel/` | The panel: Laravel 13, Inertia v3, Vue 3, TypeScript, Tailwind v4, Fortify, Sanctum, Pest |
+| `service/` | The node: a Rust service (Axum, bollard, tokio) that does all Docker and file work |
+| `docker/` | `Caddyfile` and `entrypoint.sh` of the panel image |
+| `Dockerfile` | The panel image (FrankenPHP). `service/Dockerfile` is the node image |
+| `compose.yaml` | Deployment, can build from the checkout |
+| `compose.prod.yaml` | Deployment from published images only, hardened |
+| `compose.node.yaml` | An extra host that only runs a node |
+| `compose.dev.yaml` | Node, router and map proxy for development; the panel runs on the host |
+| `contracts/openapi.yaml` | The node's HTTP API |
+| `panel/resources/api/openapi.json` | The panel's public API (`/api/v1`), also rendered at `/api-docs` |
+
+`panel/AGENTS.md` holds the Laravel conventions for the panel; follow it for work under `panel/`.
+
+## How it works
+
+**Panel and nodes.** The panel never touches Docker. A node is a host that runs Minecraft
+servers; the panel sends it signed HTTP requests. There is always a `local` node, registered by
+`panel:setup` from the environment on every start; more are added on the Nodes page.
+
+**Signing.** Every panel-to-node request carries `X-Timestamp` and `X-Signature`:
+HMAC-SHA256 with the node's token over `"{timestamp}\n{METHOD}\n{path_and_query}\n{body}"`,
+60 seconds of clock skew allowed. `NodeClient::query()` builds the query string exactly as it is
+signed. Traffic is signed but not encrypted, so nodes belong on a private network.
+
+**Browser tokens.** The console WebSocket and file transfers go from the browser to the node
+with a short-lived token: `hex(json{slug,exp,write}) + "." + hex(hmac(purpose + "\n" + payload))`,
+purpose `console` (60 s) or `files` (300 s). `NodeClient::token()` mints it, `claims()` in
+`service/src/main.rs` checks it.
+
+**The relay.** Browsers never reach a node directly. They use `/node/<node id>/servers/...`,
+and Caddy asks the panel (`/node-upstream/{node}`, loopback only) where that node is, then
+proxies there. Only the token-authorised paths are relayed; a node's signed API is not.
+
+**Servers.** A server is identified by its `slug`, the first label of its hostname. The container
+is `mc-{slug}`, its data is `{SPAWNPOINT_DATA_DIR}/{slug}`, the image is `itzg/minecraft-server`.
+State is read live from Docker; there is no status column. Long tasks (backup, restore, import)
+are tracked in memory in the node.
+
+**Players.** `mc-router` listens on 25565 on each node's host and forwards by hostname, using
+the `mc-router.host` label. Web maps go through Traefik on 8100 at `/<slug>/`.
+
+**Access.** Roles are `admin` and `viewer`. A viewer sees only shared servers; the share lists
+what they may do there (`Server::PERMISSIONS`). Routes check it with
+`can:act,server,"files"`, and the quotes matter: without them Laravel takes the word for a route
+parameter. API tokens need both the token ability and the owner's permission.
+
+**Panel containers.** `app` (web), `queue` (webhooks, mail) and `scheduler` (`schedules:run`,
+`servers:watch` every minute) are the same image. Only `app` runs migrations.
+
+## Working on it
+
+In `panel/`:
+
+```sh
+composer setup                         # dependencies, .env, migrations, assets
+composer dev                           # the panel with Vite
+php artisan test --compact             # Pest
+vendor/bin/pint --dirty --format agent # format PHP
+composer types:check                   # PHPStan
+npm run check:fix                      # format and lint the frontend
+npm run types:check                    # vue-tsc
+php artisan wayfinder:generate --with-form   # after changing routes
+```
+
+In `service/`: `cargo test --locked`. The dev stack is
+`docker compose -f compose.dev.yaml up -d --build`.
+
+Run all of these before saying something is done. A change to a page is not verified until it
+was looked at in a browser against a real server.
+
+## Conventions
+
+- **Version:** `panel/composer.json` `version`. Every merge publishes both images under it and as
+  `latest`, so a pull request must raise it (`scripts/check-version.sh`). Keep nodes on the
+  panel's version.
+- **Settings:** `Setting::value()` reads the database first, then `config('panel.*')`. Secrets are
+  stored encrypted and never sent to the browser; pages get a "has a value" flag instead.
+- **Activity:** `ActivityLog::record()` for anything a person does. It also feeds webhooks.
+- **Texts:** every interface text goes through `t()` (`resources/js/lib/i18n.ts`), with the English
+  text as the key and `:name` placeholders. Backend texts use `__()`. Pass `ask()` and `askName()`
+  the English text; they translate it. `php artisan lang:sync <code>` collects the keys, so a
+  text must be a literal in the call, not a variable.
+- **Themes:** `PANEL_THEME` sets `data-theme` on `<html>`. The blocky theme is CSS in
+  `resources/css/app.css` under `html[data-theme='blocky']`, plus a few components that check
+  `page.props.theme`. It has no dark variant and never gets the `dark` class.
+- **Naming:** settings are `SPAWNPOINT_*` (node) and `PANEL_*` (panel). The Docker label
+  `mcpanel.managed` and the `.mcpanel-stopped` folder keep the old prefix on purpose: renaming
+  them would orphan existing servers.
+- **Comments:** short, and only for a non-obvious why.
+
+## Things that are easy to get wrong
+
+- **Form numbers arrive as strings.** The node rejects them; cast on the model. Tests send strings.
+- **`TrimStrings` would strip file contents**, so `content` is excluded in `bootstrap/app.php`.
+- **`Http::fake()`: the first registered stub wins.** To replace a fake set in `beforeEach`, call
+  `Http::swap(new HttpFactory)` first.
+- **Tests need built assets** (`npm run build`), or Inertia pages fail on the Vite manifest.
+  Server-side rendering is off in tests so a running dev server is not called.
+- **Error pages and unmatched routes:** a 404 for an address without a route never runs the web
+  middleware, so it has no shared props. `Error.vue` gets theme, name and translations as props.
+- **`t()` at module top level fails:** it runs before the page exists. Call it in templates, in
+  a component's setup or in functions. Page titles in `defineOptions` stay English and are
+  translated where the layout prints them.
+- **vue-tsc and `//` in an attribute:** a static or bound attribute value containing `//` (a URL
+  placeholder) breaks the type check of the slot variables after it. Put the string in a script
+  constant.
+- **Caddy reorders directives.** Inside the relay the steps are wrapped in `route { }` so they run
+  as written.
+- **PHPStan:** no `->pivot` property access and no `withSum` attributes; query instead. `__()`
+  returns `array|string`, so cast when a string is required.
+- **Console commands** go to the server's own console through `mc-send-to-console` as user 1000;
+  RCON is only the fallback and is used for the tick time, once a minute, because every RCON
+  connection leaves two lines in the server log.
+- **Player lists** come from `mc-monitor status`, which reports at most about a dozen names.
+- **Images are pulled only when missing.** A new server type may need a manual `docker pull`.
+- **A node on the same Docker daemon as another sees its containers too**; only use that for tests.
+
+## Not built yet
+
+- Moving a server between nodes.
+- Encrypted panel-to-node traffic.
+- Cleaning up old activity-log entries.
+- Translations of Laravel's validation messages, the API docs and webhook texts.
