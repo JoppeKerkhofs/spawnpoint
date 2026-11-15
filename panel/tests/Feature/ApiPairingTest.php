@@ -1,5 +1,7 @@
 <?php
 
+use App\Api\Abilities;
+use App\Models\ActivityLog;
 use App\Models\DevicePairing;
 use App\Models\User;
 
@@ -89,4 +91,48 @@ test('the minted token belongs to the approving user and holds what they chose',
         ->assertOk()
         ->assertJsonPath('data.id', $user->id)
         ->assertJsonPath('data.abilities', ['servers:read']);
+});
+
+test('a person looks a code up and sees which device is asking', function () {
+    $user = User::factory()->admin()->create();
+    $started = $this->postJson('/api/v1/pair', ['device_name' => 'Pixel 9'])->json('data');
+
+    $this->actingAs($user)
+        ->post(route('api-tokens.pairing'), ['code' => strtolower($started['code'])])
+        ->assertSessionHasNoErrors();
+
+    expect(session('pairing')['device_name'])->toBe('Pixel 9');
+
+    $this->post(route('api-tokens.pairing'), ['code' => 'ZZZZZZZZ'])->assertSessionHasErrors('code');
+});
+
+test('approving mints a token the device can collect, and is recorded', function () {
+    $user = User::factory()->admin()->create();
+    $started = $this->postJson('/api/v1/pair', ['device_name' => 'Pixel 9'])->json('data');
+
+    $this->actingAs($user)->post(route('api-tokens.pairing.approve'), [
+        'code' => $started['code'],
+        'abilities' => ['servers:read', 'servers:power'],
+    ])->assertSessionHasNoErrors();
+
+    expect($user->tokens()->sole()->name)->toBe('Pixel 9')
+        ->and(ActivityLog::query()->where('event', 'token.pair')->exists())->toBeTrue();
+
+    $this->postJson('/api/v1/pair/token', ['code' => $started['code'], 'secret' => $started['secret']])
+        ->assertOk()->assertJsonPath('abilities', ['servers:read', 'servers:power']);
+});
+
+test('approving refuses an invented ability and an expired code', function () {
+    $user = User::factory()->admin()->create();
+    $started = $this->postJson('/api/v1/pair', ['device_name' => 'Pixel 9'])->json('data');
+
+    $this->actingAs($user)
+        ->post(route('api-tokens.pairing.approve'), ['code' => $started['code'], 'abilities' => ['servers:everything']])
+        ->assertSessionHasErrors('abilities.0')
+        // The device is still on the page, so the picker comes back instead of the code field.
+        ->assertSessionHas('pairing.device_name', 'Pixel 9');
+
+    DevicePairing::sole()->forceFill(['expires_at' => now()->subMinute()])->save();
+    $this->post(route('api-tokens.pairing.approve'), ['code' => $started['code'], 'abilities' => Abilities::presets()['read-only']])
+        ->assertSessionHasErrors('code');
 });

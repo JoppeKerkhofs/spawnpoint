@@ -32,6 +32,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
     Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
     Route::delete('settings/api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
+    Route::post('settings/api-tokens/pairing', [ApiTokenController::class, 'pairing'])->name('api-tokens.pairing');
+    Route::post('settings/api-tokens/pairing/approve', [ApiTokenController::class, 'approve'])->name('api-tokens.pairing.approve');
 
     Route::get('settings/webhooks', [WebhookController::class, 'index'])->name('webhooks.index');
     Route::post('settings/webhooks', [WebhookController::class, 'store'])->name('webhooks.store');
