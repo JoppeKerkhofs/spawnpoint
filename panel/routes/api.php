@@ -4,6 +4,7 @@ use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\NodeController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use Illuminate\Support\Facades\Route;
@@ -78,4 +79,11 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
 
     Route::get('servers/{server}/logs/download', [FileController::class, 'log'])
         ->middleware(['ability:logs:read', 'can:act,server,"logs"']);
+
+    Route::middleware('can:manage-users')->group(function () {
+        Route::get('nodes', [NodeController::class, 'index'])->middleware('ability:nodes:read');
+        Route::post('nodes', [NodeController::class, 'store'])->middleware('ability:nodes:manage');
+        Route::put('nodes/{node}', [NodeController::class, 'update'])->middleware('ability:nodes:manage');
+        Route::delete('nodes/{node}', [NodeController::class, 'destroy'])->middleware('ability:nodes:manage');
+    });
 });

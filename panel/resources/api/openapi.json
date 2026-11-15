@@ -1152,6 +1152,63 @@
                 },
                 "parameters": []
             }
+        },
+        "/nodes": {
+            "get": {
+                "summary": "List the hosts that run servers",
+                "x-ability": "nodes:read",
+                "description": "Needs nodes:read and an admin owner. A node's token is never sent back.",
+                "responses": {
+                    "200": {
+                        "description": "The nodes"
+                    },
+                    "403": {
+                        "description": "The token lacks nodes:read, or its owner is not an admin"
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Register a node",
+                "x-ability": "nodes:manage",
+                "description": "Needs nodes:manage and an admin owner. The answer holds the node's token; it is stored encrypted and can never be read again.",
+                "responses": {
+                    "201": {
+                        "description": "The node and its token"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/nodes/{node}": {
+            "put": {
+                "summary": "Change a node",
+                "x-ability": "nodes:manage",
+                "description": "Needs nodes:manage and an admin owner. The local node's name and address come from the panel's environment and cannot be changed here.",
+                "responses": {
+                    "200": {
+                        "description": "The node"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Remove a node",
+                "x-ability": "nodes:manage",
+                "description": "Needs nodes:manage and an admin owner. Only when no server runs on it.",
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    },
+                    "422": {
+                        "description": "Servers still run on it, or it is the local node"
+                    }
+                },
+                "parameters": []
+            }
         }
     }
 }
