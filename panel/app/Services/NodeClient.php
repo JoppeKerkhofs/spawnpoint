@@ -373,6 +373,28 @@ class NodeClient
     }
 
     /**
+     * The address another node downloads this backup from: the node's own, never the relay, and
+     * with an hour on the token because a whole server can take a while to come over.
+     */
+    public function transferUrl(Server $server, string $name): string
+    {
+        $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 3600, false);
+
+        return "{$this->node->base_url}/servers/{$server->slug}/backups/{$name}/download?token={$token}";
+    }
+
+    /**
+     * Have this node take over a server by downloading its archive from the node it is leaving.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function fetch(Server $server, string $url): void
+    {
+        $this->send('POST', "/servers/{$server->slug}/fetch", ['url' => $url]);
+    }
+
+    /**
      * List the worlds in the node's import folder, as paths inside it.
      *
      * @return list<string>

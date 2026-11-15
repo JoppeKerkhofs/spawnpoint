@@ -25,6 +25,7 @@ class PanelSettingsController extends Controller
                 'bluemap_url' => Setting::value('bluemap_url'),
                 'memory_limit_mb' => Setting::value('memory_limit_mb'),
                 'require_two_factor' => (bool) Setting::value('require_two_factor'),
+                'activity_retention_days' => Setting::value('activity_retention_days'),
                 'dns_target' => Setting::value('dns_target'),
                 'privacy_contact' => Setting::value('privacy_contact'),
             ],
@@ -46,6 +47,8 @@ class PanelSettingsController extends Controller
             'base_domain' => ['required', 'string', 'max:190', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/'],
             'bluemap_url' => ['required', 'url:http,https', 'max:255'],
             'memory_limit_mb' => ['nullable', 'integer', 'between:1024,4194304'],
+            // Days of activity log to keep; 0 keeps everything.
+            'activity_retention_days' => ['nullable', 'integer', 'between:0,3650'],
             'curseforge_key' => ['nullable', 'string', 'max:200', 'regex:/^[\x21-\x7E]+$/'],
             'remove_curseforge_key' => ['nullable', 'boolean'],
             'require_two_factor' => ['nullable', 'boolean'],
@@ -61,6 +64,7 @@ class PanelSettingsController extends Controller
         Setting::put('bluemap_url', $data['bluemap_url']);
         Setting::put('memory_limit_mb', isset($data['memory_limit_mb']) ? (string) $data['memory_limit_mb'] : null);
         Setting::put('require_two_factor', ($data['require_two_factor'] ?? false) ? '1' : null);
+        Setting::put('activity_retention_days', isset($data['activity_retention_days']) ? (string) $data['activity_retention_days'] : null);
 
         // An empty key field means "keep the saved one".
         if ($data['remove_curseforge_key'] ?? false) {

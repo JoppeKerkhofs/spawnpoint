@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["ws"] }
+# Only to serve https when the node is given a certificate; axum itself has no TLS.
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 bollard = "0.21.1"
 flate2 = "1.1.11"
 futures-util = "0.3.34"

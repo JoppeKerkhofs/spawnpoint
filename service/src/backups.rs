@@ -550,6 +550,49 @@ pub async fn seed_world(state: &AppState, slug: &str, source: &FsPath) -> Result
 }
 
 #[derive(Deserialize)]
+pub struct FetchBody {
+    // Where the archive is: the download address of a backup on the node the server comes from,
+    // signed with that node's own token. Only the panel can ask for this, over its signed API.
+    url: String,
+}
+
+// Takes a server over from another node: downloads its archive and unpacks it over this
+// server's folder, which the panel has just created. The copy is thrown away afterwards: the
+// node it came from keeps the backup the move was made from, and the restore leaves one here.
+pub async fn fetch(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<FetchBody>) -> Result<StatusCode, StatusCode> {
+    if !valid_slug(&slug) || !server_dir(&state, &slug).is_dir() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    if !body.url.starts_with("http://") && !body.url.starts_with("https://") {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let dir = backup_dir(&state, &slug);
+    std::fs::create_dir_all(&dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Not a backup name, so it is never listed as one and never collides with the archive the
+    // restore makes of what is here now, which is written in the same second.
+    let archive = dir.join(format!(".{}.incoming", unix_now()));
+    let url = body.url;
+    let tasks = state.tasks.clone();
+    let task_slug = slug.clone();
+
+    Ok(run_task(&tasks, slug, "restoring", async move {
+        // Bound first: the borrowed arguments have to be gone before the archive is moved on.
+        let downloaded =
+            run("curl", &["-fsSL".as_ref(), "--max-time".as_ref(), "7200".as_ref(), "-o".as_ref(), archive.as_ref(), url.as_ref()], &[0])
+                .await;
+
+        let restored = match downloaded {
+            Ok(()) => restore(state, task_slug, archive.clone()).await,
+            Err(error) => Err(error),
+        };
+        let _ = std::fs::remove_file(&archive);
+
+        restored
+    }))
+}
+
+#[derive(Deserialize)]
 pub struct ImportBody {
     // "zip": a .zip inside the server's own folder; "host": a world folder inside the import folder.
     source: String,

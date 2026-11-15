@@ -123,24 +123,32 @@ class Webhook extends Model
         };
     }
 
+    /**
+     * What a webhook is told, in the panel's own language: a webhook is read by whoever
+     * receives it, not by the user whose action set it off.
+     */
     private static function message(string $event, string $server, string $actor, ?string $detail): string
     {
-        return match ($event) {
-            'server.start' => "{$actor} started {$server}.",
-            'server.stop' => "{$actor} stopped {$server}.",
-            'server.restart' => "{$actor} restarted {$server}.",
-            'server.kill' => "{$actor} killed {$server}.",
-            'server.online' => "{$server} is online.",
-            'server.offline' => "{$server} went offline.",
-            'server.crashed' => "{$server} crashed.".($detail ? " {$detail}" : ''),
-            'backup.create' => "{$actor} started a backup of {$server}.",
-            'backup.restore' => "{$actor} restored a backup of {$server}.",
-            'schedule.run' => "A schedule ran on {$server}".($detail ? ": {$detail}." : '.'),
-            'server.create' => "{$actor} created {$server}.",
-            'server.update' => "{$actor} changed the configuration of {$server}.",
-            'server.delete' => "{$actor} deleted {$server}.",
-            'world.import' => "{$actor} imported a world into {$server}.",
-            default => "{$event} on {$server}.",
+        // A literal text in every call, so lang:sync can find them in the code.
+        $in = ['actor' => $actor, 'server' => $server, 'detail' => $detail, 'event' => $event];
+        $locale = config('app.locale');
+
+        return (string) match ($event) {
+            'server.start' => __(':actor started :server.', $in, $locale),
+            'server.stop' => __(':actor stopped :server.', $in, $locale),
+            'server.restart' => __(':actor restarted :server.', $in, $locale),
+            'server.kill' => __(':actor killed :server.', $in, $locale),
+            'server.online' => __(':server is online.', $in, $locale),
+            'server.offline' => __(':server went offline.', $in, $locale),
+            'server.crashed' => $detail === null ? __(':server crashed.', $in, $locale) : __(':server crashed. :detail', $in, $locale),
+            'backup.create' => __(':actor started a backup of :server.', $in, $locale),
+            'backup.restore' => __(':actor restored a backup of :server.', $in, $locale),
+            'schedule.run' => $detail === null ? __('A schedule ran on :server.', $in, $locale) : __('A schedule ran on :server: :detail.', $in, $locale),
+            'server.create' => __(':actor created :server.', $in, $locale),
+            'server.update' => __(':actor changed the configuration of :server.', $in, $locale),
+            'server.delete' => __(':actor deleted :server.', $in, $locale),
+            'world.import' => __(':actor imported a world into :server.', $in, $locale),
+            default => __(':event on :server.', $in, $locale),
         };
     }
 

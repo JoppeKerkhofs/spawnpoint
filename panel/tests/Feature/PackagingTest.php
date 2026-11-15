@@ -4,7 +4,9 @@ use App\Models\Node;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\NodeClient;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -126,7 +128,35 @@ test('lang:sync writes every text of the panel to a language file and keeps what
         ->and($written['Profile updated.'])->toBe('Profile updated.')
         ->and($written)->toHaveKey('Language')
         // From a page's options, a text that reaches t() through a variable, and one passed to a dialog.
-        ->and($written)->toHaveKeys(['Confirm password', 'running', 'Delete :name? This cannot be undone.']);
+        ->and($written)->toHaveKeys(['Confirm password', 'running', 'Delete :name? This cannot be undone.'])
+        // What a webhook says, and a text of the API documentation.
+        ->and($written)->toHaveKeys([':actor started :server.', 'List the servers with their live state']);
+
+    // Laravel's own messages for rejected forms, copied in to be translated.
+    expect(require "{$folder}/nl/validation.php")->toHaveKey('accepted');
+
+    unlink("{$folder}/nl/validation.php");
+    rmdir("{$folder}/nl");
+    unlink("{$folder}/nl.json");
+    rmdir($folder);
+});
+
+test('a webhook speaks the language of the panel, not of the user who set it off', function () {
+    $folder = sys_get_temp_dir().'/spawnpoint-lang-'.uniqid();
+    mkdir($folder);
+    file_put_contents("{$folder}/nl.json", json_encode(['@language' => 'Nederlands', ':actor stopped :server.' => ':actor heeft :server gestopt.']));
+    app()->useLangPath($folder);
+    config(['app.locale' => 'nl']);
+    Http::fake(['node.test:8080/*' => Http::response(status: 202), '93.184.216.34/*' => Http::response(status: 204)]);
+
+    $admin = User::factory()->admin()->create(['name' => 'Joppe']);
+    $server = Server::factory()->create(['slug' => 'survival', 'name' => 'Survival']);
+    $admin->webhooks()->create(['name' => 'Discord', 'url' => 'https://93.184.216.34/discord', 'format' => 'slack', 'events' => ['power']]);
+
+    $this->actingAs($admin)->post(route('servers.power', [$server, 'stop']));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://93.184.216.34/discord'
+        && $request->data()['text'] === 'Joppe heeft Survival gestopt.');
 
     unlink("{$folder}/nl.json");
     rmdir($folder);

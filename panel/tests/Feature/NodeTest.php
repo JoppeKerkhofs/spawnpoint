@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\MoveServer;
+use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\User;
@@ -7,6 +9,7 @@ use App\Services\MemoryLimit;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -104,4 +107,83 @@ test('only the panel\'s own web server learns where a node is', function () {
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
         ->get(route('nodes.upstream', $this->attic))->assertNotFound();
     $this->get('/node-upstream/999')->assertNotFound();
+});
+
+test('a node behind TLS is accepted and the relay is told to use it', function () {
+    $this->actingAs($this->admin)
+        ->post(route('nodes.store'), ['name' => 'remote', 'base_url' => 'https://node1.example.com'])
+        ->assertSessionHasNoErrors();
+    $this->post(route('nodes.store'), ['name' => 'bad', 'base_url' => 'ftp://node1.example.com'])
+        ->assertSessionHasErrors('base_url');
+
+    $remote = Node::firstWhere('name', 'remote');
+
+    expect($remote->upstream())->toBe('https://node1.example.com:443');
+    $this->get(route('nodes.upstream', $remote))->assertHeader('X-Node-Upstream', 'https://node1.example.com:443');
+});
+
+test('a server is moved to another node, which pulls its backup over', function () {
+    $server = Server::factory()->for($this->home)->create(['slug' => 'survival', 'name' => 'Survival', 'memory_mb' => 2048]);
+    $this->attic->update(['memory_limit_mb' => 8192]);
+    Http::fake([
+        'home.test:8080/servers/survival/backups' => Http::response([['name' => '1794600000.tar.gz', 'size' => 10, 'created' => 1794600000, 'locked' => false, 'status' => 'done', 'by' => null, 'reason' => null]]),
+        // Nothing is busy: every poll finds the server stopped.
+        '*/servers' => Http::response([['slug' => 'survival', 'state' => 'offline', 'detail' => null]]),
+        '*' => Http::response(status: 202),
+    ]);
+
+    $job = new MoveServer($server->id, $this->attic->id, $this->admin->id);
+    $job->poll = 0;
+    $job->handle();
+
+    expect($server->refresh()->node_id)->toBe($this->attic->id)
+        ->and(ActivityLog::sole()->only('actor', 'event', 'properties'))
+        ->toBe(['actor' => $this->admin->name, 'event' => 'server.move', 'properties' => ['from' => 'home', 'to' => 'attic']]);
+
+    // Backed up where it was, created on the new node, pulled over from the old one, then given up.
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://home.test:8080/servers/survival/backups' && $request->method() === 'POST');
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://attic.test:8080/servers/survival' && $request->method() === 'PUT');
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://attic.test:8080/servers/survival/fetch'
+        && str_starts_with($request['url'], 'http://home.test:8080/servers/survival/backups/1794600000.tar.gz/download?token='));
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://home.test:8080/servers/survival' && $request->method() === 'DELETE');
+});
+
+test('a move that the new node refuses leaves the server where it was', function () {
+    $server = Server::factory()->for($this->home)->create(['slug' => 'survival', 'memory_mb' => 2048]);
+    Http::fake([
+        'home.test:8080/servers/survival/backups' => Http::response([['name' => '1794600000.tar.gz', 'size' => 10, 'created' => 1794600000, 'locked' => false, 'status' => 'done', 'by' => null, 'reason' => null]]),
+        '*/servers' => Http::response([['slug' => 'survival', 'state' => 'offline', 'detail' => null]]),
+        'attic.test:8080/servers/survival/fetch' => Http::response(status: 409),
+        '*' => Http::response(status: 202),
+    ]);
+
+    $job = new MoveServer($server->id, $this->attic->id, $this->admin->id);
+    $job->poll = 0;
+    $job->handle();
+
+    expect($server->refresh()->node_id)->toBe($this->home->id)
+        ->and(ActivityLog::sole()->event)->toBe('server.move.failed');
+    // The half-made server on the new node is cleaned up, the old one is untouched.
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://attic.test:8080/servers/survival' && $request->method() === 'DELETE');
+    Http::assertNotSent(fn (Request $request) => $request->url() === 'http://home.test:8080/servers/survival' && $request->method() === 'DELETE');
+});
+
+test('the move is queued by an admin, refused onto a node without room, and closed to viewers', function () {
+    Queue::fake();
+    $server = Server::factory()->for($this->home)->create(['slug' => 'survival', 'memory_mb' => 2048]);
+    Http::fake(['*' => Http::response([])]);
+
+    $this->actingAs($this->admin)
+        ->post(route('servers.move', $server), ['node_id' => $this->home->id])->assertSessionHasErrors('node_id');
+
+    $this->attic->update(['memory_limit_mb' => 1024]);
+    $this->post(route('servers.move', $server), ['node_id' => $this->attic->id])->assertSessionHasErrors('node_id');
+
+    $this->attic->update(['memory_limit_mb' => 8192]);
+    $this->post(route('servers.move', $server), ['node_id' => $this->attic->id])->assertSessionHasNoErrors();
+
+    $this->actingAs(User::factory()->create())
+        ->post(route('servers.move', $server), ['node_id' => $this->attic->id])->assertForbidden();
+
+    Queue::assertPushed(MoveServer::class, 1);
 });

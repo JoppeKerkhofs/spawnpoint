@@ -124,8 +124,9 @@ class NodeController extends Controller
 
         return [
             'name' => [$local ? 'nullable' : 'required', 'string', 'max:40', 'regex:/^[A-Za-z0-9][A-Za-z0-9 _-]*$/', Rule::unique('nodes', 'name')->ignore($node)],
-            // Plain http: the panel reaches a node over a private network, and signs every request.
-            'base_url' => [$local ? 'nullable' : 'required', 'string', 'max:255', 'regex:/^http:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?\/?$/'],
+            // Over http the panel signs every request but does not encrypt it, so that belongs on a
+            // private network; https is a node that was given a certificate (SPAWNPOINT_TLS_CERT).
+            'base_url' => [$local ? 'nullable' : 'required', 'string', 'max:255', 'regex:/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?\/?$/'],
             'dns_target' => ['nullable', 'string', 'max:253', 'regex:/^([0-9a-fA-F:.]+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$/'],
             'bluemap_url' => ['nullable', 'url:http,https', 'max:255'],
             'memory_limit_mb' => ['nullable', 'integer', 'between:1024,4194304'],

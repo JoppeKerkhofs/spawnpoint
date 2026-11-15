@@ -215,3 +215,19 @@ test('the support page is public and names who to contact', function () {
         ->where('baseDomain', 'mc.example.com')
         ->where('canResetPassword', true));
 });
+
+test('the activity log is pruned to the retention, and keeps everything at zero', function () {
+    $entry = function (int $daysAgo): void {
+        ActivityLog::create(['actor' => 'System', 'event' => 'server.start', 'created_at' => now()->subDays($daysAgo)]);
+    };
+    $entry(100);
+    $entry(10);
+
+    Setting::put('activity_retention_days', '30');
+    $this->artisan('activity:prune')->assertSuccessful();
+    expect(ActivityLog::count())->toBe(1);
+
+    Setting::put('activity_retention_days', '0');
+    $this->artisan('activity:prune')->assertSuccessful();
+    expect(ActivityLog::count())->toBe(1);
+});

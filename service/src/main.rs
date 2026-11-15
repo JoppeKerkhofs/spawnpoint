@@ -6,6 +6,7 @@ use std::{
     fs::File,
     future::Future,
     io::Read,
+    net::SocketAddr,
     path::{Path as FsPath, PathBuf},
     pin::Pin,
     sync::{Arc, Mutex},
@@ -24,6 +25,7 @@ use axum::{
     routing::{get, options, post, put},
     Json, Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use bollard::{
     errors::Error as DockerError,
     exec::{CreateExecOptions, StartExecResults},
@@ -1192,6 +1194,7 @@ async fn main() {
         .route("/servers/{slug}/backups/{name}", axum::routing::delete(backups::delete))
         .route("/servers/{slug}/backups/{name}/restore", post(backups::restore_backup))
         .route("/servers/{slug}/backups/{name}/lock", post(backups::lock))
+        .route("/servers/{slug}/fetch", post(backups::fetch))
         .route("/servers/{slug}/import", post(backups::import_world))
         .route("/imports", get(backups::list_imports))
         .route("/host", get(host))
@@ -1206,9 +1209,23 @@ async fn main() {
     tokio::spawn(start_after_boot(state.clone()));
     tokio::spawn(monitor(state));
 
-    let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
-    println!("listening on {listen}");
-    axum::serve(listener, app).await.expect("server");
+    // Given a certificate and its key, the node speaks https, so the panel's traffic is encrypted
+    // as well as signed. Without them it is plain http, which belongs on a private network.
+    let tls = std::env::var("SPAWNPOINT_TLS_CERT").ok().zip(std::env::var("SPAWNPOINT_TLS_KEY").ok());
+
+    match tls.filter(|(cert, key)| !cert.is_empty() && !key.is_empty()) {
+        Some((cert, key)) => {
+            let address: SocketAddr = listen.parse().expect("SPAWNPOINT_LISTEN must be an address and port, such as 0.0.0.0:8080");
+            let config = RustlsConfig::from_pem_file(&cert, &key).await.expect("read SPAWNPOINT_TLS_CERT and SPAWNPOINT_TLS_KEY");
+            println!("listening on {listen} with TLS");
+            axum_server::bind_rustls(address, config).serve(app.into_make_service()).await.expect("server");
+        }
+        None => {
+            let listener = tokio::net::TcpListener::bind(&listen).await.expect("bind listen address");
+            println!("listening on {listen}");
+            axum::serve(listener, app).await.expect("server");
+        }
+    }
 }
 
 #[cfg(test)]

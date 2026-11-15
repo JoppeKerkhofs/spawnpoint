@@ -23,6 +23,9 @@ return [
     // The most memory, in MB, all servers together may be given. Empty means 90% of the host's memory.
     'memory_limit_mb' => env('PANEL_MEMORY_LIMIT_MB'),
 
+    // Activity-log entries older than this many days are deleted every night. 0 keeps them forever.
+    'activity_retention_days' => env('PANEL_ACTIVITY_RETENTION_DAYS', 90),
+
     // Where this panel reaches the Rust service that panel:setup registers.
     'node_url' => env('PANEL_NODE_URL', 'http://127.0.0.1:8080'),
 

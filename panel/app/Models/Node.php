@@ -39,13 +39,15 @@ class Node extends Model
     }
 
     /**
-     * Where the panel's web server sends browser traffic for this node, as "host:port".
+     * Where the panel's web server sends browser traffic for this node, as "host:port", or
+     * "https://host:port" for a node behind TLS, which makes the relay use TLS as well.
      */
     public function upstream(): string
     {
         $parts = parse_url($this->base_url);
+        $https = ($parts['scheme'] ?? 'http') === 'https';
 
-        return ($parts['host'] ?? '').':'.($parts['port'] ?? (($parts['scheme'] ?? 'http') === 'https' ? 443 : 80));
+        return ($https ? 'https://' : '').($parts['host'] ?? '').':'.($parts['port'] ?? ($https ? 443 : 80));
     }
 
     /**

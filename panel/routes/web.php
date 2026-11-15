@@ -38,6 +38,7 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
         Route::post('servers/stop-all', [ServerController::class, 'stopAll'])->name('servers.stop-all');
         Route::post('servers/{server}/dns', [ServerController::class, 'dns'])->name('servers.dns');
+        Route::post('servers/{server}/move', [ServerController::class, 'move'])->name('servers.move');
         Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
     });
 

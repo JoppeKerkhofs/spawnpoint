@@ -68,15 +68,51 @@ tells it what to do:
    and fill in the token, the version and `NODE_BIND`.
 3. `docker compose -f compose.node.yaml --env-file .env.node up -d`
 
-- When creating a server you choose its node; a server stays on the node it was created on.
+- When creating a server you choose its node. Under "Move to another node" on a server's
+  configuration page it can be handed over later: the panel stops it, backs it up, the new node
+  downloads that archive and unpacks it, and only then is the old container given up. The data
+  folder on the old host stays behind, as it does when a server is deleted. A big world takes a
+  while; the activity log says when the move is done or why it was not.
 - Players connect to the node's own host on port 25565, so each node needs its own public
   address. Set it per node as "Point DNS records at" for Cloudflare, or point DNS there yourself.
   The address of the web maps and the memory limit are per node too.
-- The panel reaches a node over plain http and signs every request, but does not encrypt it.
-  Put the panel and its nodes on a private network or a VPN, and never open the node's port to
-  the internet.
+- The panel signs every request to a node. Over plain http it does not encrypt it, so put the
+  panel and its nodes on a private network or a VPN, and never open the node's port to the
+  internet. See "Encrypted panel traffic" below to use https instead.
 - Browsers never talk to a node directly: the console and file transfers go through the panel.
 - Keep nodes on the same version as the panel.
+
+### Encrypted panel traffic
+
+On a single host the panel and its node talk over Docker's own network and nothing leaves the
+machine. A node on another host can be given a certificate, and then speaks https instead of
+http, so the traffic between the two is encrypted as well as signed:
+
+1. On the node's host, put a certificate and key for the name the panel uses in `./tls` as
+   `node.crt` and `node.key`, signed by a public authority or by your own:
+
+   ```sh
+   mkdir -p tls && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+     -keyout tls/node.key -out tls/node.crt -subj "/CN=node1.example.com" \
+     -addext "subjectAltName=DNS:node1.example.com"
+   ```
+
+2. Uncomment the `./tls:/tls:ro` volume in `compose.node.yaml`, set `SPAWNPOINT_TLS_CERT` and
+   `SPAWNPOINT_TLS_KEY` in `.env.node`, and bring the node up again. It then serves the same
+   port over TLS; the log line says `with TLS`.
+3. In the panel, give the node an `https://` address. Browser traffic for the console and file
+   transfers goes through the panel, which uses the same address, so it is encrypted too.
+
+The panel has to trust whoever signed the certificate. For a certificate of your own, give the
+panel a certificate bundle with yours added:
+
+```sh
+docker run --rm ghcr.io/joppekerkhofs/spawnpoint:latest cat /etc/ssl/certs/ca-certificates.crt > bundle.crt
+cat node-ca.crt >> bundle.crt
+```
+
+and mount it in the `app`, `queue` and `scheduler` containers as
+`./bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro`.
 
 ## Versions
 
@@ -97,6 +133,9 @@ English text as the key. A language is one file, `panel/lang/<code>.json`:
 cd panel
 php artisan lang:sync nl   # creates or updates lang/nl.json with every text that has no translation yet
 ```
+
+The command also writes `panel/lang/<code>/validation.php`, Laravel's own English messages for
+rejected forms, to translate the same way; without that file they stay English.
 
 Translate the values in that file and set its `"@language"` entry to the language's own name.
 An entry that still holds the English text is simply shown in English. Every file in `lang/`

@@ -9,6 +9,7 @@ use App\Actions\Servers\UpdateServer;
 use App\Http\Requests\LogRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
+use App\Jobs\MoveServer;
 use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
@@ -21,6 +22,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -95,6 +97,9 @@ class ServerController extends Controller
             'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::states()),
             'dnsEnabled' => CloudflareDns::enabled(),
+            // The other hosts this server could be moved to.
+            'otherNodes' => Node::query()->whereKeyNot($server->node_id)->orderBy('id')->get()
+                ->map(fn (Node $node): array => ['id' => $node->id, 'name' => $node->name]),
         ]);
     }
 
@@ -189,6 +194,33 @@ class ServerController extends Controller
 
         ActivityLog::record('dns.create', $server, ['hostname' => $server->hostname]);
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The DNS record for :hostname is in place.', ['hostname' => $server->hostname])]);
+
+        return back();
+    }
+
+    /**
+     * Hand a server over to another node. The work itself is queued: it stops the server, backs it
+     * up, has the other node pull the archive over and only then gives up the old container.
+     */
+    public function move(Request $request, Server $server): RedirectResponse
+    {
+        $data = $request->validate([
+            'node_id' => ['required', 'integer', Rule::exists('nodes', 'id')->whereNot('id', $server->node_id)],
+        ]);
+
+        $target = Node::query()->whereKey($data['node_id'])->firstOrFail();
+        $free = MemoryLimit::freeMb($target);
+
+        if ($free !== null && $free < $server->memory_mb) {
+            return back()->withErrors(['node_id' => __('Only :free MB is free on :node, and this server needs :needed MB.', [
+                'free' => $free, 'node' => $target->name, 'needed' => $server->memory_mb,
+            ])]);
+        }
+
+        MoveServer::dispatch($server->id, $target->id, $request->user()->id);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Moving :name to :node. It is stopped, backed up and started again there; the activity log says when it is done.', [
+            'name' => $server->name, 'node' => $target->name,
+        ])]);
 
         return back();
     }

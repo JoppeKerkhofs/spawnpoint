@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\ApiDocsController;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -55,17 +56,45 @@ class SyncLanguage extends Command
 
         $this->info("{$file}: {$added} new texts, ".(count($known) - 1).' in total. Set "@language" to the name of the language.');
 
+        if ($this->copyValidation($locale)) {
+            $this->info(lang_path("{$locale}/validation.php").': Laravel\'s own messages for rejected forms, in English, to translate.');
+        }
+
         return self::SUCCESS;
     }
 
     /**
-     * Every text the interface passes to t(), ask() or askName(), and the backend to __() or trans_choice().
+     * Put Laravel's own English messages for rejected forms in lang/<locale>/validation.php to be
+     * translated. Without a file of its own, a language falls back to the framework's English one.
+     */
+    private function copyValidation(string $locale): bool
+    {
+        $target = lang_path("{$locale}/validation.php");
+        $source = base_path('vendor/laravel/framework/src/Illuminate/Translation/lang/en/validation.php');
+
+        if (is_file($target) || ! is_file($source)) {
+            return false;
+        }
+
+        mkdir(dirname($target), 0755, true);
+
+        return copy($source, $target);
+    }
+
+    /**
+     * Every text the interface passes to t(), ask() or askName(), the backend to __() or
+     * trans_choice(), and every text of the API documentation.
      *
      * @return list<string>
      */
     public static function texts(): array
     {
         $texts = [];
+        ApiDocsController::spec(function (string $text) use (&$texts): string {
+            $texts[] = $text;
+
+            return $text;
+        });
         $files = Finder::create()->files()->name(['*.vue', '*.ts', '*.php'])
             ->in([resource_path('js'), app_path(), base_path('bootstrap')])
             ->exclude(['routes', 'actions', 'wayfinder']);

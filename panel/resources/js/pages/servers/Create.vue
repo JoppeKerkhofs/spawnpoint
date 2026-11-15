@@ -144,7 +144,7 @@ const worldSource = ref<'new' | 'host' | 'zip'>('new');
                         >
                             {{
                                 t(
-                                    'A server stays on the node it was created on.',
+                                    'It can be moved to another node later, from its configuration page.',
                                 )
                             }}
                         </span>

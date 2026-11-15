@@ -6,8 +6,9 @@
 #   2. cp .env.node.example .env.node          # put the token and the version in it
 #   3. docker compose -f compose.node.yaml --env-file .env.node up -d
 #
-# The panel talks to the node on NODE_PORT. Every request is signed with the token, but not
-# encrypted: keep that port on a private network or a VPN, never open to the internet.
+# The panel talks to the node on NODE_PORT. Every request is signed with the token, but over
+# plain http it is not encrypted: keep that port on a private network or a VPN, never open to
+# the internet. Give the node a certificate (SPAWNPOINT_TLS_CERT) to have it speak https.
 # Players connect to this host directly on MINECRAFT_PORT, and web maps are on BLUEMAP_PORT.
 
 name: spawnpoint-node
@@ -21,7 +22,7 @@ x-logging: &logging
 services:
   # The only container with the Docker socket and the server folders.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:?Set PANEL_VERSION to the version of the panel, for example 1.4.1}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:?Set PANEL_VERSION to the version of the panel, for example 1.5.0}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
@@ -31,6 +32,9 @@ services:
       SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
       SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
       SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
+      # With both filled in, the node speaks https instead of http; see .env.node.example.
+      SPAWNPOINT_TLS_CERT: ${SPAWNPOINT_TLS_CERT:-}
+      SPAWNPOINT_TLS_KEY: ${SPAWNPOINT_TLS_KEY:-}
     ports:
       # The address of this host on the network it shares with the panel.
       - "${NODE_BIND:?Set NODE_BIND to this host's address on the private network}:${NODE_PORT:-8080}:8080"
@@ -42,6 +46,8 @@ services:
       - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
       # Host worlds offered for import; read-only.
       - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
+      # For https: uncomment, and put the certificate and key in ./tls as node.crt and node.key.
+      # - ./tls:/tls:ro
 
   # Players connect here; it forwards each connection to the server whose hostname they typed.
   router:

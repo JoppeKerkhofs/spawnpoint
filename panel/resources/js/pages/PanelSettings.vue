@@ -15,6 +15,7 @@ defineProps<{
         bluemap_url: string;
         memory_limit_mb: string | number | null;
         require_two_factor: boolean;
+        activity_retention_days: string | number | null;
         dns_target: string | null;
         privacy_contact: string | null;
     };
@@ -132,6 +133,32 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                         </template>
                     </span>
                     <InputError :message="errors.memory_limit_mb" />
+                </div>
+            </SectionCard>
+
+            <SectionCard :title="t('Activity log')">
+                <div class="grid gap-2">
+                    <Label for="activity_retention_days">{{
+                        t('Keep entries for (days)')
+                    }}</Label>
+                    <Input
+                        id="activity_retention_days"
+                        name="activity_retention_days"
+                        type="number"
+                        min="0"
+                        step="1"
+                        class="max-w-48"
+                        :default-value="settings.activity_retention_days ?? ''"
+                        aria-describedby="activity_retention_days_hint"
+                    />
+                    <span id="activity_retention_days_hint" :class="hint">
+                        {{
+                            t(
+                                'Older entries are deleted every night. 0 keeps the whole log.',
+                            )
+                        }}
+                    </span>
+                    <InputError :message="errors.activity_retention_days" />
                 </div>
             </SectionCard>
 

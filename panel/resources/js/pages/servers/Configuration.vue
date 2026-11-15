@@ -17,7 +17,7 @@ import type {
     ServerOptions,
     States,
 } from '@/lib/servers';
-import { destroy, dns, update } from '@/routes/servers';
+import { destroy, dns, move, update } from '@/routes/servers';
 
 const props = defineProps<{
     server: Server;
@@ -26,6 +26,7 @@ const props = defineProps<{
     baseDomain: string;
     states?: States;
     dnsEnabled: boolean;
+    otherNodes: { id: number; name: string }[];
 }>();
 
 const javaVersion = ref(props.server.java_version);
@@ -125,6 +126,50 @@ const remove = async () => {
                     >
                         {{ t('Add DNS record again') }}
                     </Button>
+                </SectionCard>
+
+                <SectionCard
+                    v-if="otherNodes.length > 0 && server.can.includes('admin')"
+                    :title="t('Move to another node')"
+                >
+                    <Form
+                        v-bind="move.form({ server: server.slug })"
+                        :options="{ preserveScroll: true }"
+                        class="grid gap-2"
+                        v-slot="{ errors, processing }"
+                    >
+                        <p class="text-sm text-muted-foreground">
+                            {{
+                                t(
+                                    'The server is stopped, backed up and unpacked on the other host, which takes as long as its world is big. The old data folder stays behind.',
+                                )
+                            }}
+                        </p>
+                        <Label for="move_node_id">{{ t('New node') }}</Label>
+                        <select
+                            id="move_node_id"
+                            name="node_id"
+                            class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
+                        >
+                            <option
+                                v-for="each in otherNodes"
+                                :key="each.id"
+                                :value="each.id"
+                            >
+                                {{ each.name }}
+                            </option>
+                        </select>
+                        <InputError :message="errors.node_id" />
+                        <Button
+                            type="submit"
+                            variant="outline"
+                            class="mt-1 border-primary"
+                            :disabled="processing"
+                        >
+                            <Spinner v-if="processing" />
+                            {{ t('Move server') }}
+                        </Button>
+                    </Form>
                 </SectionCard>
 
                 <SectionCard
