@@ -117,4 +117,4 @@ test('a token issued before 1.5.0 keeps working through the retired name', funct
     $this->postJson("/api/v1/servers/{$server->slug}/backups/1794600000.tar.gz/restore", [], bearer($token))
         ->assertStatus(403)
         ->assertJsonPath('message', 'This token lacks the backups:restore ability.');
-})->skip('Until Task 6 adds the restore route.');
+});

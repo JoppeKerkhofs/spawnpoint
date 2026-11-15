@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Servers\PowerServer;
+use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\ServerController;
 use Illuminate\Support\Facades\Route;
@@ -34,8 +35,23 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         ->middleware(['ability:logs:read', 'can:act,server,"logs"']);
 
     Route::middleware('can:act,server,"backups"')->group(function () {
-        Route::get('servers/{server}/backups', [ServerController::class, 'backups'])->middleware('ability:backups:read');
-        Route::post('servers/{server}/backups', [ServerController::class, 'backup'])->middleware('ability:backups:create');
+        Route::get('servers/{server}/backups', [BackupController::class, 'index'])->middleware('ability:backups:read');
+        Route::post('servers/{server}/backups', [BackupController::class, 'store'])->middleware('ability:backups:create');
+        Route::delete('servers/{server}/backups/running', [BackupController::class, 'cancel'])->middleware('ability:backups:create');
+        Route::put('servers/{server}/backups/retention', [BackupController::class, 'retention'])->middleware('ability:backups:create');
+        Route::get('servers/{server}/import', [BackupController::class, 'imports'])->middleware('ability:backups:restore');
+        Route::post('servers/{server}/import', [BackupController::class, 'import'])->middleware('ability:backups:restore');
+
+        // The name becomes part of a path on the node, so only the form the node itself writes is routed.
+        Route::where(['backup' => '[0-9]{1,12}(\.locked)?\.tar\.gz'])->group(function () {
+            Route::get('servers/{server}/backups/{backup}/download', [BackupController::class, 'download'])->middleware('ability:backups:read');
+            Route::post('servers/{server}/backups/{backup}/restore', [BackupController::class, 'restore'])->middleware('ability:backups:restore');
+            Route::post('servers/{server}/backups/{backup}/lock', [BackupController::class, 'lock'])->middleware('ability:backups:restore');
+        });
+        // Also the record of a failed backup, which has no archive.
+        Route::delete('servers/{server}/backups/{backup}', [BackupController::class, 'destroy'])
+            ->where('backup', '[0-9]{1,12}((\.locked)?\.tar\.gz|\.failed)')
+            ->middleware('ability:backups:delete');
     });
 
     Route::middleware('can:act,server,"files"')->group(function () {

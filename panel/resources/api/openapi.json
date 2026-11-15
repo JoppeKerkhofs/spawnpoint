@@ -518,7 +518,7 @@
         "/servers/{server}/backups": {
             "get": {
                 "summary": "List the backups",
-                "x-ability": "backups:manage",
+                "x-ability": "backups:read",
                 "parameters": [
                     {
                         "name": "server",
@@ -590,7 +590,7 @@
             },
             "post": {
                 "summary": "Start a backup",
-                "x-ability": "backups:manage",
+                "x-ability": "backups:create",
                 "parameters": [
                     {
                         "name": "server",
@@ -941,6 +941,117 @@
                     },
                     "502": {
                         "description": "Cloudflare refused the record"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/running": {
+            "delete": {
+                "summary": "Stop the backup that is running",
+                "x-ability": "backups:create",
+                "description": "Needs backups:create. What was written so far is thrown away.",
+                "responses": {
+                    "202": {
+                        "description": "Stopping"
+                    },
+                    "404": {
+                        "description": "No backup is running"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/retention": {
+            "put": {
+                "summary": "Set how many backups are kept and for how long",
+                "x-ability": "backups:create",
+                "description": "Needs backups:create.",
+                "responses": {
+                    "200": {
+                        "description": "The new retention"
+                    },
+                    "422": {
+                        "description": "The values were refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/{backup}/download": {
+            "get": {
+                "summary": "Get the address a backup can be downloaded from",
+                "x-ability": "backups:read",
+                "description": "Needs backups:read. The address holds a token that is valid for five minutes.",
+                "responses": {
+                    "200": {
+                        "description": "The address"
+                    },
+                    "404": {
+                        "description": "No such backup"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/{backup}/restore": {
+            "post": {
+                "summary": "Put a backup back",
+                "x-ability": "backups:restore",
+                "description": "Needs backups:restore. The node archives the current state first, so a restore can itself be undone.",
+                "responses": {
+                    "202": {
+                        "description": "The restore has started"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/{backup}/lock": {
+            "post": {
+                "summary": "Lock a backup so retention never deletes it",
+                "x-ability": "backups:restore",
+                "description": "Needs backups:restore.",
+                "responses": {
+                    "200": {
+                        "description": "The new state"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/backups/{backup}": {
+            "delete": {
+                "summary": "Delete a backup",
+                "x-ability": "backups:delete",
+                "description": "Needs backups:delete. This cannot be undone.",
+                "responses": {
+                    "200": {
+                        "description": "Deleted"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/import": {
+            "get": {
+                "summary": "List the worlds in the node's import folder",
+                "x-ability": "backups:restore",
+                "description": "Needs backups:restore. These are the paths an import with source host accepts.",
+                "responses": {
+                    "200": {
+                        "description": "The worlds"
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Replace the world with an imported one",
+                "x-ability": "backups:restore",
+                "description": "Needs backups:restore. From a zip in the server's own folder, or a world folder on the node.",
+                "responses": {
+                    "202": {
+                        "description": "The import has started"
                     }
                 },
                 "parameters": []

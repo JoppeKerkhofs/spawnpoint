@@ -73,25 +73,6 @@ class ServerController extends Controller
     }
 
     /**
-     * List the backups.
-     */
-    public function backups(Server $server): JsonResponse
-    {
-        return response()->json(['data' => (new NodeClient($server->node))->backups($server)]);
-    }
-
-    /**
-     * Start a backup.
-     */
-    public function backup(Request $request, Server $server): JsonResponse
-    {
-        (new NodeClient($server->node))->createBackup($server, "{$request->user()->name} (API)");
-        ActivityLog::record('backup.create', $server);
-
-        return response()->json(['message' => "Accepted: backup of {$server->slug}."], 202);
-    }
-
-    /**
      * List a folder, or with ?file=1 return a text file. Both take ?path=.
      */
     public function files(FileRequest $request, Server $server): JsonResponse
