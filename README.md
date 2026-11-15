@@ -142,6 +142,25 @@ An entry that still holds the English text is simply shown in English. Every fil
 shows up under Settings, Appearance, where each user picks their language; `APP_LOCALE` sets it
 for people who have not chosen. Run the command again after an update to pick up new texts.
 
+## The API
+
+Everything the panel can do, a token can do: `/api/v1`, documented at `/api-docs` and described
+by `panel/resources/api/openapi.json`. A token never exceeds its owner — a viewer's token can
+only reach the servers shared with them, whatever abilities it holds.
+
+Make a token under Settings, API tokens. Choose a starting point (read-only, operator or full
+access) and adjust the groups underneath; the sentence below the form says what the token will
+be able to do.
+
+Signing in, changing a password, two-factor, passkeys and making tokens have no API: a stolen
+token must not be able to lock you out or mint another one.
+
+### Pairing an app
+
+An app never needs your password. It shows an eight-character code; under Settings, API tokens,
+type the code, check which device is asking, choose what it may do, and approve. The app then
+collects its token once. A code is good for ten minutes.
+
 ## Work on it
 
 With PHP and Node on your machine, `compose.dev.yaml` runs only the node, the router and the map

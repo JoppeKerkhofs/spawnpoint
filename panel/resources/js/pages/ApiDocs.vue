@@ -17,7 +17,8 @@ type Parameter = {
 type Operation = {
     summary: string;
     description?: string;
-    'x-ability': string;
+    // Absent where any valid token, or none at all, may call it.
+    'x-ability'?: string;
     parameters: Parameter[];
     requestBody?: {
         content: {
@@ -57,6 +58,7 @@ const methodClass: Record<string, string> = {
     GET: 'bg-[#e1f1e7] text-[#1d6b3f] dark:bg-[#173323] dark:text-[#7fd6a2]',
     POST: 'bg-[#e3ecfb] text-[#1f4f9c] dark:bg-[#182a47] dark:text-[#9cc0ff]',
     PUT: 'bg-[#fbefd5] text-[#7a4f00] dark:bg-[#3a2d12] dark:text-[#f0c36b]',
+    PATCH: 'bg-[#fbefd5] text-[#7a4f00] dark:bg-[#3a2d12] dark:text-[#f0c36b]',
     DELETE: 'bg-[#fbe3e3] text-[#a12a2f] dark:bg-[#3d1c1e] dark:text-[#ff9a9a]',
 };
 
@@ -144,7 +146,9 @@ const example = (method: string, path: string, operation: Operation) => {
                             <code class="font-mono break-all text-primary">{{
                                 path
                             }}</code>
-                            <span class="text-muted-foreground"
+                            <span
+                                v-if="operation['x-ability']"
+                                class="text-muted-foreground"
                                 >{{ t('needs the ability') }}
                                 <code class="font-mono text-primary">{{
                                     operation['x-ability']

@@ -60,6 +60,9 @@ the `mc-router.host` label. Web maps go through Traefik on 8100 at `/<slug>/`.
 what they may do there (`Server::PERMISSIONS`). Routes check it with
 `can:act,server,"files"`, and the quotes matter: without them Laravel takes the word for a route
 parameter. API tokens need both the token ability and the owner's permission.
+Abilities live in `App\Api\Abilities` and are checked by the `ability:` middleware beside
+`can:`; `backups:manage` is a retired name kept for tokens issued before 1.5.0. A device is
+paired by code (`device_pairings`), never by handing over a password.
 
 **Panel containers.** `app` (web), `queue` (webhooks, mail) and `scheduler` (`schedules:run`,
 `servers:watch` every minute) are the same image. Only `app` runs migrations.
@@ -114,6 +117,9 @@ was looked at in a browser against a real server.
 - **`TrimStrings` would strip file contents**, so `content` is excluded in `bootstrap/app.php`.
 - **`Http::fake()`: the first registered stub wins.** To replace a fake set in `beforeEach`, call
   `Http::swap(new HttpFactory)` first.
+- **The sanctum guard keeps the first token of a test.** A second request with another token
+  is answered as the first. Send tokens with `bearer($token)` (`tests/Pest.php`), which forgets
+  the guards. `Sanctum::actingAs` tokens are mocks: ask `tokenCan()`, never read `->abilities`.
 - **Tests need built assets** (`npm run build`), or Inertia pages fail on the Vite manifest.
   Server-side rendering is off in tests so a running dev server is not called.
 - **Error pages and unmatched routes:** a 404 for an address without a route never runs the web

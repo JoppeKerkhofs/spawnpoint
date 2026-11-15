@@ -2,7 +2,7 @@
 
 Date: 2026-11-15
 Version: 1.5.0
-Status: design, awaiting approval
+Status: built (branch `api-parity`)
 
 ## Why
 
