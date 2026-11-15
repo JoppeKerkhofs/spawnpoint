@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\NodeController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
+use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
 
 // Two guards on every route: ability: is what the token may ask for, can: is what its owner
@@ -85,5 +86,9 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::post('nodes', [NodeController::class, 'store'])->middleware('ability:nodes:manage');
         Route::put('nodes/{node}', [NodeController::class, 'update'])->middleware('ability:nodes:manage');
         Route::delete('nodes/{node}', [NodeController::class, 'destroy'])->middleware('ability:nodes:manage');
+        Route::get('users', [UserController::class, 'index'])->middleware('ability:users:read');
+        Route::post('users', [UserController::class, 'store'])->middleware('ability:users:manage');
+        Route::put('users/{user}', [UserController::class, 'update'])->middleware('ability:users:manage');
+        Route::delete('users/{user}', [UserController::class, 'destroy'])->middleware('ability:users:manage');
     });
 });

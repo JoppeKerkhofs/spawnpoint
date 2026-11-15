@@ -1209,6 +1209,63 @@
                 },
                 "parameters": []
             }
+        },
+        "/users": {
+            "get": {
+                "summary": "List the users with their role and shares",
+                "x-ability": "users:read",
+                "description": "Needs users:read and an admin owner.",
+                "responses": {
+                    "200": {
+                        "description": "The users"
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Create or invite a user",
+                "x-ability": "users:manage",
+                "description": "Needs users:manage and an admin owner. Without a password the user is sent an invitation e-mail.",
+                "responses": {
+                    "201": {
+                        "description": "The user"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/users/{user}": {
+            "put": {
+                "summary": "Change a user's role and shares",
+                "x-ability": "users:manage",
+                "description": "Needs users:manage and an admin owner. Shares are given as a server id to a list of permissions.",
+                "responses": {
+                    "200": {
+                        "description": "The user"
+                    },
+                    "422": {
+                        "description": "Refused, for instance removing your own admin role"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Delete a user",
+                "x-ability": "users:manage",
+                "description": "Needs users:manage and an admin owner. Servers they created pass to the admin deleting them.",
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "422": {
+                        "description": "You cannot delete your own account here"
+                    }
+                },
+                "parameters": []
+            }
         }
     }
 }
