@@ -1266,6 +1266,46 @@
                 },
                 "parameters": []
             }
+        },
+        "/settings": {
+            "get": {
+                "summary": "Read the panel settings",
+                "x-ability": "settings:read",
+                "description": "Needs settings:read and an admin owner. A saved secret is reported as a flag, never as its value.",
+                "responses": {
+                    "200": {
+                        "description": "The settings"
+                    }
+                },
+                "parameters": []
+            },
+            "put": {
+                "summary": "Change the panel settings",
+                "x-ability": "settings:manage",
+                "description": "Needs settings:manage and an admin owner. Leaving a secret empty keeps the saved one; remove_curseforge_key or remove_cloudflare_token deletes it.",
+                "responses": {
+                    "200": {
+                        "description": "The settings as they now are"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/activity": {
+            "get": {
+                "summary": "Read the activity log",
+                "x-ability": "activity:read",
+                "description": "Needs activity:read and an admin owner. Newest first, fifty at a time; add ?server= to filter by slug.",
+                "responses": {
+                    "200": {
+                        "description": "The entries"
+                    }
+                },
+                "parameters": []
+            }
         }
     }
 }

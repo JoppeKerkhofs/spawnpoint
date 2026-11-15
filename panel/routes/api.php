@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\NodeController;
+use App\Http\Controllers\Api\V1\PanelController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -90,5 +91,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::post('users', [UserController::class, 'store'])->middleware('ability:users:manage');
         Route::put('users/{user}', [UserController::class, 'update'])->middleware('ability:users:manage');
         Route::delete('users/{user}', [UserController::class, 'destroy'])->middleware('ability:users:manage');
+        Route::get('settings', [PanelController::class, 'settings'])->middleware('ability:settings:read');
+        Route::put('settings', [PanelController::class, 'saveSettings'])->middleware('ability:settings:manage');
+        Route::get('activity', [PanelController::class, 'activity'])->middleware('ability:activity:read');
     });
 });
