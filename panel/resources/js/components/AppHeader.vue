@@ -2,6 +2,7 @@
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
+import BlockCube from '@/components/BlockCube.vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import {
     DropdownMenu,
@@ -11,6 +12,7 @@ import {
 import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
+import { t } from '@/lib/i18n';
 import { dashboard, serviceStatus } from '@/routes';
 import { index as activity } from '@/routes/activity';
 import { edit as panelSettings } from '@/routes/panel-settings';
@@ -34,7 +36,7 @@ const now = ref(Date.now());
 
 const lastContact = computed(() => {
     if (!service.value?.last_seen_at) {
-        return 'never';
+        return t('never');
     }
 
     const seconds = Math.max(
@@ -43,8 +45,8 @@ const lastContact = computed(() => {
     );
 
     return seconds < 120
-        ? `${seconds} s ago`
-        : `${Math.round(seconds / 60)} min ago`;
+        ? t(':seconds s ago', { seconds })
+        : t(':minutes min ago', { minutes: Math.round(seconds / 60) });
 });
 
 const checkService = async () => {
@@ -75,14 +77,14 @@ onBeforeUnmount(() => timers.forEach(clearInterval));
 
 const mainNavItems = computed<NavItem[]>(() => [
     {
-        title: 'Servers',
+        title: t('Servers'),
         href: dashboard(),
     },
     ...(auth.value.user.role === 'admin'
         ? [
-              { title: 'Users', href: users() },
-              { title: 'Activity', href: activity() },
-              { title: 'Settings', href: panelSettings() },
+              { title: t('Users'), href: users() },
+              { title: t('Activity'), href: activity() },
+              { title: t('Settings'), href: panelSettings() },
           ]
         : []),
 ]);
@@ -98,11 +100,19 @@ const mainNavItems = computed<NavItem[]>(() => [
                     :href="dashboard()"
                     class="flex items-center gap-2.5 py-3 font-bold"
                 >
-                    <AppLogoIcon class="size-[22px]" aria-hidden="true" />
+                    <BlockCube v-if="page.props.theme === 'blocky'" spin />
+                    <AppLogoIcon
+                        v-else
+                        class="size-[22px]"
+                        aria-hidden="true"
+                    />
                     <span>{{ page.props.name }}</span>
+                    <span class="text-xs font-normal text-white/50 tabular-nums"
+                        >v{{ page.props.appVersion }}</span
+                    >
                 </Link>
 
-                <nav aria-label="Main" class="flex flex-wrap gap-1">
+                <nav :aria-label="t('Main')" class="flex flex-wrap gap-1">
                     <Link
                         v-for="item in mainNavItems"
                         :key="item.title"
@@ -137,12 +147,16 @@ const mainNavItems = computed<NavItem[]>(() => [
                                 : 'bg-[#ff9a9a] ring-[3px] ring-[#ff9a9a]/25'
                         "
                     />
-                    <span
-                        >Rust service
-                        {{ service.online ? 'online' : 'offline' }}</span
-                    >
+                    <span>{{
+                        service.online
+                            ? t('Rust service online')
+                            : t('Rust service offline')
+                    }}</span>
                     <span class="text-white/60 tabular-nums"
-                        >· last contact {{ lastContact }}</span
+                        >·
+                        {{
+                            t('last contact :time', { time: lastContact })
+                        }}</span
                     >
                 </div>
 
@@ -150,10 +164,21 @@ const mainNavItems = computed<NavItem[]>(() => [
                     <DropdownMenuTrigger as-child>
                         <button
                             type="button"
-                            :aria-label="`Account: ${auth.user.name}`"
+                            :aria-label="
+                                t('Account: :name', { name: auth.user.name })
+                            "
                             class="flex cursor-pointer items-center gap-2 py-2 text-sm"
                         >
+                            <img
+                                v-if="auth.user.avatar"
+                                :src="auth.user.avatar"
+                                alt=""
+                                width="32"
+                                height="32"
+                                class="size-8 rounded-md bg-[#3d434a] [image-rendering:pixelated]"
+                            />
                             <span
+                                v-else
                                 class="flex size-8 items-center justify-center rounded-full bg-[#3d434a] text-[0.8125rem] font-semibold"
                             >
                                 {{ getInitials(auth.user.name) }}

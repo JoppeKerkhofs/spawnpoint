@@ -520,6 +520,21 @@ pub async fn ensure_folder(state: &AppState, slug: &str) -> Result<(), String> {
     run("chown", &["1000:1000".as_ref(), folder.as_ref()], &[0]).await
 }
 
+// BlueMap renders nothing until its config accepts the download of Minecraft's own resources.
+// Only written when there is no config yet, so a person's own settings are never touched.
+pub async fn accept_bluemap_download(state: &AppState, slug: &str, plugin: bool) -> Result<(), String> {
+    let parent = server_dir(state, slug).join(if plugin { "plugins" } else { "config" });
+    let folder = parent.join(if plugin { "BlueMap" } else { "bluemap" });
+    let file = folder.join("core.conf");
+    if file.exists() {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+    std::fs::write(&file, "accept-download: true\n").map_err(|error| error.to_string())?;
+    run("chown", &["1000:1000".as_ref(), parent.as_ref(), folder.as_ref(), file.as_ref()], &[0]).await
+}
+
 // Gives a server that is about to be created a world from the import folder to start with.
 pub async fn seed_world(state: &AppState, slug: &str, source: &FsPath) -> Result<(), String> {
     let target = server_dir(state, slug);
@@ -606,7 +621,7 @@ mod tests {
 
     #[test]
     fn a_world_is_found_inside_a_wrapping_folder() {
-        let base = std::env::temp_dir().join(format!("mcpanel-world-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("spawnpoint-world-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("My Server/world/region")).unwrap();
         std::fs::write(base.join("My Server/world/level.dat"), "").unwrap();

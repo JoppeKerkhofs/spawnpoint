@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Server;
+use App\Services\CloudflareDns;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -31,6 +33,8 @@ class ActivityController extends Controller
                 'at' => $entry->created_at->toIso8601String(),
             ]),
             'server' => $server,
+            // Servers whose failed DNS record can be tried again: the ones that still exist, while DNS is set up.
+            'dnsRetry' => CloudflareDns::enabled() ? Server::query()->pluck('slug') : [],
             'newerUrl' => $page->previousPageUrl(),
             'olderUrl' => $page->nextPageUrl(),
         ]);

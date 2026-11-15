@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ask } from '@/lib/dialogs';
+import { t } from '@/lib/i18n';
 import { router, useForm } from '@inertiajs/vue3';
 import { Check } from '@lucide/vue';
 import InputError from '@/components/InputError.vue';
@@ -22,21 +24,24 @@ const props = defineProps<{
 }>();
 
 const labels: Record<string, [string, string]> = {
-    logs: ['Logs', 'Read and download the log files'],
-    commands: ['Commands', 'Type commands in the console'],
-    power: ['Power', 'Start, stop, restart and kill the server'],
-    files: ['Files', 'Browse, edit, upload and delete files'],
-    backups: ['Backups', 'Make, restore and schedule backups; import a world'],
+    logs: [t('Logs'), t('Read and download the log files')],
+    commands: [t('Commands'), t('Type commands in the console')],
+    power: [t('Power'), t('Start, stop, restart and kill the server')],
+    files: [t('Files'), t('Browse, edit, upload and delete files')],
+    backups: [
+        t('Backups'),
+        t('Make, restore and schedule backups; import a world'),
+    ],
     configure: [
-        'Configure',
-        'Change version, memory, players and other settings',
+        t('Configure'),
+        t('Change version, memory, players and other settings'),
     ],
 };
 
 const presets = [
-    { label: 'Watch only', permissions: [] as string[] },
-    { label: 'Operator', permissions: ['logs', 'commands', 'power'] },
-    { label: 'Everything', permissions: props.permissions },
+    { label: t('Watch only'), permissions: [] as string[] },
+    { label: t('Operator'), permissions: ['logs', 'commands', 'power'] },
+    { label: t('Everything'), permissions: props.permissions },
 ];
 
 const form = useForm({
@@ -73,11 +78,11 @@ const save = () => {
     })).put(update.url({ user: props.user.id }), { preserveScroll: true });
 };
 
-const remove = () => {
+const remove = async () => {
     if (
-        confirm(
-            `Delete ${props.user.name}? Servers they created stay and pass to you.`,
-        )
+        await ask('Delete :name? Servers they created stay and pass to you.', {
+            name: props.user.name,
+        })
     ) {
         router.delete(destroy.url({ user: props.user.id }), {
             preserveScroll: true,
@@ -93,29 +98,29 @@ const remove = () => {
         >
             <h2 class="font-bold text-primary">
                 {{ user.name }}
-                <span v-if="isMe" class="font-normal text-muted-foreground"
-                    >(you)</span
-                >
+                <span v-if="isMe" class="font-normal text-muted-foreground">{{
+                    t('(you)')
+                }}</span>
             </h2>
             <span class="text-sm text-muted-foreground">{{ user.email }}</span>
         </div>
 
         <form class="flex flex-col gap-4 px-4 py-3" @submit.prevent="save">
             <div class="flex flex-wrap items-center gap-2">
-                <Label :for="`role-${user.id}`">Role</Label>
+                <Label :for="`role-${user.id}`">{{ t('Role') }}</Label>
                 <select
                     :id="`role-${user.id}`"
                     v-model="form.role"
                     class="h-9 rounded-md border border-input bg-card px-2.5 text-sm"
                 >
-                    <option value="admin">Admin</option>
-                    <option value="viewer">Viewer</option>
+                    <option value="admin">{{ t('Admin') }}</option>
+                    <option value="viewer">{{ t('Viewer') }}</option>
                 </select>
                 <span
                     v-if="form.role === 'admin'"
                     class="text-sm text-muted-foreground"
                 >
-                    Can do everything on every server.
+                    {{ t('Can do everything on every server.') }}
                 </span>
             </div>
             <InputError :message="form.errors.role" />
@@ -125,9 +130,11 @@ const remove = () => {
                 class="flex flex-col gap-2"
             >
                 <p class="text-[0.8125rem] text-muted-foreground">
-                    Switch on the servers this user may see. They can always
-                    watch the console of a shared server; choose what else they
-                    may do there.
+                    {{
+                        t(
+                            'Switch on the servers this user may see. They can always watch the console of a shared server; choose what else they may do there.',
+                        )
+                    }}
                 </p>
 
                 <fieldset
@@ -167,13 +174,17 @@ const remove = () => {
                         <span
                             v-if="!(server.id in form.shares)"
                             class="text-sm text-muted-foreground"
-                            >Not shared</span
+                            >{{ t('Not shared') }}</span
                         >
                         <template v-else>
                             <span class="flex-1" />
                             <div
                                 role="group"
-                                :aria-label="`Presets for ${server.name}`"
+                                :aria-label="
+                                    t('Presets for :name', {
+                                        name: server.name,
+                                    })
+                                "
                                 class="flex overflow-hidden rounded-md border border-input text-[0.8125rem]"
                             >
                                 <button
@@ -241,7 +252,7 @@ const remove = () => {
 
                 <details class="text-sm">
                     <summary class="cursor-pointer text-muted-foreground">
-                        What each permission allows
+                        {{ t('What each permission allows') }}
                     </summary>
                     <dl
                         class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[0.8125rem]"
@@ -262,13 +273,17 @@ const remove = () => {
                         </template>
                     </dl>
                     <p class="mt-2 text-[0.8125rem] text-muted-foreground">
-                        Creating and deleting servers stays with admins.
+                        {{
+                            t(
+                                'Creating and deleting servers stays with admins.',
+                            )
+                        }}
                     </p>
                 </details>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-                <Button :disabled="form.processing">Save</Button>
+                <Button :disabled="form.processing">{{ t('Save') }}</Button>
                 <Button
                     v-if="!isMe"
                     type="button"
@@ -276,19 +291,19 @@ const remove = () => {
                     class="border-destructive text-destructive hover:text-destructive"
                     @click="remove"
                 >
-                    Delete
+                    {{ t('Delete') }}
                 </Button>
                 <span
                     v-if="form.isDirty"
                     role="status"
                     class="text-sm text-muted-foreground"
-                    >Unsaved changes</span
+                    >{{ t('Unsaved changes') }}</span
                 >
                 <span
                     v-else-if="form.recentlySuccessful"
                     role="status"
                     class="text-sm text-muted-foreground"
-                    >Saved</span
+                    >{{ t('Saved') }}</span
                 >
             </div>
         </form>

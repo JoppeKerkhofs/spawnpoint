@@ -7,6 +7,9 @@ return [
     // Every server hostname is one label under this domain, covered by a wildcard DNS record.
     'base_domain' => env('PANEL_BASE_DOMAIN', 'mc.localhost'),
 
+    // The look of the panel: "default", or "blocky" for the Minecraft-style one.
+    'theme' => in_array(env('PANEL_THEME'), ['blocky'], true) ? env('PANEL_THEME') : 'default',
+
     // With both filled in, a DNS record is added in Cloudflare for every new server and removed with it.
     'cloudflare_token' => env('CLOUDFLARE_API_TOKEN'),
     'dns_target' => env('PANEL_DNS_TARGET'),

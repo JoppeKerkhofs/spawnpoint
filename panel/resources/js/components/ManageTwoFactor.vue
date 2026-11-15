@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/lib/i18n';
 import {
     confirm,
     disable,
@@ -62,12 +63,14 @@ const showRecoveryCodes = async () => {
     <div v-if="canManageTwoFactor" class="space-y-6">
         <Heading
             variant="small"
-            title="Two-factor authentication"
-            description="Ask for a code from your authenticator app when you log in"
+            :title="t('Two-factor authentication')"
+            :description="
+                t('Ask for a code from your authenticator app when you log in')
+            "
         />
 
         <template v-if="twoFactorEnabled">
-            <Badge>Enabled</Badge>
+            <Badge>{{ t('Enabled') }}</Badge>
 
             <div class="flex flex-wrap gap-4">
                 <Button
@@ -75,7 +78,7 @@ const showRecoveryCodes = async () => {
                     variant="secondary"
                     @click="showRecoveryCodes"
                 >
-                    Show recovery codes
+                    {{ t('Show recovery codes') }}
                 </Button>
 
                 <Form
@@ -85,7 +88,7 @@ const showRecoveryCodes = async () => {
                     v-slot="{ processing }"
                 >
                     <Button variant="secondary" :disabled="processing">
-                        Regenerate recovery codes
+                        {{ t('Regenerate recovery codes') }}
                     </Button>
                 </Form>
 
@@ -96,15 +99,18 @@ const showRecoveryCodes = async () => {
                     v-slot="{ processing }"
                 >
                     <Button variant="destructive" :disabled="processing">
-                        Disable
+                        {{ t('Disable') }}
                     </Button>
                 </Form>
             </div>
 
             <div v-if="recoveryCodes.length" class="space-y-2">
                 <p class="text-sm text-muted-foreground">
-                    Store these codes somewhere safe. Each one logs you in once
-                    if you lose your authenticator.
+                    {{
+                        t(
+                            'Store these codes somewhere safe. Each one logs you in once if you lose your authenticator.',
+                        )
+                    }}
                 </p>
                 <ul class="rounded-lg bg-muted p-4 font-mono text-sm">
                     <li v-for="code in recoveryCodes" :key="code">
@@ -116,8 +122,11 @@ const showRecoveryCodes = async () => {
 
         <template v-else-if="setup">
             <p class="text-sm text-muted-foreground">
-                Scan this QR code with your authenticator app, or enter the key
-                by hand, then confirm with a code from the app.
+                {{
+                    t(
+                        'Scan this QR code with your authenticator app, or enter the key by hand, then confirm with a code from the app.',
+                    )
+                }}
             </p>
 
             <!-- SVG rendered by our own server from the user's secret -->
@@ -134,7 +143,7 @@ const showRecoveryCodes = async () => {
                 v-slot="{ errors, processing }"
             >
                 <div class="grid gap-2">
-                    <Label for="code">Authentication code</Label>
+                    <Label for="code">{{ t('Authentication code') }}</Label>
                     <Input
                         id="code"
                         name="code"
@@ -145,7 +154,7 @@ const showRecoveryCodes = async () => {
                     <InputError :message="errors.code" />
                 </div>
 
-                <Button :disabled="processing">Confirm</Button>
+                <Button :disabled="processing">{{ t('Confirm') }}</Button>
             </Form>
         </template>
 
@@ -157,7 +166,7 @@ const showRecoveryCodes = async () => {
             v-slot="{ processing }"
         >
             <Button :disabled="processing">
-                Enable two-factor authentication
+                {{ t('Enable two-factor authentication') }}
             </Button>
         </Form>
     </div>

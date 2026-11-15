@@ -106,7 +106,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
+          images: ghcr.io/${{ github.repository_owner }}/spawnpoint${{ matrix.suffix }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest

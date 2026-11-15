@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ask } from '@/lib/dialogs';
 import { Form, Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import InputError from '@/components/InputError.vue';
@@ -9,13 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { t } from '@/lib/i18n';
 import type {
     MemoryBudget,
     Server,
     ServerOptions,
     States,
 } from '@/lib/servers';
-import { destroy, update } from '@/routes/servers';
+import { destroy, dns, update } from '@/routes/servers';
 
 const props = defineProps<{
     server: Server;
@@ -23,14 +25,16 @@ const props = defineProps<{
     memory: MemoryBudget;
     baseDomain: string;
     states?: States;
+    dnsEnabled: boolean;
 }>();
 
 const javaVersion = ref(props.server.java_version);
 
-const remove = () => {
+const remove = async () => {
     if (
-        confirm(
-            `Delete ${props.server.name}? Its container is removed; the data folder stays on the host.`,
+        await ask(
+            'Delete :name? Its container is removed; the data folder stays on the host.',
+            { name: props.server.name },
         )
     ) {
         router.delete(destroy.url({ server: props.server.slug }));
@@ -39,7 +43,7 @@ const remove = () => {
 </script>
 
 <template>
-    <Head :title="`${server.name} configuration`" />
+    <Head :title="t(':name configuration', { name: server.name })" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="configuration" />
@@ -51,9 +55,9 @@ const remove = () => {
                 class="flex min-w-0 flex-[999_1_560px] flex-col gap-3"
                 v-slot="{ errors, processing }"
             >
-                <SectionCard title="Name">
+                <SectionCard :title="t('Name')">
                     <div class="grid gap-2">
-                        <Label for="name">Name</Label>
+                        <Label for="name">{{ t('Name') }}</Label>
                         <Input
                             id="name"
                             name="name"
@@ -78,24 +82,61 @@ const remove = () => {
                 >
                     <InputError :message="errors.node" />
                     <span class="text-sm text-muted-foreground">
-                        Saving recreates the container. The world and all files
-                        are kept.
+                        {{
+                            t(
+                                'Saving recreates the container. The world and all files are kept.',
+                            )
+                        }}
                     </span>
                     <Button :disabled="processing">
                         <Spinner v-if="processing" />
-                        Save and recreate
+                        {{ t('Save and recreate') }}
                     </Button>
                 </div>
             </Form>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
                 <SectionCard
-                    v-if="server.can.includes('admin')"
-                    title="Delete server"
+                    v-if="dnsEnabled && server.can.includes('admin')"
+                    :title="t('DNS record')"
                 >
                     <p class="mb-3 text-sm text-muted-foreground">
-                        Removes the container and this entry. The data folder
-                        stays on the host.
+                        {{ t('The panel adds a Cloudflare record for') }}
+                        <span class="font-mono break-all">{{
+                            server.hostname
+                        }}</span>
+                        {{
+                            t(
+                                'when a server is created. If that failed, or the record was removed, add it again here.',
+                            )
+                        }}
+                    </p>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        class="border-primary"
+                        @click="
+                            router.post(
+                                dns.url({ server: server.slug }),
+                                {},
+                                { preserveScroll: true },
+                            )
+                        "
+                    >
+                        {{ t('Add DNS record again') }}
+                    </Button>
+                </SectionCard>
+
+                <SectionCard
+                    v-if="server.can.includes('admin')"
+                    :title="t('Delete server')"
+                >
+                    <p class="mb-3 text-sm text-muted-foreground">
+                        {{
+                            t(
+                                'Removes the container and this entry. The data folder stays on the host.',
+                            )
+                        }}
                     </p>
                     <Button
                         type="button"
@@ -103,7 +144,7 @@ const remove = () => {
                         class="border-destructive text-destructive hover:text-destructive"
                         @click="remove"
                     >
-                        Delete server
+                        {{ t('Delete server') }}
                     </Button>
                 </SectionCard>
             </aside>

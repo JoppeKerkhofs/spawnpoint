@@ -39,7 +39,7 @@ class CloudflareDns
 
         $response = self::http()->post(self::API.'/zones/'.self::zone($hostname).'/dns_records', [
             'type' => $type, 'name' => $hostname, 'content' => $target, 'ttl' => 1, 'proxied' => false,
-            'comment' => 'Minecraft panel',
+            'comment' => 'Spawnpoint',
         ]);
 
         // Codes 81057 and 81058 mean an identical record is already there, which is the wanted outcome.

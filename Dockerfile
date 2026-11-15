@@ -31,7 +31,7 @@ RUN npm ci
 
 COPY panel .
 # The application name is compiled into the frontend (page titles).
-ARG APP_NAME="Minecraft Panel"
+ARG APP_NAME="Spawnpoint"
 RUN composer dump-autoload --no-dev --optimize \
     && php artisan wayfinder:generate --with-form \
     && VITE_APP_NAME="${APP_NAME}" npm run build \
@@ -74,7 +74,7 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 
 # The node is the Rust service; "node" is its name in the Compose file. The browser reaches it
 # through this image's web server at /node, for the console and file transfers.
-ENV APP_NAME="Minecraft Panel" \
+ENV APP_NAME="Spawnpoint" \
     APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \

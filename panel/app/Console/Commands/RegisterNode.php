@@ -26,7 +26,7 @@ class RegisterNode extends Command
         ]);
 
         $this->info('Node registered. Start its Rust service with:');
-        $this->line("MCPANEL_TOKEN={$token}");
+        $this->line("SPAWNPOINT_TOKEN={$token}");
 
         return self::SUCCESS;
     }

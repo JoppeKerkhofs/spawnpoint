@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ask } from '@/lib/dialogs';
+import { t } from '@/lib/i18n';
 import { Form, Head, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -37,50 +39,54 @@ defineOptions({
 
 const formatLabels: Record<string, string> = {
     discord: 'Discord',
-    slack: 'Slack, Mattermost or Teams',
-    json: 'Other service (all fields as JSON)',
+    slack: t('Slack, Mattermost or Teams'),
+    json: t('Other service (all fields as JSON)'),
 };
 
 const groupLabels: Record<string, string> = {
-    power: 'Someone starts, stops, restarts or kills a server',
-    status: 'A server comes online or goes offline',
-    crash: 'A server crashes',
-    backups: 'A backup is made or restored, or a schedule runs',
-    changes: 'A server is created, changed or deleted',
+    power: t('Someone starts, stops, restarts or kills a server'),
+    status: t('A server comes online or goes offline'),
+    crash: t('A server crashes'),
+    backups: t('A backup is made or restored, or a schedule runs'),
+    changes: t('A server is created, changed or deleted'),
 };
 
 const keep = { preserveScroll: true };
 
 const result = (webhook: Webhook) => {
     if (webhook.last_sent === null) {
-        return 'nothing sent yet';
+        return t('nothing sent yet');
     }
 
-    const answer =
-        webhook.last_status === 0
-            ? 'no answer'
-            : `answered ${webhook.last_status}`;
-
-    return `last sent ${webhook.last_sent}, ${answer}`;
+    return webhook.last_status === 0
+        ? t('last sent :date, no answer', { date: webhook.last_sent })
+        : t('last sent :date, answered :status', {
+              date: webhook.last_sent,
+              status: String(webhook.last_status),
+          });
 };
 
-const remove = (webhook: Webhook) => {
-    if (confirm(`Delete the webhook "${webhook.name}"?`)) {
+const remove = async (webhook: Webhook) => {
+    if (await ask('Delete the webhook ":name"?', { name: webhook.name })) {
         router.delete(destroy.url({ webhook: webhook.id }), keep);
     }
 };
 </script>
 
 <template>
-    <Head title="Webhooks" />
+    <Head :title="t('Webhooks')" />
 
-    <h1 class="sr-only">Webhooks</h1>
+    <h1 class="sr-only">{{ t('Webhooks') }}</h1>
 
     <div class="space-y-6">
         <Heading
             variant="small"
-            title="Webhooks"
-            description="Have the panel tell another service, such as a Discord channel or an SMS gateway, when something happens on a server you can see."
+            :title="t('Webhooks')"
+            :description="
+                t(
+                    'Have the panel tell another service, such as a Discord channel or an SMS gateway, when something happens on a server you can see.',
+                )
+            "
         />
 
         <Form
@@ -91,7 +97,7 @@ const remove = (webhook: Webhook) => {
             v-slot="{ errors, processing }"
         >
             <div class="grid gap-2">
-                <Label for="name">Name</Label>
+                <Label for="name">{{ t('Name') }}</Label>
                 <Input
                     id="name"
                     name="name"
@@ -103,28 +109,33 @@ const remove = (webhook: Webhook) => {
             </div>
 
             <div class="grid gap-2">
-                <Label for="url">Webhook address</Label>
+                <Label for="url">{{ t('Webhook address') }}</Label>
                 <Input
                     id="url"
                     name="url"
                     type="url"
                     required
                     autocomplete="off"
-                    placeholder="A Discord, Slack or other webhook address"
+                    :placeholder="
+                        t('A Discord, Slack or other webhook address')
+                    "
                     aria-describedby="url_hint"
                 />
                 <span
                     id="url_hint"
                     class="text-[0.8125rem] text-muted-foreground"
                 >
-                    Must start with https. It is stored encrypted and not shown
-                    again.
+                    {{
+                        t(
+                            'Must start with https. It is stored encrypted and not shown again.',
+                        )
+                    }}
                 </span>
                 <InputError :message="errors.url" />
             </div>
 
             <div class="grid gap-2">
-                <Label for="format">Service</Label>
+                <Label for="format">{{ t('Service') }}</Label>
                 <select
                     id="format"
                     name="format"
@@ -142,7 +153,9 @@ const remove = (webhook: Webhook) => {
             </div>
 
             <fieldset class="space-y-2">
-                <legend class="text-sm font-medium">Send a message when</legend>
+                <legend class="text-sm font-medium">
+                    {{ t('Send a message when') }}
+                </legend>
                 <label
                     v-for="group in groups"
                     :key="group"
@@ -160,7 +173,7 @@ const remove = (webhook: Webhook) => {
                 <InputError :message="errors.events" />
             </fieldset>
 
-            <Button :disabled="processing">Add webhook</Button>
+            <Button :disabled="processing">{{ t('Add webhook') }}</Button>
         </Form>
 
         <div class="overflow-hidden rounded-lg border border-border">
@@ -168,7 +181,7 @@ const remove = (webhook: Webhook) => {
                 v-if="!webhooks.length"
                 class="p-4 text-sm text-muted-foreground"
             >
-                No webhooks yet.
+                {{ t('No webhooks yet.') }}
             </p>
             <div
                 v-for="webhook in webhooks"
@@ -181,12 +194,19 @@ const remove = (webhook: Webhook) => {
                         <span
                             v-if="!webhook.is_active"
                             class="font-normal text-muted-foreground"
-                            >(paused)</span
+                            >{{ t('(paused)') }}</span
                         >
                     </p>
                     <p class="text-sm text-muted-foreground">
-                        {{ formatLabels[webhook.format] ?? webhook.format }} at
-                        {{ webhook.host }} · {{ webhook.events.join(', ') }} ·
+                        {{
+                            t(':service at :host', {
+                                service:
+                                    formatLabels[webhook.format] ??
+                                    webhook.format,
+                                host: webhook.host ?? '',
+                            })
+                        }}
+                        · {{ webhook.events.join(', ') }} ·
                         {{ result(webhook) }}
                     </p>
                 </div>
@@ -198,7 +218,7 @@ const remove = (webhook: Webhook) => {
                         router.post(test.url({ webhook: webhook.id }), {}, keep)
                     "
                 >
-                    Send test
+                    {{ t('Send test') }}
                 </Button>
                 <Button
                     type="button"
@@ -211,7 +231,7 @@ const remove = (webhook: Webhook) => {
                         )
                     "
                 >
-                    {{ webhook.is_active ? 'Pause' : 'Resume' }}
+                    {{ webhook.is_active ? t('Pause') : t('Resume') }}
                 </Button>
                 <Button
                     type="button"
@@ -219,7 +239,7 @@ const remove = (webhook: Webhook) => {
                     class="border-destructive text-destructive hover:text-destructive"
                     @click="remove(webhook)"
                 >
-                    Delete
+                    {{ t('Delete') }}
                 </Button>
             </div>
         </div>

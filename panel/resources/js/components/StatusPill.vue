@@ -13,8 +13,9 @@ const toneClasses = {
 
 <template>
     <span
-        class="inline-flex items-center gap-1.5 rounded-full px-[9px] py-0.5 text-xs font-semibold tracking-[0.02em] uppercase"
+        class="status-pill inline-flex items-center gap-1.5 rounded-full px-[9px] py-0.5 text-xs font-semibold tracking-[0.02em] uppercase"
         :class="toneClasses[tone]"
+        :data-tone="tone"
     >
         <!-- Each tone has its own mark so status never depends on colour alone -->
         <svg

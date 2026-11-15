@@ -1,7 +1,7 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "Minecraft Panel API",
+        "title": "Spawnpoint API",
         "version": "1",
         "description": "Everything here needs a token from Settings, API tokens, sent as \"Authorization: Bearer <token>\". A token carries abilities, and it can never do more than its owner: an admin's token reaches every server, a viewer's token only the servers shared with them and only what the share allows."
     },

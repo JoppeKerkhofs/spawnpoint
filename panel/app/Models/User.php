@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Attributes\Appends;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +19,9 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
 /**
+ * @property string|null $minecraft_name
+ * @property string|null $locale
+ * @property string|null $minecraft_uuid
  * @property int $id
  * @property string $name
  * @property string $email
@@ -31,6 +36,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'email', 'password'])]
+#[Appends(['avatar'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -45,6 +51,18 @@ class User extends Authenticatable implements PasskeyUser
     public function servers(): BelongsToMany
     {
         return $this->belongsToMany(Server::class)->withPivot('permissions');
+    }
+
+    /**
+     * The face of the linked Minecraft account, from a public skin service; null without one.
+     *
+     * @return Attribute<non-falsy-string|null, never>
+     */
+    protected function avatar(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->minecraft_uuid === null
+            ? null
+            : "https://mc-heads.net/avatar/{$this->minecraft_uuid}/64");
     }
 
     /**

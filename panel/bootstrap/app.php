@@ -3,6 +3,8 @@
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PasskeysFollowTheAddress;
+use App\Http\Middleware\SetLocale;
+use App\Services\Languages;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -34,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             PasskeysFollowTheAddress::class,
+            SetLocale::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -64,7 +67,13 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // With debugging on, a crash keeps Laravel's page with the stack trace.
             if (in_array($status, [403, 404, 500, 503], true) && ! ($status === 500 && config('app.debug'))) {
-                return Inertia::render('Error', ['status' => $status])->toResponse($request)->setStatusCode($status);
+                return Inertia::render('Error', [
+                    'status' => $status,
+                    // Given here too: an address that matches no route skips the middleware that shares them.
+                    'theme' => config('panel.theme'),
+                    'name' => config('app.name'),
+                    'translations' => (object) Languages::translations(app()->getLocale()),
+                ])->toResponse($request)->setStatusCode($status);
             }
 
             return $response;

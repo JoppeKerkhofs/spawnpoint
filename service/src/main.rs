@@ -285,8 +285,27 @@ impl ServerConfig {
         if let Some(seed) = self.seed.as_deref().filter(|seed| !seed.is_empty()) {
             env.push(format!("SEED={seed}"));
         }
+        // The image fetches the BlueMap build that fits this server from Modrinth. The question mark
+        // makes it optional: without a fitting build the server still starts, just without a map.
+        if self.bluemap && self.takes_mods() {
+            env.push("MODRINTH_PROJECTS=bluemap?".into());
+        }
 
         env
+    }
+
+    // Pumpkin is a native program, so it runs from the image's default tag instead of one named after a Java version.
+    fn image(&self) -> String {
+        if self.server_type == "PUMPKIN" {
+            format!("{IMAGE}:latest")
+        } else {
+            format!("{IMAGE}:java{}", self.java_version)
+        }
+    }
+
+    // Vanilla loads no mods or plugins, and Pumpkin none made for other servers.
+    fn takes_mods(&self) -> bool {
+        !matches!(self.server_type.as_str(), "VANILLA" | "PUMPKIN")
     }
 
     fn base_env(&self) -> Vec<String> {
@@ -471,8 +490,11 @@ async fn apply(
         backups::seed_world(&state, &slug, source).await?;
     }
     backups::ensure_folder(&state, &slug).await?;
+    if config.bluemap && config.takes_mods() {
+        backups::accept_bluemap_download(&state, &slug, config.server_type == "PAPER").await?;
+    }
 
-    let image = format!("{IMAGE}:java{}", config.java_version);
+    let image = config.image();
     // ponytail: pulled only when missing, so image updates need a manual pull; add an update action later.
     if docker.inspect_image(&image).await.is_err() {
         let pull = CreateImageOptionsBuilder::default().from_image(&image).build();
@@ -1123,22 +1145,22 @@ async fn require_signature(State(state): State<AppState>, request: Request, next
 
 #[tokio::main]
 async fn main() {
-    let token = std::env::var("MCPANEL_TOKEN").unwrap_or_default();
-    assert!(token.len() >= 32, "MCPANEL_TOKEN must be set to the node token (32+ characters)");
-    let listen = std::env::var("MCPANEL_LISTEN").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let token = std::env::var("SPAWNPOINT_TOKEN").unwrap_or_default();
+    assert!(token.len() >= 32, "SPAWNPOINT_TOKEN must be set to the node token (32+ characters)");
+    let listen = std::env::var("SPAWNPOINT_LISTEN").unwrap_or_else(|_| "0.0.0.0:8080".into());
     // Docker resolves bind mounts on the host, so this path must be the same folder inside and outside.
-    let data_dir = std::env::var("MCPANEL_DATA_DIR").unwrap_or_else(|_| "/srv/mc".into());
-    assert!(FsPath::new(&data_dir).is_dir(), "MCPANEL_DATA_DIR ({data_dir}) is not mounted");
+    let data_dir = std::env::var("SPAWNPOINT_DATA_DIR").unwrap_or_else(|_| "/srv/mc".into());
+    assert!(FsPath::new(&data_dir).is_dir(), "SPAWNPOINT_DATA_DIR ({data_dir}) is not mounted");
 
-    let backup_dir = std::env::var("MCPANEL_BACKUP_DIR").unwrap_or_else(|_| "/srv/mc-backups".into());
-    assert!(FsPath::new(&backup_dir).is_dir(), "MCPANEL_BACKUP_DIR ({backup_dir}) is not mounted");
+    let backup_dir = std::env::var("SPAWNPOINT_BACKUP_DIR").unwrap_or_else(|_| "/srv/mc-backups".into());
+    assert!(FsPath::new(&backup_dir).is_dir(), "SPAWNPOINT_BACKUP_DIR ({backup_dir}) is not mounted");
     // Inside the data folder, the file manager could reach the archives.
     assert!(
         !FsPath::new(&backup_dir).starts_with(&data_dir) && !FsPath::new(&data_dir).starts_with(&backup_dir),
-        "MCPANEL_BACKUP_DIR and MCPANEL_DATA_DIR must not contain each other"
+        "SPAWNPOINT_BACKUP_DIR and SPAWNPOINT_DATA_DIR must not contain each other"
     );
     // Optional: host worlds offered for import. Nothing is listed when it is not mounted.
-    let import_dir = std::env::var("MCPANEL_IMPORT_DIR").unwrap_or_else(|_| "/srv/mc-import".into());
+    let import_dir = std::env::var("SPAWNPOINT_IMPORT_DIR").unwrap_or_else(|_| "/srv/mc-import".into());
 
     let state = AppState {
         docker: Docker::connect_with_local_defaults().expect("docker socket"),
@@ -1290,6 +1312,12 @@ mod tests {
         }
         assert!(valid.env().contains(&"ENABLE_WHITELIST=false".to_owned()));
         assert!(!valid.env().iter().any(|entry| entry.starts_with("SEED=")));
+        assert_eq!(valid.image(), "itzg/minecraft-server:java21");
+        assert_eq!(config(|value| value["server_type"] = json!("PUMPKIN")).unwrap().image(), "itzg/minecraft-server:latest");
+        assert!(!valid.env().iter().any(|entry| entry.starts_with("MODRINTH_PROJECTS=")));
+        assert!(config(|value| value["bluemap"] = json!(true)).unwrap().env().contains(&"MODRINTH_PROJECTS=bluemap?".to_owned()));
+        let vanilla_with_map = config(|value| { value["bluemap"] = json!(true); value["server_type"] = json!("VANILLA"); }).unwrap();
+        assert!(!vanilla_with_map.env().iter().any(|entry| entry.starts_with("MODRINTH_PROJECTS=")));
         assert!(config(|value| value["seed"] = json!("-4172144997902289642")).unwrap().env().contains(&"SEED=-4172144997902289642".to_owned()));
         for (field, bad) in [
             ("ops", json!(["name with space"])),

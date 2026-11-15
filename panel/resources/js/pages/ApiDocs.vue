@@ -2,6 +2,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import SectionCard from '@/components/SectionCard.vue';
+import { t } from '@/lib/i18n';
 import { spec as specRoute } from '@/routes/api-docs';
 import { index as apiTokens } from '@/routes/api-tokens';
 
@@ -81,32 +82,32 @@ const example = (method: string, path: string, operation: Operation) => {
 </script>
 
 <template>
-    <Head title="API documentation" />
+    <Head :title="t('API documentation')" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <div>
             <h1 class="text-2xl leading-[1.3] font-bold text-primary">
-                API documentation
+                {{ t('API documentation') }}
             </h1>
             <p class="mt-1 max-w-3xl text-[0.9375rem] text-muted-foreground">
                 {{ spec.info.description }}
             </p>
             <p class="mt-2 text-sm">
-                <Link :href="apiTokens()" class="text-primary underline"
-                    >Create a token</Link
-                >
+                <Link :href="apiTokens()" class="text-primary underline">{{
+                    t('Create a token')
+                }}</Link>
                 ·
-                <a :href="specRoute.url()" class="text-primary underline"
-                    >OpenAPI document (JSON)</a
-                >
-                · Base address
+                <a :href="specRoute.url()" class="text-primary underline">{{
+                    t('OpenAPI document (JSON)')
+                }}</a>
+                · {{ t('Base address') }}
                 <code class="font-mono text-primary">{{ baseUrl }}</code>
             </p>
         </div>
 
         <div class="flex flex-wrap items-start gap-5">
             <nav
-                aria-label="Endpoints"
+                :aria-label="t('Endpoints')"
                 class="top-4 min-w-0 flex-[1_1_260px] rounded-md border border-border bg-card px-4 py-3 text-sm lg:sticky"
             >
                 <ul class="flex flex-col gap-1.5">
@@ -144,7 +145,7 @@ const example = (method: string, path: string, operation: Operation) => {
                                 path
                             }}</code>
                             <span class="text-muted-foreground"
-                                >needs the ability
+                                >{{ t('needs the ability') }}
                                 <code class="font-mono text-primary">{{
                                     operation['x-ability']
                                 }}</code></span
@@ -180,7 +181,11 @@ const example = (method: string, path: string, operation: Operation) => {
                                     {{
                                         parameter.description ??
                                         (parameter.schema?.enum
-                                            ? `One of: ${parameter.schema.enum.join(', ')}.`
+                                            ? t('One of: :values.', {
+                                                  values: parameter.schema.enum.join(
+                                                      ', ',
+                                                  ),
+                                              })
                                             : '')
                                     }}
                                 </dd>
@@ -207,7 +212,11 @@ const example = (method: string, path: string, operation: Operation) => {
                         <pre
                             class="overflow-x-auto rounded-md bg-header p-3 font-mono text-[0.8125rem] leading-[1.6] text-[#d7dae3]"
                             tabindex="0"
-                            :aria-label="`Example request for ${operation.summary}`"
+                            :aria-label="
+                                t('Example request for :name', {
+                                    name: operation.summary,
+                                })
+                            "
                             >{{ example(method, path, operation) }}</pre>
 
                         <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">

@@ -1,4 +1,4 @@
-# Runs the panel with its own MySQL database, the node (the Rust service) and the two proxies
+# Runs Spawnpoint with its own MySQL database, the node (the Rust service) and the two proxies
 # players and web maps come in through.
 #
 #   docker network create proxy            # once, if your reverse proxy has not created it
@@ -6,11 +6,11 @@
 #   docker compose --env-file .env.compose up -d
 #
 # The app joins the external `proxy` network, so a TLS-terminating reverse proxy on that
-# network can reach it as minecraft-panel-app:8080. Set APP_URL to the https address people use.
+# network can reach it as spawnpoint-app:8080. Set APP_URL to the https address people use.
 
 # The web server, the queue worker and the scheduler are the same image with the same settings.
 x-panel: &panel
-  image: ghcr.io/joppekerkhofs/minecraft-panel:${PANEL_VERSION:-latest}
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-latest}
   restart: unless-stopped
   environment: &panel-environment
     APP_KEY: ${APP_KEY:?Set APP_KEY, see .env.compose.example}
@@ -25,9 +25,11 @@ x-panel: &panel
     DB_USERNAME: ${DB_USERNAME:-panel}
     DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD, see .env.compose.example}
     # Shared with the node: every request to it is signed with this.
-    MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Set MCPANEL_TOKEN to a random string of at least 32 characters}
+    SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}
     PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:?Set PANEL_BASE_DOMAIN, for example mc.example.com}
     PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
+    PANEL_THEME: ${PANEL_THEME:-default}
+    APP_LOCALE: ${APP_LOCALE:-en}
     CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
     CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
@@ -41,14 +43,14 @@ x-panel: &panel
     MAIL_USERNAME: ${MAIL_USERNAME:-}
     MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-panel@example.com}
-    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Minecraft Panel}
+    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Spawnpoint}
 
 services:
   db:
     # Pinned to a release line: `latest` would jump to the next major version on a pull and
     # may then refuse the existing data directory.
     image: mysql:8.4
-    container_name: minecraft-panel-database
+    container_name: spawnpoint-database
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-panel}
@@ -72,7 +74,7 @@ services:
     # Pulled from the registry; `docker compose build` builds it from this repository instead.
     # Only here: the queue and the scheduler use the image this one builds.
     build: .
-    container_name: minecraft-panel-app
+    container_name: spawnpoint-app
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
@@ -85,7 +87,7 @@ services:
   # Sends webhooks and mail.
   queue:
     <<: *panel
-    container_name: minecraft-panel-queue
+    container_name: spawnpoint-queue
     command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600"]
     environment:
       <<: *panel-environment
@@ -102,7 +104,7 @@ services:
   # Starts the scheduled backups and commands, and watches for crashes.
   scheduler:
     <<: *panel
-    container_name: minecraft-panel-scheduler
+    container_name: spawnpoint-scheduler
     command: ["php", "artisan", "schedule:work"]
     environment:
       <<: *panel-environment
@@ -118,31 +120,31 @@ services:
   # The only container with the Docker socket and the server folders. It has no published
   # port: the panel reaches it over the `panel` network, and every request must be signed.
   node:
-    image: ghcr.io/joppekerkhofs/minecraft-panel-node:${PANEL_VERSION:-latest}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-latest}
     build: ./service
-    container_name: minecraft-panel-node
+    container_name: spawnpoint-node
     init: true
     restart: unless-stopped
     environment:
-      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Set MCPANEL_TOKEN to a random string of at least 32 characters}
-      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
-      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+      SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}
+      SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
-      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+      - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
       # Outside the data folder, so the file manager can never reach the archives.
-      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
       # Host worlds offered for import; read-only.
-      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+      - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
     networks:
       - panel
 
   # Players connect here; it forwards each connection to the server whose hostname they typed.
   router:
     image: itzg/mc-router:1.56.4
-    container_name: minecraft-panel-router
+    container_name: spawnpoint-router
     restart: unless-stopped
     depends_on:
       - socket-proxy
@@ -159,7 +161,7 @@ services:
   # Serves each server's BlueMap at /<server>/, for servers that have it switched on.
   maps:
     image: traefik:v3
-    container_name: minecraft-panel-maps
+    container_name: spawnpoint-maps
     restart: unless-stopped
     depends_on:
       - socket-proxy
@@ -176,7 +178,7 @@ services:
   # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
   socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
-    container_name: minecraft-panel-socket-proxy
+    container_name: spawnpoint-socket-proxy
     restart: unless-stopped
     environment:
       CONTAINERS: 1

@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn paths_cannot_leave_the_server_folder() {
-        let base = std::env::temp_dir().join(format!("mcpanel-test-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("spawnpoint-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("data/survival/mods")).unwrap();
         std::fs::create_dir_all(base.join("data/other")).unwrap();

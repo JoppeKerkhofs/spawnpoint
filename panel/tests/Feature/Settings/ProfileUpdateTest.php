@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -123,4 +124,25 @@ test('correct password must be provided to delete account', function () {
         ->assertRedirect(route('profile.edit'));
 
     expect($user->fresh())->not->toBeNull();
+});
+
+test('a minecraft account is linked by name, gives the user its face, and can be unlinked', function () {
+    Http::fake([
+        'api.mojang.com/users/profiles/minecraft/joppek' => Http::response(['id' => '069a79f444e94726a5befca90e38aaf5', 'name' => 'JoppeK']),
+        'api.mojang.com/users/profiles/minecraft/nobody_here' => Http::response(status: 404),
+    ]);
+    $user = User::factory()->create();
+    $profile = ['name' => $user->name, 'email' => $user->email];
+    $this->actingAs($user);
+
+    $this->patch(route('profile.update'), [...$profile, 'minecraft_name' => 'joppek'])->assertSessionHasNoErrors();
+    expect($user->refresh()->minecraft_name)->toBe('JoppeK')
+        ->and($user->avatar)->toBe('https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/64');
+
+    $this->patch(route('profile.update'), [...$profile, 'minecraft_name' => 'nobody_here'])->assertSessionHasErrors('minecraft_name');
+    $this->patch(route('profile.update'), [...$profile, 'minecraft_name' => 'has spaces'])->assertSessionHasErrors('minecraft_name');
+    expect($user->refresh()->minecraft_name)->toBe('JoppeK');
+
+    $this->patch(route('profile.update'), $profile)->assertSessionHasNoErrors();
+    expect($user->refresh()->minecraft_uuid)->toBeNull()->and($user->avatar)->toBeNull();
 });

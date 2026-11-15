@@ -8,7 +8,7 @@ cd /app
 # The queue worker and the scheduler run from this same image with RUN_MIGRATIONS=false:
 # only the web container prepares the database.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-    : "${MCPANEL_TOKEN:?Set MCPANEL_TOKEN to a random string of at least 32 characters}"
+    : "${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}"
 
     # The database container may still be starting.
     attempt=0

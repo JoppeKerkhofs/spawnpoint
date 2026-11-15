@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { t } from '@/lib/i18n';
 import type { Server, States } from '@/lib/servers';
 import { logs } from '@/routes/servers';
 import { download } from '@/routes/servers/logs';
@@ -27,7 +28,7 @@ const kilobytes = (bytes: number) =>
 </script>
 
 <template>
-    <Head :title="`${server.name} logs`" />
+    <Head :title="t(':name logs', { name: server.name })" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="logs" />
@@ -44,7 +45,9 @@ const kilobytes = (bytes: number) =>
             v-else-if="!files.length"
             class="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
         >
-            No log files yet. They appear once the server has started.
+            {{
+                t('No log files yet. They appear once the server has started.')
+            }}
         </p>
 
         <template v-else>
@@ -55,7 +58,7 @@ const kilobytes = (bytes: number) =>
                 class="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-3"
                 v-slot="{ processing }"
             >
-                <label for="file" class="sr-only">Log file</label>
+                <label for="file" class="sr-only">{{ t('Log file') }}</label>
                 <select
                     id="file"
                     name="file"
@@ -72,17 +75,19 @@ const kilobytes = (bytes: number) =>
                         · {{ kilobytes(entry.size) }}
                     </option>
                 </select>
-                <label for="q" class="sr-only">Search in this log</label>
+                <label for="q" class="sr-only">{{
+                    t('Search in this log')
+                }}</label>
                 <Input
                     id="q"
                     name="q"
                     type="search"
                     maxlength="200"
-                    placeholder="Search in this log"
+                    :placeholder="t('Search in this log')"
                     :default-value="q"
                     class="flex-[3_1_220px]"
                 />
-                <Button :disabled="processing">Show</Button>
+                <Button :disabled="processing">{{ t('Show') }}</Button>
                 <Button
                     v-if="file"
                     variant="outline"
@@ -96,13 +101,13 @@ const kilobytes = (bytes: number) =>
                                 { query: { file } },
                             )
                         "
-                        >Download</a
+                        >{{ t('Download') }}</a
                     >
                 </Button>
             </Form>
 
             <section
-                aria-label="Log contents"
+                :aria-label="t('Log contents')"
                 class="overflow-hidden rounded-md bg-header text-white"
             >
                 <div
@@ -112,14 +117,17 @@ const kilobytes = (bytes: number) =>
                     {{ file }} ·
                     {{
                         q
-                            ? `${lineCount} lines contain “${q}”`
-                            : `${lineCount} lines`
+                            ? t(':count lines contain “:query”', {
+                                  count: lineCount,
+                                  query: q,
+                              })
+                            : t(':count lines', { count: lineCount })
                     }}
                 </div>
                 <pre
                     tabindex="0"
                     class="max-h-[640px] overflow-auto p-3.5 font-mono text-[0.8125rem] leading-[1.65] break-words whitespace-pre-wrap text-[#d7dae3]"
-                    >{{ content || 'Nothing to show.' }}</pre>
+                    >{{ content || t('Nothing to show.') }}</pre>
             </section>
         </template>
     </div>

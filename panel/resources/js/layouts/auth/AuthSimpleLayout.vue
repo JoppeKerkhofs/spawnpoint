@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import AppVersion from '@/components/AppVersion.vue';
+import { t } from '@/lib/i18n';
 import { home } from '@/routes';
 
 defineProps<{
@@ -28,12 +29,14 @@ defineProps<{
                                 class="size-9 fill-current text-[var(--foreground)] dark:text-white"
                             />
                         </div>
-                        <span class="sr-only">{{ title }}</span>
+                        <span class="sr-only">{{ t(title ?? '') }}</span>
                     </Link>
                     <div class="space-y-2 text-center">
-                        <h1 class="text-xl font-medium">{{ title }}</h1>
+                        <h1 class="text-xl font-medium">
+                            {{ t(title ?? '') }}
+                        </h1>
                         <p class="text-center text-sm text-muted-foreground">
-                            {{ description }}
+                            {{ t(description ?? '') }}
                         </p>
                     </div>
                 </div>

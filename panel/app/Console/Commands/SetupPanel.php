@@ -18,12 +18,12 @@ class SetupPanel extends Command
     public function handle(): int
     {
         // Read straight from the environment, so these secrets never land in the cached config file.
-        $token = (string) getenv('MCPANEL_TOKEN');
+        $token = (string) getenv('SPAWNPOINT_TOKEN');
         $email = (string) getenv('PANEL_ADMIN_EMAIL');
         $password = (string) getenv('PANEL_ADMIN_PASSWORD');
 
         if (strlen($token) < 32) {
-            $this->error('MCPANEL_TOKEN must be at least 32 characters.');
+            $this->error('SPAWNPOINT_TOKEN must be at least 32 characters.');
 
             return self::FAILURE;
         }

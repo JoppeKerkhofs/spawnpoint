@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ask } from '@/lib/dialogs';
 import { Form, Head, router, usePage } from '@inertiajs/vue3';
 import { Download, Lock, LockOpen, Plus, Trash2 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -9,6 +10,7 @@ import ServerHeader from '@/components/ServerHeader.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/lib/i18n';
 import type { Server, States } from '@/lib/servers';
 import { title } from '@/lib/servers';
 import { importMethod } from '@/routes/servers';
@@ -62,19 +64,25 @@ const reloadList = { preserveScroll: true, only: ['backups', 'error'] };
 const importSource = ref<'zip' | 'host'>(props.imports.length ? 'host' : 'zip');
 
 const weekdays = [
-    'Sundays',
-    'Mondays',
-    'Tuesdays',
-    'Wednesdays',
-    'Thursdays',
-    'Fridays',
-    'Saturdays',
+    t('Sundays'),
+    t('Mondays'),
+    t('Tuesdays'),
+    t('Wednesdays'),
+    t('Thursdays'),
+    t('Fridays'),
+    t('Saturdays'),
 ];
 const scheduleAction = ref('backup');
 const reloadSchedules = { preserveScroll: true, only: ['schedules'] };
 
 const when2 = (schedule: Schedule) =>
-    `${schedule.weekday === null ? 'Every day' : weekdays[schedule.weekday]} at ${schedule.time}`;
+    t(':day at :time', {
+        day:
+            schedule.weekday === null
+                ? t('Every day')
+                : weekdays[schedule.weekday],
+        time: schedule.time,
+    });
 
 const toggleSchedule = (schedule: Schedule) => {
     router.put(
@@ -104,7 +112,9 @@ const progress = (backup: Backup) => {
     const previous = completed.value[0]?.size;
 
     return previous
-        ? `about ${Math.min(99, Math.round((backup.size / previous) * 100))}%`
+        ? t('about :percent%', {
+              percent: Math.min(99, Math.round((backup.size / previous) * 100)),
+          })
         : size(backup.size);
 };
 
@@ -119,10 +129,11 @@ const when = (backup: Backup) =>
         timeStyle: 'short',
     });
 
-const restoreBackup = (backup: Backup) => {
+const restoreBackup = async (backup: Backup) => {
     if (
-        confirm(
-            `Restore the backup from ${when(backup)}? The server stops, its current files are backed up first, then replaced.`,
+        await ask(
+            'Restore the backup from :when? The server stops, its current files are backed up first, then replaced.',
+            { when: when(backup) },
         )
     ) {
         router.post(
@@ -133,11 +144,11 @@ const restoreBackup = (backup: Backup) => {
     }
 };
 
-const deleteBackup = (backup: Backup) => {
+const deleteBackup = async (backup: Backup) => {
     if (
-        confirm(
-            `Delete the backup from ${when(backup)}? This cannot be undone.`,
-        )
+        await ask('Delete the backup from :when? This cannot be undone.', {
+            when: when(backup),
+        })
     ) {
         router.delete(
             destroy.url({ ...slug.value, backup: backup.name }),
@@ -168,28 +179,28 @@ const startImport = (path: string) => {
     );
 };
 
-const submitImport = () => {
+const submitImport = async () => {
     const file = zipFile.value?.files?.[0];
 
     if (importSource.value === 'zip' && !file) {
         return;
     }
     if (
-        !confirm(
+        !(await ask(
             "Replace this server's world? The server stops, its current files are backed up first, then the world is replaced.",
-        )
+        ))
     ) {
         return;
     }
     if (importSource.value === 'host') {
-        importing.value = 'Starting the import…';
+        importing.value = t('Starting the import…');
         startImport(hostWorld.value);
 
         return;
     }
 
     // The zip goes straight to the Rust service, so its size is not limited by PHP.
-    importing.value = `Uploading ${file!.name}…`;
+    importing.value = t('Uploading :name…', { name: file!.name });
     router.reload({
         only: ['upload'],
         onSuccess: async () => {
@@ -202,7 +213,7 @@ const submitImport = () => {
                 startImport('world-import.zip');
             } else {
                 importing.value = '';
-                toast.error('The zip could not be uploaded.');
+                toast.error(t('The zip could not be uploaded.'));
             }
         },
         onError: () => (importing.value = ''),
@@ -211,7 +222,7 @@ const submitImport = () => {
 </script>
 
 <template>
-    <Head :title="`${server.name} backups`" />
+    <Head :title="t(':name backups', { name: server.name })" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="backups" />
@@ -234,11 +245,14 @@ const submitImport = () => {
                 >
                     <div class="min-w-0 flex-1">
                         <h2 id="backups-title" class="font-bold text-primary">
-                            Backups
+                            {{ t('Backups') }}
                         </h2>
                         <p class="text-[0.8125rem] text-muted-foreground">
-                            The world is saved and paused for writing while it
-                            is archived, so players can keep playing.
+                            {{
+                                t(
+                                    'The world is saved and paused for writing while it is archived, so players can keep playing.',
+                                )
+                            }}
                         </p>
                     </div>
                     <Button
@@ -246,7 +260,7 @@ const submitImport = () => {
                         @click="router.post(store.url(slug), {}, reloadList)"
                     >
                         <Plus aria-hidden="true" />
-                        Back up now
+                        {{ t('Back up now') }}
                     </Button>
                 </div>
 
@@ -255,19 +269,19 @@ const submitImport = () => {
                         <thead class="text-[0.8125rem] text-muted-foreground">
                             <tr>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Created
+                                    {{ t('Created') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Status
+                                    {{ t('Status') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Size
+                                    {{ t('Size') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    By
+                                    {{ t('By') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Actions
+                                    {{ t('Actions') }}
                                 </th>
                             </tr>
                         </thead>
@@ -284,14 +298,18 @@ const submitImport = () => {
                                     <template
                                         v-if="backup.status === 'running'"
                                     >
-                                        Running, {{ progress(backup) }}
+                                        {{
+                                            t('Running, :progress', {
+                                                progress: progress(backup),
+                                            })
+                                        }}
                                     </template>
                                     <template
                                         v-else-if="backup.status === 'failed'"
                                     >
                                         <span
                                             class="font-semibold text-destructive"
-                                            >Failed</span
+                                            >{{ t('Failed') }}</span
                                         >
                                         <span
                                             class="block break-words text-muted-foreground"
@@ -299,7 +317,7 @@ const submitImport = () => {
                                         >
                                     </template>
                                     <template v-else>
-                                        Completed
+                                        {{ t('Completed') }}
                                         <span
                                             v-if="backup.locked"
                                             class="ml-1 inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground"
@@ -308,7 +326,7 @@ const submitImport = () => {
                                                 class="size-3"
                                                 aria-hidden="true"
                                             />
-                                            Locked
+                                            {{ t('Locked') }}
                                         </span>
                                     </template>
                                 </td>
@@ -339,14 +357,19 @@ const submitImport = () => {
                                             )
                                         "
                                     >
-                                        Cancel
+                                        {{ t('Cancel') }}
                                     </Button>
                                     <Button
                                         v-else-if="backup.status === 'failed'"
                                         type="button"
                                         variant="outline"
                                         size="icon"
-                                        :aria-label="`Remove the failed backup from ${when(backup)}`"
+                                        :aria-label="
+                                            t(
+                                                'Remove the failed backup from :when',
+                                                { when: when(backup) },
+                                            )
+                                        "
                                         @click="deleteBackup(backup)"
                                     >
                                         <Trash2 aria-hidden="true" />
@@ -358,7 +381,7 @@ const submitImport = () => {
                                             class="border-primary"
                                             @click="restoreBackup(backup)"
                                         >
-                                            Restore
+                                            {{ t('Restore') }}
                                         </Button>
                                         <Button
                                             variant="outline"
@@ -372,7 +395,12 @@ const submitImport = () => {
                                                         backup: backup.name,
                                                     })
                                                 "
-                                                :aria-label="`Download backup from ${when(backup)}`"
+                                                :aria-label="
+                                                    t(
+                                                        'Download backup from :when',
+                                                        { when: when(backup) },
+                                                    )
+                                                "
                                             >
                                                 <Download aria-hidden="true" />
                                             </a>
@@ -381,7 +409,25 @@ const submitImport = () => {
                                             type="button"
                                             variant="outline"
                                             size="icon"
-                                            :aria-label="`${backup.locked ? 'Unlock' : 'Lock'} backup from ${when(backup)}`"
+                                            :aria-label="
+                                                backup.locked
+                                                    ? t(
+                                                          'Unlock backup from :when',
+                                                          {
+                                                              when: when(
+                                                                  backup,
+                                                              ),
+                                                          },
+                                                      )
+                                                    : t(
+                                                          'Lock backup from :when',
+                                                          {
+                                                              when: when(
+                                                                  backup,
+                                                              ),
+                                                          },
+                                                      )
+                                            "
                                             @click="toggleLock(backup)"
                                         >
                                             <component
@@ -399,7 +445,11 @@ const submitImport = () => {
                                             variant="outline"
                                             size="icon"
                                             class="text-destructive hover:text-destructive"
-                                            :aria-label="`Delete backup from ${when(backup)}`"
+                                            :aria-label="
+                                                t('Delete backup from :when', {
+                                                    when: when(backup),
+                                                })
+                                            "
                                             @click="deleteBackup(backup)"
                                         >
                                             <Trash2 aria-hidden="true" />
@@ -412,7 +462,7 @@ const submitImport = () => {
                                     colspan="5"
                                     class="border-t border-divider px-4 py-3 text-sm text-muted-foreground"
                                 >
-                                    No backups yet.
+                                    {{ t('No backups yet.') }}
                                 </td>
                             </tr>
                         </tbody>
@@ -422,14 +472,16 @@ const submitImport = () => {
                 <div
                     class="border-t border-divider px-4 py-2.5 text-sm text-muted-foreground"
                 >
-                    Restoring stops the server, backs up its current files
-                    first, then puts the chosen backup in their place. A running
-                    backup shows in the status above.
+                    {{
+                        t(
+                            'Restoring stops the server, backs up its current files first, then puts the chosen backup in their place. A running backup shows in the status above.',
+                        )
+                    }}
                 </div>
             </section>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <SectionCard title="Schedules">
+                <SectionCard :title="t('Schedules')">
                     <ul v-if="schedules.length" class="mb-4">
                         <li
                             v-for="schedule in schedules"
@@ -440,8 +492,8 @@ const submitImport = () => {
                                 <div class="font-medium">
                                     {{
                                         schedule.action === 'command'
-                                            ? 'Command'
-                                            : title(schedule.action)
+                                            ? t('Command')
+                                            : t(title(schedule.action))
                                     }}
                                 </div>
                                 <div
@@ -449,13 +501,13 @@ const submitImport = () => {
                                 >
                                     {{ when2(schedule) }}
                                     <template v-if="schedule.command">
-                                        · runs
+                                        · {{ t('runs') }}
                                         <code class="font-mono">{{
                                             schedule.command
                                         }}</code>
                                     </template>
                                     <template v-if="!schedule.is_active">
-                                        · paused
+                                        · {{ t('paused') }}
                                     </template>
                                 </div>
                             </div>
@@ -464,18 +516,28 @@ const submitImport = () => {
                                     type="checkbox"
                                     role="switch"
                                     :checked="schedule.is_active"
-                                    :aria-label="`${title(schedule.action)} ${when2(schedule)} active`"
+                                    :aria-label="
+                                        t(':action :when active', {
+                                            action: t(title(schedule.action)),
+                                            when: when2(schedule),
+                                        })
+                                    "
                                     class="size-4 accent-primary"
                                     @change="toggleSchedule(schedule)"
                                 />
-                                On
+                                {{ t('On') }}
                             </label>
                             <Button
                                 type="button"
                                 variant="outline"
                                 size="icon"
                                 class="text-destructive hover:text-destructive"
-                                :aria-label="`Delete the schedule ${title(schedule.action)} ${when2(schedule)}`"
+                                :aria-label="
+                                    t('Delete the schedule :action :when', {
+                                        action: t(title(schedule.action)),
+                                        when: when2(schedule),
+                                    })
+                                "
                                 @click="removeSchedule(schedule)"
                             >
                                 <Trash2 aria-hidden="true" />
@@ -483,7 +545,7 @@ const submitImport = () => {
                         </li>
                     </ul>
                     <p v-else class="mb-4 text-sm text-muted-foreground">
-                        Nothing is scheduled.
+                        {{ t('Nothing is scheduled.') }}
                     </p>
 
                     <Form
@@ -495,24 +557,34 @@ const submitImport = () => {
                     >
                         <div class="grid grid-cols-2 gap-2">
                             <div class="grid gap-1.5">
-                                <Label for="schedule_action">Do</Label>
+                                <Label for="schedule_action">{{
+                                    t('Do')
+                                }}</Label>
                                 <select
                                     id="schedule_action"
                                     v-model="scheduleAction"
                                     name="action"
                                     class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
                                 >
-                                    <option value="backup">Backup</option>
-                                    <option value="restart">Restart</option>
-                                    <option value="stop">Stop</option>
-                                    <option value="start">Start</option>
+                                    <option value="backup">
+                                        {{ t('Backup') }}
+                                    </option>
+                                    <option value="restart">
+                                        {{ t('Restart') }}
+                                    </option>
+                                    <option value="stop">
+                                        {{ t('Stop') }}
+                                    </option>
+                                    <option value="start">
+                                        {{ t('Start') }}
+                                    </option>
                                     <option value="command">
-                                        Run a command
+                                        {{ t('Run a command') }}
                                     </option>
                                 </select>
                             </div>
                             <div class="grid gap-1.5">
-                                <Label for="schedule_time">At</Label>
+                                <Label for="schedule_time">{{ t('At') }}</Label>
                                 <Input
                                     id="schedule_time"
                                     name="time"
@@ -523,13 +595,13 @@ const submitImport = () => {
                             </div>
                         </div>
                         <div class="grid gap-1.5">
-                            <Label for="schedule_weekday">On</Label>
+                            <Label for="schedule_weekday">{{ t('On') }}</Label>
                             <select
                                 id="schedule_weekday"
                                 name="weekday"
                                 class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
                             >
-                                <option value="">Every day</option>
+                                <option value="">{{ t('Every day') }}</option>
                                 <option
                                     v-for="(day, index) in weekdays"
                                     :key="day"
@@ -543,7 +615,9 @@ const submitImport = () => {
                             v-if="scheduleAction === 'command'"
                             class="grid gap-1.5"
                         >
-                            <Label for="schedule_command">Command</Label>
+                            <Label for="schedule_command">{{
+                                t('Command')
+                            }}</Label>
                             <Input
                                 id="schedule_command"
                                 name="command"
@@ -562,15 +636,20 @@ const submitImport = () => {
                             "
                         />
                         <span class="text-[0.8125rem] text-muted-foreground">
-                            Times are in the panel's time zone ({{ timezone }}).
+                            {{
+                                t(
+                                    "Times are in the panel's time zone (:timezone).",
+                                    { timezone },
+                                )
+                            }}
                         </span>
-                        <Button :disabled="processing" class="self-start"
-                            >Add schedule</Button
-                        >
+                        <Button :disabled="processing" class="self-start">{{
+                            t('Add schedule')
+                        }}</Button>
                     </Form>
                 </SectionCard>
 
-                <SectionCard title="Automatic backup and retention">
+                <SectionCard :title="t('Automatic backup and retention')">
                     <Form
                         v-bind="retention.form(slug)"
                         :options="{ preserveScroll: true }"
@@ -586,10 +665,12 @@ const submitImport = () => {
                                     :checked="autoBackupAt !== null"
                                     class="size-4 accent-primary"
                                 />
-                                Back up automatically every day
+                                {{ t('Back up automatically every day') }}
                             </label>
                             <div class="flex items-center gap-2">
-                                <Label for="auto_backup_at">at</Label>
+                                <Label for="auto_backup_at">{{
+                                    t('at')
+                                }}</Label>
                                 <Input
                                     id="auto_backup_at"
                                     name="auto_backup_at"
@@ -605,7 +686,9 @@ const submitImport = () => {
                         </div>
 
                         <div class="grid gap-2">
-                            <Label for="backup_keep">Keep the newest</Label>
+                            <Label for="backup_keep">{{
+                                t('Keep the newest')
+                            }}</Label>
                             <div class="flex items-center gap-2">
                                 <Input
                                     id="backup_keep"
@@ -617,17 +700,17 @@ const submitImport = () => {
                                     class="w-24"
                                     :default-value="server.backup_keep"
                                 />
-                                <span class="text-sm text-muted-foreground"
-                                    >backups, plus every locked one</span
-                                >
+                                <span class="text-sm text-muted-foreground">{{
+                                    t('backups, plus every locked one')
+                                }}</span>
                             </div>
                             <InputError :message="errors.backup_keep" />
                         </div>
 
                         <div class="grid gap-2">
-                            <Label for="backup_retention_days"
-                                >Delete backups older than</Label
-                            >
+                            <Label for="backup_retention_days">{{
+                                t('Delete backups older than')
+                            }}</Label>
                             <div class="flex items-center gap-2">
                                 <Input
                                     id="backup_retention_days"
@@ -640,15 +723,18 @@ const submitImport = () => {
                                         server.backup_retention_days ?? ''
                                     "
                                 />
-                                <span class="text-sm text-muted-foreground"
-                                    >days; empty for no age limit</span
-                                >
+                                <span class="text-sm text-muted-foreground">{{
+                                    t('days; empty for no age limit')
+                                }}</span>
                             </div>
                             <span
                                 class="text-[0.8125rem] text-muted-foreground"
                             >
-                                Checked after each new backup. Locked backups
-                                and the newest one are never deleted.
+                                {{
+                                    t(
+                                        'Checked after each new backup. Locked backups and the newest one are never deleted.',
+                                    )
+                                }}
                             </span>
                             <InputError
                                 :message="errors.backup_retention_days"
@@ -658,29 +744,38 @@ const submitImport = () => {
                         <dl
                             class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"
                         >
-                            <dt class="text-muted-foreground">Using</dt>
+                            <dt class="text-muted-foreground">
+                                {{ t('Using') }}
+                            </dt>
                             <dd class="tabular-nums">
-                                {{ size(totalSize) }} for
-                                {{ completed.length }} backup{{
-                                    completed.length === 1 ? '' : 's'
+                                {{
+                                    completed.length === 1
+                                        ? t(':size for :count backup', {
+                                              size: size(totalSize),
+                                              count: completed.length,
+                                          })
+                                        : t(':size for :count backups', {
+                                              size: size(totalSize),
+                                              count: completed.length,
+                                          })
                                 }}
                             </dd>
                         </dl>
 
-                        <Button :disabled="processing" class="self-start"
-                            >Save</Button
-                        >
+                        <Button :disabled="processing" class="self-start">{{
+                            t('Save')
+                        }}</Button>
                     </Form>
                 </SectionCard>
 
-                <SectionCard title="Import a world">
+                <SectionCard :title="t('Import a world')">
                     <form
                         class="flex flex-col gap-3"
                         @submit.prevent="submitImport"
                     >
                         <div
                             role="radiogroup"
-                            aria-label="World source"
+                            :aria-label="t('World source')"
                             class="flex flex-col gap-2"
                         >
                             <label class="flex items-center gap-2 text-sm">
@@ -690,7 +785,7 @@ const submitImport = () => {
                                     value="zip"
                                     class="size-4 accent-primary"
                                 />
-                                A world .zip from this computer
+                                {{ t('A world .zip from this computer') }}
                             </label>
                             <label class="flex items-center gap-2 text-sm">
                                 <input
@@ -699,12 +794,14 @@ const submitImport = () => {
                                     value="host"
                                     class="size-4 accent-primary"
                                 />
-                                A folder on the host
+                                {{ t('A folder on the host') }}
                             </label>
                         </div>
 
                         <div v-if="importSource === 'zip'" class="grid gap-2">
-                            <Label for="import_zip">World .zip</Label>
+                            <Label for="import_zip">{{
+                                t('World .zip')
+                            }}</Label>
                             <input
                                 id="import_zip"
                                 ref="zipFile"
@@ -715,7 +812,9 @@ const submitImport = () => {
                             />
                         </div>
                         <div v-else class="grid gap-2">
-                            <Label for="import_host">Folder on the host</Label>
+                            <Label for="import_host">{{
+                                t('Folder on the host')
+                            }}</Label>
                             <select
                                 id="import_host"
                                 v-model="hostWorld"
@@ -735,8 +834,12 @@ const submitImport = () => {
                             >
                                 {{
                                     imports.length
-                                        ? 'Only worlds in the mounted import folder are listed.'
-                                        : 'No worlds found. Mount a folder with a world as the import folder (MCPANEL_IMPORT_DIR).'
+                                        ? t(
+                                              'Only worlds in the mounted import folder are listed.',
+                                          )
+                                        : t(
+                                              'No worlds found. Mount a folder with a world as the import folder (SPAWNPOINT_IMPORT_DIR).',
+                                          )
                                 }}
                             </span>
                         </div>
@@ -762,7 +865,7 @@ const submitImport = () => {
                                 (importSource === 'host' && !imports.length)
                             "
                         >
-                            Import and replace world
+                            {{ t('Import and replace world') }}
                         </Button>
                     </form>
                 </SectionCard>

@@ -5,6 +5,7 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/lib/i18n';
 
 const emit = defineEmits<{
     success: [];
@@ -61,12 +62,15 @@ const handleCancel = () => {
 
 <template>
     <div v-if="!isSupported" class="text-sm text-muted-foreground">
-        Passkeys need an https address (or localhost) and a browser that
-        supports them.
+        {{
+            t(
+                'Passkeys need an https address (or localhost) and a browser that supports them.',
+            )
+        }}
     </div>
 
     <Button v-else-if="!showForm" variant="outline" @click="showForm = true">
-        Add passkey
+        {{ t('Add passkey') }}
     </Button>
 
     <form
@@ -75,17 +79,17 @@ const handleCancel = () => {
         class="space-y-4 rounded-lg border border-border bg-muted/50 p-4"
     >
         <div class="grid gap-2">
-            <Label for="passkey-name">Passkey name</Label>
+            <Label for="passkey-name">{{ t('Passkey name') }}</Label>
             <Input
                 id="passkey-name"
                 type="text"
                 v-model="name"
-                placeholder="e.g., MacBook Pro, iPhone"
+                :placeholder="t('e.g., MacBook Pro, iPhone')"
                 class="mt-1 block w-full border-foreground/20"
                 v-focus
             />
             <p class="text-xs text-muted-foreground">
-                A name helps you identify this passkey later.
+                {{ t('A name helps you identify this passkey later.') }}
             </p>
         </div>
 
@@ -93,10 +97,10 @@ const handleCancel = () => {
 
         <div class="flex gap-2">
             <Button type="submit" :disabled="isLoading || !name.trim()">
-                {{ isLoading ? 'Registering...' : 'Register passkey' }}
+                {{ isLoading ? t('Registering...') : t('Register passkey') }}
             </Button>
             <Button type="button" variant="ghost" @click="handleCancel">
-                Cancel
+                {{ t('Cancel') }}
             </Button>
         </div>
     </form>

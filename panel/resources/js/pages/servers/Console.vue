@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import CopyButton from '@/components/CopyButton.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import Sparkline from '@/components/Sparkline.vue';
+import { t } from '@/lib/i18n';
 import type { Players, Server, States, Usage } from '@/lib/servers';
 import { bytesLabel } from '@/lib/servers';
 
@@ -17,6 +19,7 @@ const props = defineProps<{
 }>();
 
 const canSend = computed(() => props.server.can.includes('commands'));
+const minecraftName = usePage().props.auth.user.minecraft_name;
 
 const ANSI_CODES = new RegExp(
     `${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`,
@@ -170,14 +173,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head :title="`${server.name} console`" />
+    <Head :title="t(':name console', { name: server.name })" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="console" />
 
         <div class="flex flex-wrap items-start gap-5">
             <section
-                aria-label="Live console"
+                :aria-label="t('Live console')"
                 class="flex min-w-0 flex-[999_1_560px] flex-col overflow-hidden rounded-md bg-header text-white"
             >
                 <div
@@ -191,8 +194,12 @@ onBeforeUnmount(() => {
                     <span role="status">
                         {{
                             connected
-                                ? "Live · connected to the container's log stream"
-                                : 'Not connected · trying again every few seconds'
+                                ? t(
+                                      "Live · connected to the container's log stream",
+                                  )
+                                : t(
+                                      'Not connected · trying again every few seconds',
+                                  )
                         }}
                     </span>
                     <span class="flex-1" />
@@ -202,21 +209,21 @@ onBeforeUnmount(() => {
                         :aria-pressed="paused"
                         @click="paused = !paused"
                     >
-                        {{ paused ? 'Resume scroll' : 'Pause scroll' }}
+                        {{ paused ? t('Resume scroll') : t('Pause scroll') }}
                     </button>
                     <button
                         type="button"
                         class="h-[30px] cursor-pointer rounded-md border border-white/30 px-2.5"
                         @click="lines = []"
                     >
-                        Clear view
+                        {{ t('Clear view') }}
                     </button>
                 </div>
 
                 <div
                     ref="output"
                     tabindex="0"
-                    aria-label="Console output"
+                    :aria-label="t('Console output')"
                     class="h-[500px] overflow-auto p-3.5 font-mono text-[0.8125rem] leading-[1.65] break-words whitespace-pre-wrap text-[#d7dae3]"
                 >
                     <div
@@ -232,14 +239,18 @@ onBeforeUnmount(() => {
                     v-if="!canSend"
                     class="border-t border-white/10 bg-white/5 px-3.5 py-2.5 text-[0.8125rem] text-white/75"
                 >
-                    You can watch this console, but not send commands.
+                    {{
+                        t('You can watch this console, but not send commands.')
+                    }}
                 </p>
                 <form
                     v-else
                     class="flex flex-wrap items-center gap-2 border-t border-white/10 bg-white/5 px-3.5 py-2.5"
                     @submit.prevent="send"
                 >
-                    <label for="command" class="sr-only">Console command</label>
+                    <label for="command" class="sr-only">{{
+                        t('Console command')
+                    }}</label>
                     <span
                         aria-hidden="true"
                         class="font-mono font-bold text-brand"
@@ -248,7 +259,11 @@ onBeforeUnmount(() => {
                     <input
                         id="command"
                         v-model="command"
-                        placeholder="Type a command, e.g. whitelist add Steve"
+                        :placeholder="
+                            t('Type a command, e.g. :example', {
+                                example: 'whitelist add Steve',
+                            })
+                        "
                         autocomplete="off"
                         spellcheck="false"
                         maxlength="500"
@@ -256,24 +271,32 @@ onBeforeUnmount(() => {
                         @keydown.up.prevent="recall(-1)"
                         @keydown.down.prevent="recall(1)"
                     />
-                    <span class="text-xs text-[#a9afb5]">↑ ↓ for history</span>
+                    <span class="text-xs text-[#a9afb5]">{{
+                        t('↑ ↓ for history')
+                    }}</span>
                     <button
                         type="submit"
                         :disabled="!connected"
                         class="h-[38px] cursor-pointer rounded-md bg-white px-3.5 text-sm font-semibold text-[#1f2328] disabled:cursor-default disabled:opacity-50"
                     >
-                        Send
+                        {{ t('Send') }}
                     </button>
                 </form>
             </section>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <SectionCard title="Join">
+                <SectionCard :title="t('Join')">
                     <div class="text-[0.8125rem] text-muted-foreground">
-                        Server address
+                        {{ t('Server address') }}
                     </div>
-                    <div class="font-mono text-sm break-all text-primary">
+                    <div
+                        class="flex items-center gap-1 font-mono text-sm break-all text-primary"
+                    >
                         {{ server.hostname }}
+                        <CopyButton
+                            :text="server.hostname"
+                            :label="t('Copy the server address')"
+                        />
                     </div>
                     <template v-if="bluemapUrl">
                         <div
@@ -291,9 +314,9 @@ onBeforeUnmount(() => {
                     </template>
                 </SectionCard>
 
-                <SectionCard title="Resources">
+                <SectionCard :title="t('Resources')">
                     <p v-if="!latest" class="text-sm text-muted-foreground">
-                        Waiting for the first measurement.
+                        {{ t('Waiting for the first measurement.') }}
                     </p>
                     <div v-else class="flex flex-col gap-3.5">
                         <div>
@@ -312,14 +335,14 @@ onBeforeUnmount(() => {
                                         ...samples.map((sample) => sample.cpu),
                                     )
                                 "
-                                label="CPU use over the last ten minutes"
+                                :label="t('CPU use over the last ten minutes')"
                             />
                         </div>
                         <div>
                             <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground"
-                                    >Memory</span
-                                >
+                                <span class="text-muted-foreground">{{
+                                    t('Memory')
+                                }}</span>
                                 <span
                                     class="font-semibold text-primary tabular-nums"
                                 >
@@ -330,14 +353,16 @@ onBeforeUnmount(() => {
                             <Sparkline
                                 :values="samples.map((sample) => sample.memory)"
                                 :max="latest.memory_limit"
-                                label="Memory use over the last ten minutes"
+                                :label="
+                                    t('Memory use over the last ten minutes')
+                                "
                             />
                         </div>
                         <div v-if="latest.mspt != null">
                             <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground"
-                                    >Tick time</span
-                                >
+                                <span class="text-muted-foreground">{{
+                                    t('Tick time')
+                                }}</span>
                                 <span
                                     class="font-semibold tabular-nums"
                                     :class="
@@ -368,17 +393,26 @@ onBeforeUnmount(() => {
                                         ),
                                     )
                                 "
-                                label="Milliseconds per game tick over the last ten minutes"
+                                :label="
+                                    t(
+                                        'Milliseconds per game tick over the last ten minutes',
+                                    )
+                                "
                             />
                             <p
                                 class="mt-1 text-[0.8125rem] text-muted-foreground"
                             >
-                                A tick may take 50 ms; above that the game runs
-                                slow. Measured once a minute.
+                                {{
+                                    t(
+                                        'A tick may take 50 ms; above that the game runs slow. Measured once a minute.',
+                                    )
+                                }}
                             </p>
                         </div>
                         <div class="flex justify-between text-sm">
-                            <span class="text-muted-foreground">Disk</span>
+                            <span class="text-muted-foreground">{{
+                                t('Disk')
+                            }}</span>
                             <span
                                 class="font-semibold text-primary tabular-nums"
                             >
@@ -388,23 +422,36 @@ onBeforeUnmount(() => {
                                               states.servers[server.slug]
                                                   .disk_bytes!,
                                           )
-                                        : 'Not measured yet'
+                                        : t('Not measured yet')
                                 }}
                             </span>
                         </div>
                         <p class="text-[0.8125rem] text-muted-foreground">
-                            The last 10 minutes, measured every 10 seconds.
+                            {{
+                                t(
+                                    'The last 10 minutes, measured every 10 seconds.',
+                                )
+                            }}
                         </p>
                     </div>
                 </SectionCard>
 
-                <SectionCard title="Players">
+                <SectionCard :title="t('Players')">
                     <p v-if="!players" class="text-sm text-muted-foreground">
-                        The server is not answering, so nobody can be online.
+                        {{
+                            t(
+                                'The server is not answering, so nobody can be online.',
+                            )
+                        }}
                     </p>
                     <template v-else>
                         <p class="text-sm text-muted-foreground tabular-nums">
-                            {{ players.online }} of {{ players.max }} online
+                            {{
+                                t(':online of :max online', {
+                                    online: players.online,
+                                    max: players.max,
+                                })
+                            }}
                         </p>
                         <ul v-if="players.names.length" class="mt-2">
                             <li
@@ -422,13 +469,18 @@ onBeforeUnmount(() => {
                                     class="size-6 rounded-sm bg-muted [image-rendering:pixelated]"
                                 />
                                 {{ name }}
+                                <span
+                                    v-if="name === minecraftName"
+                                    class="text-sm text-muted-foreground"
+                                    >{{ t('(you)') }}</span
+                                >
                             </li>
                         </ul>
                         <p
                             v-if="players.online > players.names.length"
                             class="mt-2 text-[0.8125rem] text-muted-foreground"
                         >
-                            The server reports at most a dozen names.
+                            {{ t('The server reports at most a dozen names.') }}
                         </p>
                     </template>
                 </SectionCard>

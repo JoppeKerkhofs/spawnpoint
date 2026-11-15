@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 
 afterEach(function () {
-    putenv('MCPANEL_TOKEN');
+    putenv('SPAWNPOINT_TOKEN');
     putenv('PANEL_ADMIN_EMAIL');
     putenv('PANEL_ADMIN_PASSWORD');
 });
@@ -21,7 +21,7 @@ test('every page carries the version from composer.json', function () {
 });
 
 test('setup registers the node and creates the first admin once', function () {
-    putenv('MCPANEL_TOKEN='.str_repeat('a', 40));
+    putenv('SPAWNPOINT_TOKEN='.str_repeat('a', 40));
     putenv('PANEL_ADMIN_EMAIL=admin@example.com');
     putenv('PANEL_ADMIN_PASSWORD=first-password');
 
@@ -34,7 +34,7 @@ test('setup registers the node and creates the first admin once', function () {
         ->and(Node::sole()->token)->toBe(str_repeat('a', 40));
 
     // A later start with a rotated token and other credentials changes only the token.
-    putenv('MCPANEL_TOKEN='.str_repeat('b', 40));
+    putenv('SPAWNPOINT_TOKEN='.str_repeat('b', 40));
     putenv('PANEL_ADMIN_EMAIL=other@example.com');
     $this->artisan('panel:setup')->assertSuccessful();
 
@@ -43,11 +43,11 @@ test('setup registers the node and creates the first admin once', function () {
 });
 
 test('setup refuses a short token and needs no admin credentials', function () {
-    putenv('MCPANEL_TOKEN=short');
+    putenv('SPAWNPOINT_TOKEN=short');
     $this->artisan('panel:setup')->assertFailed();
     expect(Node::count())->toBe(0);
 
-    putenv('MCPANEL_TOKEN='.str_repeat('a', 40));
+    putenv('SPAWNPOINT_TOKEN='.str_repeat('a', 40));
     $this->artisan('panel:setup')->assertSuccessful();
     expect(User::count())->toBe(0)->and(Node::count())->toBe(1);
 });
@@ -73,4 +73,61 @@ test('only a trusted proxy is believed about https and the visitor\'s address', 
 
     config(['trustedproxy.proxies' => '127.0.0.0/8,10.0.0.0/8']);
     $this->get('whoami', $forwarded)->assertExactJson(['203.0.113.9', true]);
+});
+
+test('the theme comes from the environment and falls back to the default one', function () {
+    config(['panel.theme' => 'default']);
+    $this->get(route('login'))->assertSee('data-theme="default"', false)->assertDontSee('fonts.googleapis.com');
+
+    config(['panel.theme' => 'blocky']);
+    $this->get(route('login'))
+        ->assertSee('data-theme="blocky"', false)
+        ->assertSee('fonts.googleapis.com')
+        ->assertInertia(fn (Assert $page) => $page->where('theme', 'blocky'));
+});
+
+test('a user sees the panel in the language they chose, from a file in the lang folder', function () {
+    $folder = sys_get_temp_dir().'/spawnpoint-lang-'.uniqid();
+    mkdir($folder);
+    file_put_contents("{$folder}/nl.json", json_encode(['@language' => 'Nederlands', 'Servers' => 'Servers (nl)', 'Profile updated.' => 'Profiel bijgewerkt.']));
+    app()->useLangPath($folder);
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->get(route('appearance.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('locale', 'en')
+        ->where('languages', ['en' => 'English', 'nl' => 'Nederlands'])
+        ->where('translations', []));
+
+    $this->put(route('locale.update'), ['locale' => 'de'])->assertSessionHasErrors('locale');
+    $this->put(route('locale.update'), ['locale' => 'nl'])->assertSessionHasNoErrors();
+
+    $this->get(route('appearance.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('locale', 'nl')
+        ->where('translations.Servers', 'Servers (nl)'));
+    expect(__('Profile updated.'))->toBe('Profiel bijgewerkt.');
+
+    unlink("{$folder}/nl.json");
+    rmdir($folder);
+});
+
+test('lang:sync writes every text of the panel to a language file and keeps what was translated', function () {
+    $folder = sys_get_temp_dir().'/spawnpoint-lang-'.uniqid();
+    mkdir($folder);
+    file_put_contents("{$folder}/nl.json", json_encode(['@language' => 'Nederlands', 'Cancel' => 'Annuleren']));
+    app()->useLangPath($folder);
+
+    $this->artisan('lang:sync', ['locale' => 'nl'])->assertSuccessful();
+    $this->artisan('lang:sync', ['locale' => 'en'])->assertFailed();
+
+    $written = json_decode(file_get_contents("{$folder}/nl.json"), true);
+    expect($written['@language'])->toBe('Nederlands')
+        ->and($written['Cancel'])->toBe('Annuleren')
+        ->and($written['Profile updated.'])->toBe('Profile updated.')
+        ->and($written)->toHaveKey('Language')
+        // From a page's options, a text that reaches t() through a variable, and one passed to a dialog.
+        ->and($written)->toHaveKeys(['Confirm password', 'running', 'Delete :name? This cannot be undone.']);
+
+    unlink("{$folder}/nl.json");
+    rmdir($folder);
 });

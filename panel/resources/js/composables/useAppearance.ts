@@ -11,7 +11,11 @@ export type UseAppearanceReturn = {
 };
 
 export function updateTheme(value: Appearance): void {
-    if (typeof window === 'undefined') {
+    // The blocky theme has one look; light and dark only exist in the default theme.
+    if (
+        typeof window === 'undefined' ||
+        document.documentElement.dataset.theme === 'blocky'
+    ) {
         return;
     }
 

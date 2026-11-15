@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/lib/i18n';
 import type { Modpack, PackPlatform } from '@/lib/servers';
 import { search, versions as versionsRoute } from '@/routes/modpacks';
 
@@ -57,7 +58,7 @@ const load = async () => {
     } catch {
         if (current === latestSearch) {
             packs.value = [];
-            message.value = 'The modpack list could not be loaded.';
+            message.value = t('The modpack list could not be loaded.');
         }
     } finally {
         if (current === latestSearch) {
@@ -152,7 +153,7 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
 
         <div
             role="radiogroup"
-            aria-label="Modpack source"
+            :aria-label="t('Modpack source')"
             class="-mb-px flex flex-wrap gap-1 border-b border-border"
         >
             <label
@@ -174,33 +175,40 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
             v-if="platform === 'AUTO_CURSEFORGE' && !curseforge"
             class="text-sm text-muted-foreground"
         >
-            CurseForge needs an API key. Set CURSEFORGE_API_KEY in the panel's
-            environment, then reload this page.
+            {{
+                t(
+                    "CurseForge needs an API key. Set CURSEFORGE_API_KEY in the panel's environment, then reload this page.",
+                )
+            }}
         </p>
 
         <template v-else>
             <div class="grid gap-2">
-                <Label for="pack_search" class="sr-only">Search modpacks</Label>
+                <Label for="pack_search" class="sr-only">{{
+                    t('Search modpacks')
+                }}</Label>
                 <Input
                     id="pack_search"
                     v-model="query"
                     type="search"
-                    :placeholder="`Search ${platformLabel}`"
+                    :placeholder="
+                        t('Search :platform', { platform: platformLabel })
+                    "
                 />
             </div>
 
             <p role="status" class="text-sm text-muted-foreground">
                 {{
                     loading
-                        ? 'Searching…'
+                        ? t('Searching…')
                         : message ||
-                          (packs.length ? '' : 'No packs match that search.')
+                          (packs.length ? '' : t('No packs match that search.'))
                 }}
             </p>
 
             <div
                 role="radiogroup"
-                aria-label="Modpack"
+                :aria-label="t('Modpack')"
                 class="flex flex-col gap-2"
             >
                 <label
@@ -234,15 +242,19 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                     </span>
                     <span
                         class="text-[0.8125rem] text-muted-foreground tabular-nums"
-                        >{{ compact.format(pack.downloads) }} downloads</span
+                        >{{
+                            t(':count downloads', {
+                                count: compact.format(pack.downloads),
+                            })
+                        }}</span
                     >
                 </label>
             </div>
 
             <div v-if="platform === 'MODRINTH'" class="grid gap-2">
-                <Label for="pack_link"
-                    >Or paste a Modrinth project or version link</Label
-                >
+                <Label for="pack_link">{{
+                    t('Or paste a Modrinth project or version link')
+                }}</Label>
                 <Input
                     id="pack_link"
                     v-model="link"
@@ -255,21 +267,23 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                 v-if="platform === 'AUTO_CURSEFORGE'"
                 class="text-[0.8125rem] text-muted-foreground"
             >
-                Some CurseForge packs block third-party downloads. If one does,
-                the console says which files to fetch, and you upload them in
-                Files.
+                {{
+                    t(
+                        'Some CurseForge packs block third-party downloads. If one does, the console says which files to fetch, and you upload them in Files.',
+                    )
+                }}
             </p>
         </template>
 
         <div v-if="picked && versions.length" class="grid gap-2">
-            <Label for="modpack_version">Pack version</Label>
+            <Label for="modpack_version">{{ t('Pack version') }}</Label>
             <select
                 id="modpack_version"
                 v-model="version"
                 name="modpack_version"
                 class="h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm"
             >
-                <option value="">Newest</option>
+                <option value="">{{ t('Newest') }}</option>
                 <option
                     v-for="entry in versions"
                     :key="entry.id"
@@ -281,7 +295,7 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
         </div>
 
         <p v-if="picked" class="text-sm">
-            <span class="text-muted-foreground">Selected:</span>
+            <span class="text-muted-foreground">{{ t('Selected:') }}</span>
             <span class="font-semibold text-primary"> {{ picked.name }}</span>
         </p>
         <InputError :message="error" />

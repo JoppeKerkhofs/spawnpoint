@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { t } from '@/lib/i18n';
 import { store } from '@/routes/two-factor/login';
 
 defineOptions({
@@ -20,12 +21,12 @@ const useRecoveryCode = ref(false);
 </script>
 
 <template>
-    <Head title="Two-factor authentication" />
+    <Head :title="t('Two-factor authentication')" />
 
     <Form v-bind="store.form()" reset-on-error v-slot="{ errors, processing }">
         <div class="space-y-6">
             <div v-if="useRecoveryCode" class="grid gap-2">
-                <Label for="recovery_code">Recovery code</Label>
+                <Label for="recovery_code">{{ t('Recovery code') }}</Label>
                 <Input
                     id="recovery_code"
                     name="recovery_code"
@@ -37,7 +38,7 @@ const useRecoveryCode = ref(false);
             </div>
 
             <div v-else class="grid gap-2">
-                <Label for="code">Authentication code</Label>
+                <Label for="code">{{ t('Authentication code') }}</Label>
                 <Input
                     id="code"
                     name="code"
@@ -51,7 +52,7 @@ const useRecoveryCode = ref(false);
 
             <Button class="w-full" :disabled="processing">
                 <Spinner v-if="processing" />
-                Continue
+                {{ t('Continue') }}
             </Button>
 
             <Button
@@ -62,8 +63,8 @@ const useRecoveryCode = ref(false);
             >
                 {{
                     useRecoveryCode
-                        ? 'Use an authentication code'
-                        : 'Use a recovery code'
+                        ? t('Use an authentication code')
+                        : t('Use a recovery code')
                 }}
             </Button>
         </div>

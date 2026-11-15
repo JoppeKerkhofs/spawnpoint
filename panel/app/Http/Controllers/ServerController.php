@@ -9,9 +9,11 @@ use App\Actions\Servers\UpdateServer;
 use App\Http\Requests\LogRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
+use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Services\CloudflareDns;
 use App\Services\MemoryLimit;
 use App\Services\MinecraftVersions;
 use App\Services\NodeClient;
@@ -86,6 +88,7 @@ class ServerController extends Controller
             ...$this->options($server),
             'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::states()),
+            'dnsEnabled' => CloudflareDns::enabled(),
         ]);
     }
 
@@ -157,6 +160,29 @@ class ServerController extends Controller
     public function power(Server $server, string $action, PowerServer $powerServer): RedirectResponse
     {
         $this->attempt(fn () => $powerServer($server, $action));
+
+        return back();
+    }
+
+    /**
+     * Add the server's DNS record in Cloudflare again, after the first attempt failed.
+     */
+    public function dns(Server $server): RedirectResponse
+    {
+        abort_unless(CloudflareDns::enabled(), 404);
+
+        try {
+            CloudflareDns::create($server->hostname);
+        } catch (ConnectionException|RequestException $exception) {
+            report($exception);
+            ActivityLog::record('dns.failed', $server, ['hostname' => $server->hostname]);
+            Inertia::flash('toast', ['type' => 'error', 'message' => __('Cloudflare did not accept the DNS record. Check the token and its zone access in Settings.')]);
+
+            return back();
+        }
+
+        ActivityLog::record('dns.create', $server, ['hostname' => $server->hostname]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('The DNS record for :hostname is in place.', ['hostname' => $server->hostname])]);
 
         return back();
     }

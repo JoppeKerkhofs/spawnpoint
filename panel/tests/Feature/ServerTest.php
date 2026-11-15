@@ -271,3 +271,25 @@ test('stop all stops the servers that are up and leaves the rest alone', functio
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/starting/stop'));
     Http::assertNotSent(fn (Request $request) => str_ends_with($request->url(), '/servers/resting/stop'));
 });
+
+test('a dns record that failed can be added again by hand', function () {
+    config(['panel.cloudflare_token' => 'cf-token', 'panel.dns_target' => '203.0.113.5']);
+    $server = Server::factory()->create(['slug' => 'survival', 'hostname' => 'survival.mc.example.com']);
+    Http::fake([
+        'api.cloudflare.com/client/v4/zones?name=mc.example.com' => Http::response(['result' => [['id' => 'zone1']]]),
+        'api.cloudflare.com/client/v4/zones/zone1/dns_records' => Http::sequence()->push(['errors' => [['code' => 10000]]], 403)->push(['success' => true]),
+    ]);
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.dns', $server))->assertRedirect();
+    expect(ActivityLog::query()->latest('id')->value('event'))->toBe('dns.failed');
+
+    $this->post(route('servers.dns', $server))->assertRedirect();
+    expect(ActivityLog::query()->latest('id')->value('event'))->toBe('dns.create');
+
+    $this->get(route('activity.index'))->assertInertia(fn (Assert $page) => $page->where('dnsRetry', ['survival']));
+    $this->actingAs(User::factory()->create())->post(route('servers.dns', $server))->assertForbidden();
+
+    config(['panel.cloudflare_token' => null]);
+    $this->actingAs(User::factory()->admin()->create())->post(route('servers.dns', $server))->assertNotFound();
+});

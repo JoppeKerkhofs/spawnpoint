@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
+import { t } from '@/lib/i18n';
 import { index } from '@/routes/activity';
+import { dns } from '@/routes/servers';
 
 type Entry = {
     id: number;
@@ -15,33 +17,69 @@ type Entry = {
 defineProps<{
     entries: Entry[];
     server: string;
+    dnsRetry: string[];
     newerUrl: string | null;
     olderUrl: string | null;
 }>();
 
 const labels: Record<string, string> = {
-    'server.create': 'Created the server',
-    'server.update': 'Changed the configuration',
-    'server.delete': 'Deleted the server',
-    'server.start': 'Started the server',
-    'server.stop': 'Stopped the server',
-    'server.restart': 'Restarted the server',
-    'server.kill': 'Killed the server',
-    'backup.create': 'Started a backup',
-    'backup.restore': 'Restored a backup',
-    'backup.delete': 'Deleted a backup',
-    'backup.schedule': 'Changed the backup schedule',
-    'world.import': 'Imported a world',
-    'file.save': 'Saved a file',
-    'file.folder': 'Created a folder',
-    'file.rename': 'Renamed a file',
-    'file.delete': 'Deleted a file',
-    'user.create': 'Created a user',
-    'user.update': 'Changed a user',
-    'user.delete': 'Deleted a user',
-    'token.create': 'Created an API token',
-    'token.revoke': 'Revoked an API token',
-    'settings.update': 'Changed the panel settings',
+    'server.create': t('Created the server'),
+    'server.update': t('Changed the configuration'),
+    'server.delete': t('Deleted the server'),
+    'server.start': t('Started the server'),
+    'server.stop': t('Stopped the server'),
+    'server.restart': t('Restarted the server'),
+    'server.kill': t('Killed the server'),
+    'backup.create': t('Started a backup'),
+    'backup.restore': t('Restored a backup'),
+    'backup.delete': t('Deleted a backup'),
+    'backup.schedule': t('Changed the backup schedule'),
+    'world.import': t('Imported a world'),
+    'file.save': t('Saved a file'),
+    'file.folder': t('Created a folder'),
+    'file.rename': t('Renamed a file'),
+    'file.delete': t('Deleted a file'),
+    'user.create': t('Created a user'),
+    'user.update': t('Changed a user'),
+    'user.delete': t('Deleted a user'),
+    'token.create': t('Created an API token'),
+    'token.revoke': t('Revoked an API token'),
+    'settings.update': t('Changed the panel settings'),
+    'dns.create': t('Added the DNS record'),
+    'dns.failed': t('Could not add the DNS record'),
+    'backup.cancel': t('Cancelled a backup'),
+    'backup.retention': t('Changed the backup settings'),
+    'schedule.create': t('Added a schedule'),
+    'schedule.delete': t('Removed a schedule'),
+    'schedule.run': t('A schedule ran'),
+};
+
+// Red for what failed or was removed, amber for what interrupts play, green for what was added or started.
+const tones: Record<string, 'bad' | 'warn' | 'good'> = {
+    'dns.failed': 'bad',
+    'server.kill': 'bad',
+    'server.delete': 'bad',
+    'backup.delete': 'bad',
+    'file.delete': 'bad',
+    'user.delete': 'bad',
+    'token.revoke': 'bad',
+    'server.stop': 'warn',
+    'server.restart': 'warn',
+    'backup.restore': 'warn',
+    'backup.cancel': 'warn',
+    'world.import': 'warn',
+    'server.create': 'good',
+    'server.start': 'good',
+    'dns.create': 'good',
+    'backup.create': 'good',
+    'user.create': 'good',
+    'token.create': 'good',
+};
+
+const toneClasses = {
+    bad: 'text-destructive',
+    warn: 'text-[#7a4f00] dark:text-[#f0c36b]',
+    good: 'text-[#1d6b3f] dark:text-[#7fd6a2]',
 };
 
 const details = (entry: Entry) =>
@@ -54,27 +92,31 @@ const details = (entry: Entry) =>
 </script>
 
 <template>
-    <Head title="Activity" />
+    <Head :title="t('Activity')" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <div>
             <h1 class="text-2xl leading-[1.3] font-bold text-primary">
-                Activity
+                {{ t('Activity') }}
             </h1>
             <p class="mt-1 text-[0.9375rem] text-muted-foreground">
-                Who started, stopped or changed what, newest first. Console
-                commands and file uploads go straight to the Rust service and
-                are not listed.
+                {{
+                    t(
+                        'Who started, stopped or changed what, newest first. Console commands and file uploads go straight to the Rust service and are not listed.',
+                    )
+                }}
             </p>
         </div>
 
         <p v-if="server" class="text-sm">
-            Showing only
+            {{ t('Showing only') }}
             <span class="font-mono font-semibold text-primary">{{
                 server
             }}</span
             >.
-            <Link :href="index()" class="underline">Show everything</Link>
+            <Link :href="index()" class="underline">{{
+                t('Show everything')
+            }}</Link>
         </p>
 
         <div class="overflow-x-auto rounded-md border border-border bg-card">
@@ -82,17 +124,19 @@ const details = (entry: Entry) =>
                 <thead class="bg-muted text-[0.8125rem] text-muted-foreground">
                     <tr>
                         <th scope="col" class="px-4 py-2.5 font-normal">
-                            When
-                        </th>
-                        <th scope="col" class="px-4 py-2.5 font-normal">Who</th>
-                        <th scope="col" class="px-4 py-2.5 font-normal">
-                            What
+                            {{ t('When') }}
                         </th>
                         <th scope="col" class="px-4 py-2.5 font-normal">
-                            Server
+                            {{ t('Who') }}
                         </th>
                         <th scope="col" class="px-4 py-2.5 font-normal">
-                            Details
+                            {{ t('What') }}
+                        </th>
+                        <th scope="col" class="px-4 py-2.5 font-normal">
+                            {{ t('Server') }}
+                        </th>
+                        <th scope="col" class="px-4 py-2.5 font-normal">
+                            {{ t('Details') }}
                         </th>
                     </tr>
                 </thead>
@@ -114,7 +158,45 @@ const details = (entry: Entry) =>
                         </td>
                         <td class="px-4 py-2">{{ entry.actor }}</td>
                         <td class="px-4 py-2">
-                            {{ labels[entry.event] ?? entry.event }}
+                            <span
+                                class="inline-flex items-center gap-2"
+                                :class="
+                                    tones[entry.event]
+                                        ? `font-semibold ${toneClasses[tones[entry.event]]}`
+                                        : ''
+                                "
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    class="size-2 shrink-0 rounded-full"
+                                    :class="
+                                        tones[entry.event]
+                                            ? 'bg-current'
+                                            : 'border border-muted-foreground'
+                                    "
+                                />
+                                {{ labels[entry.event] ?? entry.event }}
+                            </span>
+                            <Button
+                                v-if="
+                                    entry.event === 'dns.failed' &&
+                                    entry.subject &&
+                                    dnsRetry.includes(entry.subject)
+                                "
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="ml-3 border-primary"
+                                @click="
+                                    router.post(
+                                        dns.url({ server: entry.subject }),
+                                        {},
+                                        { preserveScroll: true },
+                                    )
+                                "
+                            >
+                                {{ t('Try again') }}
+                            </Button>
                         </td>
                         <td class="px-4 py-2">
                             <Link
@@ -137,7 +219,7 @@ const details = (entry: Entry) =>
                             colspan="5"
                             class="border-t border-divider px-4 py-3 text-sm text-muted-foreground"
                         >
-                            Nothing recorded yet.
+                            {{ t('Nothing recorded yet.') }}
                         </td>
                     </tr>
                 </tbody>
@@ -151,7 +233,7 @@ const details = (entry: Entry) =>
                 class="border-primary"
                 as-child
             >
-                <Link :href="newerUrl">Newer</Link>
+                <Link :href="newerUrl">{{ t('Newer') }}</Link>
             </Button>
             <Button
                 v-if="olderUrl"
@@ -159,7 +241,7 @@ const details = (entry: Entry) =>
                 class="border-primary"
                 as-child
             >
-                <Link :href="olderUrl">Older</Link>
+                <Link :href="olderUrl">{{ t('Older') }}</Link>
             </Button>
         </div>
     </div>

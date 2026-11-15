@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
 import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ModpackPicker from '@/components/ModpackPicker.vue';
+import { t } from '@/lib/i18n';
 import type {
     MemoryBudget,
     PackPlatform,
@@ -21,6 +22,8 @@ const props = defineProps<{
 }>();
 
 const javaVersion = defineModel<number>('javaVersion', { default: 25 });
+// For a page that shows what the choice leads to.
+const serverType = defineModel<string>('serverType');
 // LATEST first, then Mojang's releases; a saved version stays selectable even if the list is down.
 const mcVersions = computed(() => [
     ...new Set([
@@ -43,6 +46,9 @@ const platform = ref<PackPlatform>(
 const isNative = computed(
     () => !isPack.value && NATIVE_TYPES.includes(loader.value),
 );
+watchEffect(() => {
+    serverType.value = isPack.value ? platform.value : loader.value;
+});
 const typeButton =
     'flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50';
 
@@ -68,12 +74,12 @@ const selectClass =
 </script>
 
 <template>
-    <SectionCard title="Software">
+    <SectionCard :title="t('Software')">
         <div class="flex flex-col gap-4">
             <div>
                 <div
                     role="radiogroup"
-                    aria-label="Server type"
+                    :aria-label="t('Server type')"
                     class="flex flex-wrap gap-2"
                 >
                     <label
@@ -90,7 +96,7 @@ const selectClass =
                                 isPack = false;
                             "
                         />
-                        {{ typeLabels[type] }}
+                        {{ t(typeLabels[type] ?? type) }}
                     </label>
                     <label :class="typeButton">
                         <input
@@ -99,7 +105,7 @@ const selectClass =
                             class="sr-only"
                             @change="isPack = true"
                         />
-                        Modpack
+                        {{ t('Modpack') }}
                     </label>
                 </div>
                 <input
@@ -121,12 +127,11 @@ const selectClass =
             <template v-if="isNative">
                 <input type="hidden" name="mc_version" value="LATEST" />
                 <p class="text-sm text-muted-foreground">
-                    Pumpkin is a Minecraft server written in Rust. It is fast
-                    and light, but still in development: not every game feature
-                    works yet, plugins and mods for other servers do not load,
-                    and its world format can change between releases. The newest
-                    release is installed; it follows the newest Minecraft
-                    version and does not use Java.
+                    {{
+                        t(
+                            'Pumpkin is a Minecraft server written in Rust. It is fast and light, but still in development: not every game feature works yet, plugins and mods for other servers do not load, and its world format can change between releases. The newest release is installed; it follows the newest Minecraft version and does not use Java.',
+                        )
+                    }}
                 </p>
             </template>
 
@@ -135,7 +140,7 @@ const selectClass =
                     v-if="!isPack && !isNative"
                     class="grid content-start gap-2"
                 >
-                    <Label for="mc_version">Minecraft version</Label>
+                    <Label for="mc_version">{{ t('Minecraft version') }}</Label>
                     <select
                         id="mc_version"
                         name="mc_version"
@@ -150,9 +155,13 @@ const selectClass =
                             "
                         >
                             {{
-                                version === 'LATEST'
-                                    ? `Latest${options.mcVersions[0] ? ` (${options.mcVersions[0]})` : ''}`
-                                    : version
+                                version !== 'LATEST'
+                                    ? version
+                                    : options.mcVersions[0]
+                                      ? t('Latest (:version)', {
+                                            version: options.mcVersions[0],
+                                        })
+                                      : t('Latest')
                             }}
                         </option>
                     </select>
@@ -160,13 +169,13 @@ const selectClass =
                         v-if="!options.mcVersions.length"
                         class="text-[0.8125rem] text-muted-foreground"
                     >
-                        Mojang's version list could not be loaded.
+                        {{ t("Mojang's version list could not be loaded.") }}
                     </span>
                     <InputError :message="errors.mc_version" />
                 </div>
 
                 <div v-show="!isNative" class="grid content-start gap-2">
-                    <Label for="java_version">Java version</Label>
+                    <Label for="java_version">{{ t('Java version') }}</Label>
                     <select
                         id="java_version"
                         v-model.number="javaVersion"
@@ -186,8 +195,11 @@ const selectClass =
                         id="java_version_hint"
                         class="text-[0.8125rem] text-muted-foreground"
                     >
-                        Minecraft 1.20.5 and newer needs Java 21; 26.1 and newer
-                        needs Java 25. A modpack's page says which it needs.
+                        {{
+                            t(
+                                "Minecraft 1.20.5 and newer needs Java 21; 26.1 and newer needs Java 25. A modpack's page says which it needs.",
+                            )
+                        }}
                     </span>
                     <InputError :message="errors.java_version" />
                 </div>
@@ -195,10 +207,10 @@ const selectClass =
         </div>
     </SectionCard>
 
-    <SectionCard title="Resources">
+    <SectionCard :title="t('Resources')">
         <div class="grid gap-2">
             <div class="flex justify-between">
-                <Label for="memory">Memory</Label>
+                <Label for="memory">{{ t('Memory') }}</Label>
                 <span class="text-sm font-semibold tabular-nums"
                     >{{ memoryGb }} GB</span
                 >
@@ -218,15 +230,27 @@ const selectClass =
                 class="text-[0.8125rem] text-muted-foreground"
             >
                 <template v-if="freeGb !== null && memory.limitMb !== null">
-                    {{ Math.max(0, freeGb) }} GB left for this server under the
-                    {{ Math.round(memory.limitMb / 1024) }} GB limit for all
-                    servers.
+                    {{
+                        t(
+                            ':free GB left for this server under the :limit GB limit for all servers.',
+                            {
+                                free: Math.max(0, freeGb),
+                                limit: Math.round(memory.limitMb / 1024),
+                            },
+                        )
+                    }}
                 </template>
-                The container limit. Minecraft's heap gets three quarters of it.
+                {{
+                    t(
+                        "The container limit. Minecraft's heap gets three quarters of it.",
+                    )
+                }}
             </span>
             <InputError :message="errors.memory_mb" />
 
-            <Label for="cpu_limit" class="mt-2">CPU limit (cores)</Label>
+            <Label for="cpu_limit" class="mt-2">{{
+                t('CPU limit (cores)')
+            }}</Label>
             <Input
                 id="cpu_limit"
                 name="cpu_limit"
@@ -235,7 +259,7 @@ const selectClass =
                 max="64"
                 step="0.25"
                 class="max-w-32"
-                placeholder="None"
+                :placeholder="t('None')"
                 :default-value="server?.settings.cpu_limit ?? ''"
                 aria-describedby="cpu_limit_hint"
             />
@@ -243,21 +267,21 @@ const selectClass =
                 id="cpu_limit_hint"
                 class="text-[0.8125rem] text-muted-foreground"
             >
-                Leave empty for no limit.
+                {{ t('Leave empty for no limit.') }}
             </span>
             <InputError :message="errors.cpu_limit" />
         </div>
     </SectionCard>
 
-    <SectionCard title="Players and Java">
+    <SectionCard :title="t('Players and Java')">
         <div class="flex flex-col gap-4">
             <div class="grid gap-2">
-                <Label for="ops">Operators</Label>
+                <Label for="ops">{{ t('Operators') }}</Label>
                 <Input
                     id="ops"
                     name="ops"
                     spellcheck="false"
-                    placeholder="Player names, separated by commas"
+                    :placeholder="t('Player names, separated by commas')"
                     :default-value="(server?.settings.ops ?? []).join(', ')"
                 />
                 <InputError :message="errors.ops" />
@@ -272,16 +296,16 @@ const selectClass =
                         :checked="server?.settings.whitelist"
                         class="size-4 accent-primary"
                     />
-                    Whitelist on: only these players can join
+                    {{ t('Whitelist on: only these players can join') }}
                 </label>
-                <Label for="whitelist_names" class="sr-only"
-                    >Whitelisted players</Label
-                >
+                <Label for="whitelist_names" class="sr-only">{{
+                    t('Whitelisted players')
+                }}</Label>
                 <Input
                     id="whitelist_names"
                     name="whitelist_names"
                     spellcheck="false"
-                    placeholder="Player names, separated by commas"
+                    :placeholder="t('Player names, separated by commas')"
                     :default-value="
                         (server?.settings.whitelist_names ?? []).join(', ')
                     "
@@ -291,8 +315,11 @@ const selectClass =
                     id="players_hint"
                     class="text-[0.8125rem] text-muted-foreground"
                 >
-                    Both lists replace ops.json and whitelist.json on every
-                    start, so change them here, not in Files or with /op.
+                    {{
+                        t(
+                            'Both lists replace ops.json and whitelist.json on every start, so change them here, not in Files or with /op.',
+                        )
+                    }}
                 </span>
                 <InputError
                     :message="errors.whitelist_names || errors.whitelist"
@@ -300,7 +327,7 @@ const selectClass =
             </div>
 
             <div class="grid gap-2">
-                <Label for="jvm_opts">Extra JVM flags</Label>
+                <Label for="jvm_opts">{{ t('Extra JVM flags') }}</Label>
                 <Input
                     id="jvm_opts"
                     name="jvm_opts"
@@ -315,10 +342,10 @@ const selectClass =
         </div>
     </SectionCard>
 
-    <SectionCard title="Game settings">
+    <SectionCard :title="t('Game settings')">
         <div class="grid gap-4 sm:grid-cols-3">
             <div class="grid content-start gap-2 sm:col-span-3">
-                <Label for="motd">MOTD</Label>
+                <Label for="motd">{{ t('MOTD') }}</Label>
                 <Input
                     id="motd"
                     name="motd"
@@ -331,7 +358,7 @@ const selectClass =
             </div>
 
             <div class="grid content-start gap-2">
-                <Label for="difficulty">Difficulty</Label>
+                <Label for="difficulty">{{ t('Difficulty') }}</Label>
                 <select id="difficulty" name="difficulty" :class="selectClass">
                     <option
                         v-for="difficulty in options.difficulties"
@@ -349,7 +376,7 @@ const selectClass =
             </div>
 
             <div class="grid content-start gap-2">
-                <Label for="mode">Game mode</Label>
+                <Label for="mode">{{ t('Game mode') }}</Label>
                 <select id="mode" name="mode" :class="selectClass">
                     <option
                         v-for="mode in options.modes"
@@ -366,7 +393,7 @@ const selectClass =
             </div>
 
             <div class="grid content-start gap-2">
-                <Label for="max_players">Max players</Label>
+                <Label for="max_players">{{ t('Max players') }}</Label>
                 <Input
                     id="max_players"
                     name="max_players"
@@ -389,14 +416,17 @@ const selectClass =
                         class="size-4 accent-primary"
                         aria-describedby="bluemap_hint"
                     />
-                    Publish this server's BlueMap web map
+                    {{ t("Publish this server's BlueMap web map") }}
                 </label>
                 <span
                     id="bluemap_hint"
                     class="text-[0.8125rem] text-muted-foreground"
                 >
-                    The map is public. Install the BlueMap mod or plugin
-                    yourself, in Files; this only opens the way to it.
+                    {{
+                        t(
+                            "Installs the BlueMap mod or plugin that fits this server and publishes its map; the map is public. BlueMap downloads Minecraft's own textures from Mojang to draw it. Not for Vanilla and Pumpkin, which load no mods; switching it off again hides the map but leaves the mod in Files.",
+                        )
+                    }}
                 </span>
                 <InputError :message="errors.bluemap" />
             </div>
@@ -414,15 +444,17 @@ const selectClass =
                         class="size-4 accent-primary"
                         aria-describedby="is_default_hint"
                     />
-                    Make this the default server
+                    {{ t('Make this the default server') }}
                 </label>
                 <span
                     id="is_default_hint"
                     class="text-[0.8125rem] text-muted-foreground"
                 >
-                    Players who use a hostname that no server has, such as the
-                    base domain itself, land here. Only one server can be the
-                    default; changing it restarts the servers involved.
+                    {{
+                        t(
+                            'Players who use a hostname that no server has, such as the base domain itself, land here. Only one server can be the default; changing it restarts the servers involved.',
+                        )
+                    }}
                 </span>
                 <InputError :message="errors.is_default" />
             </div>

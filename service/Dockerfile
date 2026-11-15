@@ -8,11 +8,11 @@ COPY Cargo.toml Cargo.lock ./
 COPY src src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked && cp target/release/mcpanel-service /mcpanel-service
+    cargo build --release --locked && cp target/release/spawnpoint-node /spawnpoint-node
 
 FROM debian:bookworm-slim
 # World imports unpack .zip files; tar and gzip for backups are already in the base image.
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
-COPY --from=build /mcpanel-service /usr/local/bin/mcpanel-service
+COPY --from=build /spawnpoint-node /usr/local/bin/spawnpoint-node
 EXPOSE 8080
-ENTRYPOINT ["mcpanel-service"]
+ENTRYPOINT ["spawnpoint-node"]

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ask } from '@/lib/dialogs';
+import { t } from '@/lib/i18n';
 import { Form, Head, Link, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -34,18 +36,20 @@ defineOptions({
 });
 
 const abilityLabels: Record<string, string> = {
-    'servers:read': 'List servers and their state',
-    'servers:power': 'Start, stop, restart and kill servers',
-    'console:use': 'Open the live console',
-    'logs:read': 'Read the logs',
-    'backups:manage': 'List and start backups',
-    'files:read': 'List folders and read text files',
-    'files:write': 'Write, delete, upload and download files',
+    'servers:read': t('List servers and their state'),
+    'servers:power': t('Start, stop, restart and kill servers'),
+    'console:use': t('Open the live console'),
+    'logs:read': t('Read the logs'),
+    'backups:manage': t('List and start backups'),
+    'files:read': t('List folders and read text files'),
+    'files:write': t('Write, delete, upload and download files'),
 };
 
-const revoke = (token: Token) => {
+const revoke = async (token: Token) => {
     if (
-        confirm(`Revoke the token "${token.name}"? Apps using it stop working.`)
+        await ask('Revoke the token ":name"? Apps using it stop working.', {
+            name: token.name,
+        })
     ) {
         router.delete(destroy.url({ token: token.id }), {
             preserveScroll: true,
@@ -55,21 +59,26 @@ const revoke = (token: Token) => {
 </script>
 
 <template>
-    <Head title="API tokens" />
+    <Head :title="t('API tokens')" />
 
-    <h1 class="sr-only">API tokens</h1>
+    <h1 class="sr-only">{{ t('API tokens') }}</h1>
 
     <div class="space-y-6">
         <Heading
             variant="small"
-            title="API tokens"
-            description="Let another app, such as a phone app, use the panel through /api/v1. A token can never do more than your own role allows."
+            :title="t('API tokens')"
+            :description="
+                t(
+                    'Let another app, such as a phone app, use the panel through :path. A token can never do more than your own role allows.',
+                    { path: '/api/v1' },
+                )
+            "
         />
 
         <p class="text-sm">
-            <Link :href="apiDocs()" class="text-primary underline"
-                >Read the API documentation</Link
-            >
+            <Link :href="apiDocs()" class="text-primary underline">{{
+                t('Read the API documentation')
+            }}</Link>
         </p>
 
         <div
@@ -78,7 +87,7 @@ const revoke = (token: Token) => {
             class="space-y-2 rounded-md border border-brand bg-card p-4"
         >
             <p class="font-medium">
-                Copy this token now. It is not shown again.
+                {{ t('Copy this token now. It is not shown again.') }}
             </p>
             <code class="block font-mono text-sm break-all">{{
                 newToken
@@ -93,19 +102,21 @@ const revoke = (token: Token) => {
             v-slot="{ errors, processing }"
         >
             <div class="grid gap-2">
-                <Label for="name">Name</Label>
+                <Label for="name">{{ t('Name') }}</Label>
                 <Input
                     id="name"
                     name="name"
                     required
                     maxlength="60"
-                    placeholder="Phone app"
+                    :placeholder="t('Phone app')"
                 />
                 <InputError :message="errors.name" />
             </div>
 
             <fieldset class="space-y-2">
-                <legend class="text-sm font-medium">This token may</legend>
+                <legend class="text-sm font-medium">
+                    {{ t('This token may') }}
+                </legend>
                 <label
                     v-for="ability in abilities"
                     :key="ability"
@@ -125,12 +136,12 @@ const revoke = (token: Token) => {
                 <InputError :message="errors.abilities" />
             </fieldset>
 
-            <Button :disabled="processing">Create token</Button>
+            <Button :disabled="processing">{{ t('Create token') }}</Button>
         </Form>
 
         <div class="overflow-hidden rounded-lg border border-border">
             <p v-if="!tokens.length" class="p-4 text-sm text-muted-foreground">
-                No tokens yet.
+                {{ t('No tokens yet.') }}
             </p>
             <div
                 v-for="token in tokens"
@@ -140,12 +151,14 @@ const revoke = (token: Token) => {
                 <div class="min-w-0 flex-1">
                     <p class="font-medium">{{ token.name }}</p>
                     <p class="text-sm text-muted-foreground">
-                        {{ token.abilities.join(', ') }} · created
-                        {{ token.created }} ·
+                        {{ token.abilities.join(', ') }} ·
+                        {{ t('created :date', { date: token.created }) }} ·
                         {{
                             token.last_used
-                                ? `last used ${token.last_used}`
-                                : 'never used'
+                                ? t('last used :date', {
+                                      date: token.last_used,
+                                  })
+                                : t('never used')
                         }}
                     </p>
                 </div>
@@ -155,7 +168,7 @@ const revoke = (token: Token) => {
                     class="border-destructive text-destructive hover:text-destructive"
                     @click="revoke(token)"
                 >
-                    Revoke
+                    {{ t('Revoke') }}
                 </Button>
             </div>
         </div>

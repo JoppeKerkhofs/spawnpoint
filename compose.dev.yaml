@@ -3,9 +3,9 @@
 #
 #   docker compose -f compose.dev.yaml up -d --build
 #
-# MCPANEL_TOKEN comes from .env in this folder; `php artisan node:register` prints one.
+# SPAWNPOINT_TOKEN comes from .env in this folder; `php artisan node:register` prints one.
 
-name: minecraft-panel-dev
+name: spawnpoint-dev
 
 services:
   node:
@@ -13,17 +13,17 @@ services:
     init: true
     restart: unless-stopped
     environment:
-      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Put the token from "php artisan node:register" in .env}
-      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
-      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+      SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Put the token from "php artisan node:register" in .env}
+      SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
-      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+      - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
 
   router:
     image: itzg/mc-router:1.56.4

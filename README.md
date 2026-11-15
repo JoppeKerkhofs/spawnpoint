@@ -1,4 +1,4 @@
-# minecraft-panel
+# Spawnpoint
 
 A self-hosted web panel that creates and manages Minecraft Java servers, each in its own Docker
 container. `panel/` is the Laravel and Vue panel; `service/` is the Rust service that does all
@@ -24,12 +24,12 @@ docker compose --env-file .env.compose up -d
 ```
 
 - Fill in `APP_KEY` (the example file says how to generate one), `APP_URL`, `DB_PASSWORD` and
-  `MCPANEL_TOKEN` with long random strings, and the first admin's `PANEL_ADMIN_EMAIL` and
+  `SPAWNPOINT_TOKEN` with long random strings, and the first admin's `PANEL_ADMIN_EMAIL` and
   `PANEL_ADMIN_PASSWORD`. Compose refuses to start while a required one is empty.
 - Set `PANEL_BASE_DOMAIN` (for example `mc.example.com`) and point a wildcard DNS record
   (`*.mc.example.com`) at the host. Players join on port 25565, so forward that port.
 - The panel listens on port 8080 (`APP_PORT`) and joins the external `proxy` network, so a
-  TLS-terminating reverse proxy on that network reaches it as `minecraft-panel-app:8080`. Set
+  TLS-terminating reverse proxy on that network reaches it as `spawnpoint-app:8080`. Set
   `APP_URL` to the `https://` address. `TRUSTED_PROXIES` decides which proxies are believed
   about https and the visitor's address; by default the private ranges.
 - Always pass `--env-file .env.compose`.
@@ -45,11 +45,26 @@ Server data lives in `/srv/mc`, backups in `/srv/mc-backups`, and worlds you wan
 
 The version is the `version` field of `panel/composer.json`. It is shown under the login form and
 in Settings, so you can see which release is running. Every merge to `main` publishes both images
-(`minecraft-panel` and `minecraft-panel-node`) as `latest` and under that version, so every pull request has to raise it; the pipelines check that
+(`spawnpoint` and `spawnpoint-node`) as `latest` and under that version, so every pull request has to raise it; the pipelines check that
 with `scripts/check-version.sh`.
 
 To run a fixed release, set `PANEL_VERSION` in `.env.compose` (for example `1.2.0`); it pins both
 images.
+
+## Languages
+
+The panel is written in English, and every text goes through a translation lookup with the
+English text as the key. A language is one file, `panel/lang/<code>.json`:
+
+```sh
+cd panel
+php artisan lang:sync nl   # creates or updates lang/nl.json with every text that has no translation yet
+```
+
+Translate the values in that file and set its `"@language"` entry to the language's own name.
+An entry that still holds the English text is simply shown in English. Every file in `lang/`
+shows up under Settings, Appearance, where each user picks their language; `APP_LOCALE` sets it
+for people who have not chosen. Run the command again after an update to pick up new texts.
 
 ## Work on it
 
@@ -58,7 +73,7 @@ proxy; the node listens on `localhost:8080`. In `panel/`:
 
 ```sh
 composer setup
-php artisan node:register local http://localhost:8080   # put the token it prints in ../.env as MCPANEL_TOKEN
+php artisan node:register local http://localhost:8080   # put the token it prints in ../.env as SPAWNPOINT_TOKEN
 composer dev
 ```
 

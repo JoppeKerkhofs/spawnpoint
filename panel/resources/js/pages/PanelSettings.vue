@@ -5,6 +5,7 @@ import SectionCard from '@/components/SectionCard.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/lib/i18n';
 import { update } from '@/routes/panel-settings';
 
 defineProps<{
@@ -25,16 +26,19 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
 </script>
 
 <template>
-    <Head title="Panel settings" />
+    <Head :title="t('Panel settings')" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <div>
             <h1 class="text-2xl leading-[1.3] font-bold text-primary">
-                Settings
+                {{ t('Settings') }}
             </h1>
             <p class="mt-1 text-[0.9375rem] text-muted-foreground">
-                These apply to the whole panel. A setting you leave empty falls
-                back to the value from the server's environment.
+                {{
+                    t(
+                        "These apply to the whole panel. A setting you leave empty falls back to the value from the server's environment.",
+                    )
+                }}
             </p>
         </div>
 
@@ -44,10 +48,12 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
             class="flex max-w-3xl flex-col gap-3"
             v-slot="{ errors, processing }"
         >
-            <SectionCard title="Addresses">
+            <SectionCard :title="t('Addresses')">
                 <div class="flex flex-col gap-4">
                     <div class="grid gap-2">
-                        <Label for="base_domain">Base domain for servers</Label>
+                        <Label for="base_domain">{{
+                            t('Base domain for servers')
+                        }}</Label>
                         <Input
                             id="base_domain"
                             name="base_domain"
@@ -57,15 +63,20 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             aria-describedby="base_domain_hint"
                         />
                         <span id="base_domain_hint" :class="hint">
-                            A new server named "survival" gets survival.{{
-                                settings.base_domain
-                            }}. Servers that already exist keep their address.
+                            {{
+                                t(
+                                    'A new server named "survival" gets survival.:domain. Servers that already exist keep their address.',
+                                    { domain: settings.base_domain },
+                                )
+                            }}
                         </span>
                         <InputError :message="errors.base_domain" />
                     </div>
 
                     <div class="grid gap-2">
-                        <Label for="bluemap_url">Address of the web maps</Label>
+                        <Label for="bluemap_url">{{
+                            t('Address of the web maps')
+                        }}</Label>
                         <Input
                             id="bluemap_url"
                             name="bluemap_url"
@@ -75,20 +86,22 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             aria-describedby="bluemap_url_hint"
                         />
                         <span id="bluemap_url_hint" :class="hint">
-                            Where port 8100 of this host is reachable from
-                            outside. Each server's map is at /server-name/ under
-                            it.
+                            {{
+                                t(
+                                    "Where port 8100 of this host is reachable from outside. Each server's map is at /server-name/ under it.",
+                                )
+                            }}
                         </span>
                         <InputError :message="errors.bluemap_url" />
                     </div>
                 </div>
             </SectionCard>
 
-            <SectionCard title="Memory">
+            <SectionCard :title="t('Memory')">
                 <div class="grid gap-2">
-                    <Label for="memory_limit_mb"
-                        >Memory for all servers together (MB)</Label
-                    >
+                    <Label for="memory_limit_mb">{{
+                        t('Memory for all servers together (MB)')
+                    }}</Label>
                     <Input
                         id="memory_limit_mb"
                         name="memory_limit_mb"
@@ -100,14 +113,20 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                         aria-describedby="memory_limit_mb_hint"
                     />
                     <span id="memory_limit_mb_hint" :class="hint">
-                        Leave empty to use 90% of the host's memory.
+                        {{ t("Leave empty to use 90% of the host's memory.") }}
                         <template v-if="effectiveMemoryLimitMb">
-                            The limit in effect now is
-                            {{ effectiveMemoryLimitMb }} MB.
+                            {{
+                                t('The limit in effect now is :size MB.', {
+                                    size: effectiveMemoryLimitMb,
+                                })
+                            }}
                         </template>
                         <template v-else>
-                            No limit is in effect now, because the host's memory
-                            could not be read.
+                            {{
+                                t(
+                                    "No limit is in effect now, because the host's memory could not be read.",
+                                )
+                            }}
                         </template>
                     </span>
                     <InputError :message="errors.memory_limit_mb" />
@@ -116,7 +135,7 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
 
             <SectionCard title="CurseForge">
                 <div class="grid gap-2">
-                    <Label for="curseforge_key">API key</Label>
+                    <Label for="curseforge_key">{{ t('API key') }}</Label>
                     <Input
                         id="curseforge_key"
                         name="curseforge_key"
@@ -124,14 +143,19 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                         autocomplete="off"
                         :placeholder="
                             hasCurseforgeKey
-                                ? 'A key is saved. Type a new one to replace it.'
-                                : 'No key saved'
+                                ? t(
+                                      'A key is saved. Type a new one to replace it.',
+                                  )
+                                : t('No key saved')
                         "
                         aria-describedby="curseforge_key_hint"
                     />
                     <span id="curseforge_key_hint" :class="hint">
-                        Needed to search CurseForge and install its packs. It is
-                        stored encrypted and never shown again.
+                        {{
+                            t(
+                                'Needed to search CurseForge and install its packs. It is stored encrypted and never shown again.',
+                            )
+                        }}
                     </span>
                     <label
                         v-if="hasCurseforgeKey"
@@ -143,7 +167,7 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             value="1"
                             class="size-4 accent-primary"
                         />
-                        Remove the saved key
+                        {{ t('Remove the saved key') }}
                     </label>
                     <InputError :message="errors.curseforge_key" />
                 </div>
@@ -153,16 +177,24 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                 <div class="flex flex-col gap-4">
                     <p role="status" class="text-sm">
                         <template v-if="dnsEnabled">
-                            On: every new server gets a DNS record, and loses it
-                            when the server is deleted.
+                            {{
+                                t(
+                                    'On: every new server gets a DNS record, and loses it when the server is deleted.',
+                                )
+                            }}
                         </template>
                         <template v-else>
-                            Off. Fill in both fields to have the panel add a DNS
-                            record for every new server.
+                            {{
+                                t(
+                                    'Off. Fill in both fields to have the panel add a DNS record for every new server.',
+                                )
+                            }}
                         </template>
                     </p>
                     <div class="grid gap-2">
-                        <Label for="cloudflare_token">API token</Label>
+                        <Label for="cloudflare_token">{{
+                            t('API token')
+                        }}</Label>
                         <Input
                             id="cloudflare_token"
                             name="cloudflare_token"
@@ -170,15 +202,19 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             autocomplete="off"
                             :placeholder="
                                 hasCloudflareToken
-                                    ? 'A token is saved. Type a new one to replace it.'
-                                    : 'No token saved'
+                                    ? t(
+                                          'A token is saved. Type a new one to replace it.',
+                                      )
+                                    : t('No token saved')
                             "
                             aria-describedby="cloudflare_token_hint"
                         />
                         <span id="cloudflare_token_hint" :class="hint">
-                            A Cloudflare API token with the Zone: Read and DNS:
-                            Edit permissions for the zone of the base domain. It
-                            is stored encrypted and never shown again.
+                            {{
+                                t(
+                                    'A Cloudflare API token with the Zone: Read and DNS: Edit permissions for the zone of the base domain. It is stored encrypted and never shown again.',
+                                )
+                            }}
                         </span>
                         <label
                             v-if="hasCloudflareToken"
@@ -190,12 +226,18 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                                 value="1"
                                 class="size-4 accent-primary"
                             />
-                            Remove the saved token, which turns this off
+                            {{
+                                t(
+                                    'Remove the saved token, which turns this off',
+                                )
+                            }}
                         </label>
                         <InputError :message="errors.cloudflare_token" />
                     </div>
                     <div class="grid gap-2">
-                        <Label for="dns_target">Point records at</Label>
+                        <Label for="dns_target">{{
+                            t('Point records at')
+                        }}</Label>
                         <Input
                             id="dns_target"
                             name="dns_target"
@@ -205,16 +247,18 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             aria-describedby="dns_target_hint"
                         />
                         <span id="dns_target_hint" :class="hint">
-                            The public IP address of this host, or a hostname
-                            that points at it. Records are not proxied, because
-                            Cloudflare's proxy does not carry Minecraft.
+                            {{
+                                t(
+                                    "The public IP address of this host, or a hostname that points at it. Records are not proxied, because Cloudflare's proxy does not carry Minecraft.",
+                                )
+                            }}
                         </span>
                         <InputError :message="errors.dns_target" />
                     </div>
                 </div>
             </SectionCard>
 
-            <SectionCard title="Security">
+            <SectionCard :title="t('Security')">
                 <div class="grid gap-1">
                     <label class="flex items-center gap-2">
                         <input
@@ -225,18 +269,26 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                             class="size-4 accent-primary"
                             aria-describedby="require_two_factor_hint"
                         />
-                        Require two-factor authentication for every account
+                        {{
+                            t(
+                                'Require two-factor authentication for every account',
+                            )
+                        }}
                     </label>
                     <span id="require_two_factor_hint" :class="hint">
-                        Anyone without it, you included, is sent to their
-                        security settings to set it up before they can use the
-                        panel. API tokens keep working.
+                        {{
+                            t(
+                                'Anyone without it, you included, is sent to their security settings to set it up before they can use the panel. API tokens keep working.',
+                            )
+                        }}
                     </span>
                     <InputError :message="errors.require_two_factor" />
                 </div>
             </SectionCard>
 
-            <Button :disabled="processing" class="self-start">Save</Button>
+            <Button :disabled="processing" class="self-start">{{
+                t('Save')
+            }}</Button>
         </Form>
     </div>
 </template>

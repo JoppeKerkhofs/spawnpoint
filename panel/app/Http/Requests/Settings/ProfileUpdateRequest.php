@@ -28,6 +28,10 @@ class ProfileUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
-        return $this->profileRules($this->user()->id);
+        return [
+            ...$this->profileRules($this->user()->id),
+            // Java Edition names: 3 to 16 letters, digits and underscores. Empty unlinks the account.
+            'minecraft_name' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_]{3,16}$/'],
+        ];
     }
 }

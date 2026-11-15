@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ask, askName } from '@/lib/dialogs';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { Folder, FileText, Upload } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
@@ -11,6 +12,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { t } from '@/lib/i18n';
 import type { Server, States } from '@/lib/servers';
 import { files, power } from '@/routes/servers';
 import {
@@ -93,8 +95,8 @@ const saveFile = () => {
     );
 };
 
-const newFile = () => {
-    const name = prompt('Name of the new file')?.trim();
+const newFile = async () => {
+    const name = (await askName('New file', 'File name'))?.trim();
 
     if (name) {
         router.put(
@@ -108,16 +110,20 @@ const newFile = () => {
     }
 };
 
-const newFolder = () => {
-    const name = prompt('Name of the new folder')?.trim();
+const newFolder = async () => {
+    const name = (await askName('New folder', 'Folder name'))?.trim();
 
     if (name) {
         router.post(folder.url(slug.value), { path: join(name) }, reloadFolder);
     }
 };
 
-const renameEntry = (entry: Entry) => {
-    const name = prompt(`New name for ${entry.name}`, entry.name)?.trim();
+const renameEntry = async (entry: Entry) => {
+    const name = (
+        await askName('Rename :name', 'New name', entry.name, 'Rename', {
+            name: entry.name,
+        })
+    )?.trim();
 
     if (name && name !== entry.name) {
         router.post(
@@ -128,12 +134,17 @@ const renameEntry = (entry: Entry) => {
     }
 };
 
-const deleteEntry = (entry: Entry) => {
-    const what = entry.dir
-        ? `the folder ${entry.name} and everything in it`
-        : entry.name;
+const deleteEntry = async (entry: Entry) => {
+    const name = entry.name;
+    // Each text is written out in the call, so the language scan finds it.
+    const sure = entry.dir
+        ? await ask(
+              'Delete the folder :name and everything in it? This cannot be undone.',
+              { name },
+          )
+        : await ask('Delete :name? This cannot be undone.', { name });
 
-    if (confirm(`Delete ${what}? This cannot be undone.`)) {
+    if (sure) {
         router.delete(destroy.url(slug.value), {
             ...reloadFolder,
             data: { path: join(entry.name) },
@@ -153,7 +164,10 @@ const uploadFiles = (list: FileList | null | undefined) => {
         return;
     }
 
-    uploading.value = `Uploading ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`;
+    uploading.value =
+        chosen.length === 1
+            ? t('Uploading :count file…', { count: chosen.length })
+            : t('Uploading :count files…', { count: chosen.length });
 
     // The upload token lasts five minutes, so each batch starts with a fresh one.
     router.reload({
@@ -174,10 +188,20 @@ const uploadFiles = (list: FileList | null | undefined) => {
             }
 
             if (failed.length) {
-                toast.error(`Could not upload: ${failed.join(', ')}`);
+                toast.error(
+                    t('Could not upload: :names', { names: failed.join(', ') }),
+                );
             } else {
                 toast.success(
-                    `Uploaded ${chosen.length} file${chosen.length === 1 ? '' : 's'}. Mods load on the next restart.`,
+                    chosen.length === 1
+                        ? t(
+                              'Uploaded :count file. Mods load on the next restart.',
+                              { count: chosen.length },
+                          )
+                        : t(
+                              'Uploaded :count files. Mods load on the next restart.',
+                              { count: chosen.length },
+                          ),
                 );
             }
 
@@ -190,7 +214,9 @@ const uploadFiles = (list: FileList | null | undefined) => {
 
 const size = (entry: Entry) => {
     if (entry.dir) {
-        return `${entry.size} item${entry.size === 1 ? '' : 's'}`;
+        return entry.size === 1
+            ? t(':count item', { count: entry.size })
+            : t(':count items', { count: entry.size });
     }
 
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -204,7 +230,7 @@ const size = (entry: Entry) => {
 </script>
 
 <template>
-    <Head :title="`${server.name} files`" />
+    <Head :title="t(':name files', { name: server.name })" />
 
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="files" />
@@ -215,11 +241,17 @@ const size = (entry: Entry) => {
             class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-card px-4 py-3 text-sm"
         >
             <span class="min-w-0 flex-1">
-                {{ modsChanged }} mod or plugin
-                {{ modsChanged === 1 ? 'file was' : 'files were' }} added or
-                replaced since the last start.
-                {{ modsChanged === 1 ? 'It loads' : 'They load' }} on the next
-                restart.
+                {{
+                    modsChanged === 1
+                        ? t(
+                              ':count mod or plugin file was added or replaced since the last start. It loads on the next restart.',
+                              { count: modsChanged },
+                          )
+                        : t(
+                              ':count mod or plugin files were added or replaced since the last start. They load on the next restart.',
+                              { count: modsChanged },
+                          )
+                }}
             </span>
             <Button
                 type="button"
@@ -233,7 +265,7 @@ const size = (entry: Entry) => {
                     )
                 "
             >
-                Restart now
+                {{ t('Restart now') }}
             </Button>
         </div>
 
@@ -247,7 +279,7 @@ const size = (entry: Entry) => {
 
         <div class="flex flex-wrap items-start gap-5">
             <section
-                aria-label="Files"
+                :aria-label="t('Files')"
                 class="min-w-0 flex-[1_1_480px] overflow-hidden rounded-md border bg-card"
                 :class="dragging ? 'border-primary' : 'border-border'"
                 @dragover.prevent="dragging = true"
@@ -261,7 +293,7 @@ const size = (entry: Entry) => {
                     class="flex flex-wrap items-center gap-2 bg-muted px-4 py-2.5"
                 >
                     <nav
-                        aria-label="Folder"
+                        :aria-label="t('Folder')"
                         class="min-w-0 flex-1 font-mono text-sm break-all"
                     >
                         <Link :href="browse('')" class="underline">/data</Link
@@ -278,7 +310,7 @@ const size = (entry: Entry) => {
                         type="file"
                         multiple
                         class="sr-only"
-                        aria-label="Files to upload"
+                        :aria-label="t('Files to upload')"
                         tabindex="-1"
                         @change="
                             uploadFiles(picker?.files);
@@ -291,7 +323,7 @@ const size = (entry: Entry) => {
                         @click="picker?.click()"
                     >
                         <Upload aria-hidden="true" />
-                        Upload
+                        {{ t('Upload') }}
                     </Button>
                     <Button
                         type="button"
@@ -299,7 +331,7 @@ const size = (entry: Entry) => {
                         class="border-primary"
                         @click="newFolder"
                     >
-                        New folder
+                        {{ t('New folder') }}
                     </Button>
                     <Button
                         type="button"
@@ -307,7 +339,7 @@ const size = (entry: Entry) => {
                         class="border-primary"
                         @click="newFile"
                     >
-                        New file
+                        {{ t('New file') }}
                     </Button>
                 </div>
 
@@ -316,16 +348,18 @@ const size = (entry: Entry) => {
                         <thead class="text-[0.8125rem] text-muted-foreground">
                             <tr>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Name
+                                    {{ t('Name') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Size
+                                    {{ t('Size') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
-                                    Modified
+                                    {{ t('Modified') }}
                                 </th>
                                 <th scope="col" class="px-4 py-2">
-                                    <span class="sr-only">Actions</span>
+                                    <span class="sr-only">{{
+                                        t('Actions')
+                                    }}</span>
                                 </th>
                             </tr>
                         </thead>
@@ -382,7 +416,12 @@ const size = (entry: Entry) => {
                                                 type="button"
                                                 variant="ghost"
                                                 size="icon"
-                                                :aria-label="`More actions for ${entry.name}`"
+                                                :aria-label="
+                                                    t(
+                                                        'More actions for :name',
+                                                        { name: entry.name },
+                                                    )
+                                                "
                                             >
                                                 ⋯
                                             </Button>
@@ -402,19 +441,19 @@ const size = (entry: Entry) => {
                                                             },
                                                         })
                                                     "
-                                                    >Download</a
+                                                    >{{ t('Download') }}</a
                                                 >
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 @select="renameEntry(entry)"
                                             >
-                                                Rename
+                                                {{ t('Rename') }}
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 class="text-destructive"
                                                 @select="deleteEntry(entry)"
                                             >
-                                                Delete
+                                                {{ t('Delete') }}
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
@@ -425,7 +464,7 @@ const size = (entry: Entry) => {
                                     colspan="4"
                                     class="border-t border-divider px-4 py-3 text-sm text-muted-foreground"
                                 >
-                                    This folder is empty.
+                                    {{ t('This folder is empty.') }}
                                 </td>
                             </tr>
                         </tbody>
@@ -438,15 +477,18 @@ const size = (entry: Entry) => {
                 >
                     {{
                         uploading ||
-                        `Drop files anywhere on this list to upload them to /data${path ? `/${path}` : ''}.`
+                        t(
+                            'Drop files anywhere on this list to upload them to :folder.',
+                            { folder: `/data${path ? `/${path}` : ''}` },
+                        )
                     }}
                 </div>
             </section>
 
             <section
                 v-if="file"
-                aria-label="Editor"
-                class="min-w-0 flex-[1_1_480px] overflow-hidden rounded-md border border-border bg-card"
+                :aria-label="t('Editor')"
+                class="min-w-0 flex-[1_1_480px] overflow-hidden rounded-md border border-border bg-card lg:sticky lg:top-4"
             >
                 <div
                     class="flex flex-wrap items-center gap-2 bg-muted px-4 py-2.5"
@@ -459,7 +501,7 @@ const size = (entry: Entry) => {
                     <span
                         v-if="unsaved"
                         class="text-[0.8125rem] text-muted-foreground"
-                        >Unsaved changes</span
+                        >{{ t('Unsaved changes') }}</span
                     >
                     <span class="flex-1" />
                     <Button
@@ -469,37 +511,40 @@ const size = (entry: Entry) => {
                         :disabled="!unsaved"
                         @click="draft = file.content"
                     >
-                        Revert
+                        {{ t('Revert') }}
                     </Button>
                     <Button
                         type="button"
                         :disabled="!unsaved"
                         @click="saveFile"
                     >
-                        Save
+                        {{ t('Save') }}
                     </Button>
                 </div>
-                <label for="editor" class="sr-only"
-                    >Contents of {{ file.path }}</label
-                >
+                <label for="editor" class="sr-only">{{
+                    t('Contents of :path', { path: file.path })
+                }}</label>
                 <textarea
                     id="editor"
                     v-model="draft"
                     spellcheck="false"
-                    class="block h-[520px] w-full resize-y bg-card p-3.5 font-mono text-[0.8125rem] leading-[1.65] whitespace-pre text-foreground"
+                    class="block h-[min(640px,calc(100vh-13rem))] min-h-[240px] w-full resize-y bg-card p-3.5 font-mono text-[0.8125rem] leading-[1.65] whitespace-pre text-foreground"
                 />
                 <div
                     class="border-t border-divider px-4 py-2.5 text-[0.8125rem] text-muted-foreground"
                 >
                     <template v-if="managedLines.length">
-                        These lines are set in Configuration and rewritten on
-                        every start, so change them there:
+                        {{
+                            t(
+                                'These lines are set in Configuration and rewritten on every start, so change them there:',
+                            )
+                        }}
                         <code class="font-mono">{{
                             managedLines.join(', ')
                         }}</code
                         >.
                     </template>
-                    Changes apply on the next restart.
+                    {{ t('Changes apply on the next restart.') }}
                 </div>
             </section>
         </div>

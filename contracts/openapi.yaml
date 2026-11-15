@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Minecraft Panel API
+  title: Spawnpoint node API
   version: "1"
   description: >
     Lets other apps use the panel. Create a token under Settings, API tokens, and send it

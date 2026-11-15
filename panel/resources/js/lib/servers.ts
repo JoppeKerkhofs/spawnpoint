@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+
 export type Modpack = {
     project: string;
     name: string;
@@ -87,7 +89,7 @@ export const bytesLabel = (bytes: number): string =>
         : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
 
 export const title = (value: string): string =>
-    value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+    t(value.charAt(0).toUpperCase() + value.slice(1).toLowerCase());
 
 export const PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
@@ -103,15 +105,29 @@ export const typeLabels: Record<string, string> = {
     FTBA: 'FTB modpack',
 };
 
+// The block that stands for a server in the blocky theme.
+export const cubeTexture = (
+    type: string,
+): 'grass' | 'wood' | 'machine' | 'sand' | 'wool' | 'pumpkin' =>
+    (
+        {
+            VANILLA: 'grass',
+            PAPER: 'wool',
+            FABRIC: 'wood',
+            PUMPKIN: 'pumpkin',
+            FORGE: 'sand',
+        } as const
+    )[type] ?? 'machine';
+
 // Pumpkin is a native program: it has no Minecraft version to pick and does not use Java.
 export const NATIVE_TYPES = ['PUMPKIN'];
 
 export const software = (server: Server): string =>
     NATIVE_TYPES.includes(server.server_type)
-        ? `${typeLabels[server.server_type]} · latest release`
+        ? `${t(typeLabels[server.server_type])} · ${t('latest release')}`
         : server.modpack
-          ? `${typeLabels[server.server_type]} · ${server.modpack.name} · Java ${server.java_version}`
-          : `${typeLabels[server.server_type]} ${server.mc_version === 'LATEST' ? 'latest' : server.mc_version} · Java ${server.java_version}`;
+          ? `${t(typeLabels[server.server_type])} · ${server.modpack.name} · Java ${server.java_version}`
+          : `${t(typeLabels[server.server_type])} ${server.mc_version === 'LATEST' ? t('latest') : server.mc_version} · Java ${server.java_version}`;
 
 // States the Rust service reports, plus two the panel adds: loading and unknown.
 export function serverState(
@@ -127,11 +143,13 @@ export function serverState(
         (states.online
             ? {
                   state: 'offline',
-                  detail: 'No container yet. Save the configuration to create it.',
+                  detail: t(
+                      'No container yet. Save the configuration to create it.',
+                  ),
               }
             : {
                   state: 'unknown',
-                  detail: 'The Rust service did not answer.',
+                  detail: t('The Rust service did not answer.'),
               })
     );
 }
