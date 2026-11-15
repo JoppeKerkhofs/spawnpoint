@@ -1,0 +1,231 @@
+# Spawnpoint for a production host. Unlike compose.yaml it needs nothing from the repository
+# but this file and an env file: both images are pulled, never built.
+#
+#   docker network create proxy                  # once, if your reverse proxy has not created it
+#   cp .env.compose.example .env.compose         # fill it in, and set PANEL_VERSION
+#   docker compose -f compose.prod.yaml --env-file .env.compose up -d
+#
+# What is different from compose.yaml:
+# - PANEL_VERSION is required, so an update is a decision and not a side effect of a restart.
+# - The panel's port is only bound on this machine (APP_BIND): people reach it through the
+#   TLS-terminating reverse proxy on the `proxy` network, as spawnpoint-app:8080.
+# - Container logs are rotated, and the containers cannot gain new privileges.
+#
+# Update: change PANEL_VERSION, then `pull` and `up -d` with the same two flags.
+
+name: spawnpoint
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+# The web server, the queue worker and the scheduler are the same image with the same settings.
+x-panel: &panel
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:?Set PANEL_VERSION to the release to run, for example 1.3.0}
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+  environment: &panel-environment
+    APP_KEY: ${APP_KEY:?Set APP_KEY, see .env.compose.example}
+    APP_URL: ${APP_URL:?Set APP_URL to the address people open the panel on}
+    # Believe a reverse proxy on a private network about the visitor's address and https.
+    # Not `*`: anything else on this machine or network could then claim any address.
+    TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+    DB_CONNECTION: mysql
+    DB_HOST: db
+    DB_PORT: 3306
+    DB_DATABASE: ${DB_DATABASE:-panel}
+    DB_USERNAME: ${DB_USERNAME:-panel}
+    DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD, see .env.compose.example}
+    # Shared with the node: every request to it is signed with this.
+    SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}
+    PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:?Set PANEL_BASE_DOMAIN, for example mc.example.com}
+    PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
+    PANEL_THEME: ${PANEL_THEME:-default}
+    APP_LOCALE: ${APP_LOCALE:-en}
+    CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+    CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+    PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
+    # Only used on the first start, to create the first admin.
+    PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
+    PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}
+    # Without an SMTP server, invitations and password reset links are only written to the log.
+    MAIL_MAILER: ${MAIL_MAILER:-log}
+    MAIL_HOST: ${MAIL_HOST:-}
+    MAIL_PORT: ${MAIL_PORT:-587}
+    MAIL_USERNAME: ${MAIL_USERNAME:-}
+    MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-panel@example.com}
+    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Spawnpoint}
+
+services:
+  db:
+    # Pinned to a release line: `latest` would jump to the next major version on a pull and
+    # may then refuse the existing data directory.
+    image: mysql:8.4
+    container_name: spawnpoint-database
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-panel}
+      MYSQL_USER: ${DB_USERNAME:-panel}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD, see .env.compose.example}
+      # Nobody logs in as root; a random password is printed once in the logs of the very first start.
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'mysqladmin ping --host=127.0.0.1 --user="$$MYSQL_USER" --password="$$MYSQL_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - panel
+
+  app:
+    <<: *panel
+    container_name: spawnpoint-app
+    ports:
+      # Only on this machine by default; the reverse proxy uses the `proxy` network instead.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - panel
+      - proxy
+
+  # Sends webhooks and mail.
+  queue:
+    <<: *panel
+    container_name: spawnpoint-queue
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600"]
+    environment:
+      <<: *panel-environment
+      RUN_MIGRATIONS: "false"
+    healthcheck:
+      disable: true
+    # The app container has migrated the database once it is healthy.
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - panel
+
+  # Starts the scheduled backups and commands, and watches for crashes.
+  scheduler:
+    <<: *panel
+    container_name: spawnpoint-scheduler
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *panel-environment
+      RUN_MIGRATIONS: "false"
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - panel
+
+  # The only container with the Docker socket and the server folders. It has no published
+  # port: the panel reaches it over the `panel` network, and every request must be signed.
+  node:
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:?Set PANEL_VERSION to the release to run, for example 1.3.0}
+    container_name: spawnpoint-node
+    init: true
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}
+      SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
+      - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
+      # Outside the data folder, so the file manager can never reach the archives.
+      - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Host worlds offered for import; read-only.
+      - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
+    networks:
+      - panel
+
+  # Players connect here; it forwards each connection to the server whose hostname they typed.
+  router:
+    image: itzg/mc-router:1.56.4
+    container_name: spawnpoint-router
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - socket-proxy
+    environment:
+      IN_DOCKER: "true"
+      DOCKER_SOCKET: tcp://socket-proxy:2375
+      DOCKER_NETWORK: minecraft
+    ports:
+      - "${MINECRAFT_PORT:-25565}:25565"
+    networks:
+      - minecraft
+      - socket
+
+  # Serves each server's BlueMap at /<server>/, for servers that have it switched on.
+  maps:
+    image: traefik:v3
+    container_name: spawnpoint-maps
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - socket-proxy
+    command:
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.bluemap.address=:8100
+    ports:
+      - "${BLUEMAP_PORT:-8100}:8100"
+    networks:
+      - minecraft
+      - socket
+
+  # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: spawnpoint-socket-proxy
+    restart: unless-stopped
+    logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+
+volumes:
+  database:
+
+networks:
+  # The panel, its database and the node. Minecraft containers are never on it.
+  panel:
+    driver: bridge
+  # Fixed name: the node attaches every Minecraft container to it.
+  minecraft:
+    name: minecraft
+  socket:
+    internal: true
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

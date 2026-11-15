@@ -38,6 +38,22 @@ docker compose --env-file .env.compose up -d
   images from this checkout instead.
 - For invitations and password reset mails, fill in the `MAIL_` settings.
 
+### Production
+
+`compose.prod.yaml` is the same setup for a production host. It needs only that file and the
+env file, not the repository:
+
+```sh
+docker compose -f compose.prod.yaml --env-file .env.compose up -d
+```
+
+- `PANEL_VERSION` is required (for example `1.3.0`), and both images are pulled, never built.
+  To update, change it, then `pull` and `up -d`.
+- The panel's port is bound to `127.0.0.1` only (`APP_BIND`); people reach it through the
+  reverse proxy on the `proxy` network.
+- Container logs are rotated (five files of 10 MB each), and the containers other than the
+  node cannot gain new privileges.
+
 Server data lives in `/srv/mc`, backups in `/srv/mc-backups`, and worlds you want to import go in
 `/srv/mc-import`. The panel's own data is in the `database` volume.
 
