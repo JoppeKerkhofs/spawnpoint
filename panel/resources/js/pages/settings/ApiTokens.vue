@@ -191,7 +191,11 @@ const revoke = async (token: Token) => {
                     :groups="groups"
                     :presets="presets"
                 />
-                <InputError :message="errors.code ?? errors['abilities.0']" />
+                <InputError
+                    :message="
+                        errors.code ?? errors.abilities ?? errors['abilities.0']
+                    "
+                />
                 <Button type="submit" class="w-fit" :disabled="processing">
                     {{ t('Approve this device') }}
                 </Button>

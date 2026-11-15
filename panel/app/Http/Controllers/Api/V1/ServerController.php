@@ -257,10 +257,19 @@ class ServerController extends Controller
         ));
 
         $servers = Server::query()->whereIn('slug', $up)->get();
+        $failed = [];
         foreach ($servers as $server) {
-            $powerServer($server, 'stop');
+            // One busy or unreachable server must not leave the rest running.
+            try {
+                $powerServer($server, 'stop');
+            } catch (ConnectionException|RequestException) {
+                $failed[] = $server->slug;
+            }
         }
 
-        return response()->json(['message' => trans_choice('{0} No server was running.|{1} Stopping one server.|[2,*] Stopping :count servers.', $servers->count())], 202);
+        return response()->json([
+            'message' => trans_choice('{0} No server was running.|{1} Stopping one server.|[2,*] Stopping :count servers.', $servers->count() - count($failed)),
+            'failed' => $failed,
+        ], 202);
     }
 }

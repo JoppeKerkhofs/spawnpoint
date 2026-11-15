@@ -17,6 +17,9 @@ class RequireTwoFactor
     public function handle(Request $request, Closure $next): Response
     {
         if (Setting::value('require_two_factor') && ! $request->user()->hasEnabledTwoFactorAuthentication()) {
+            // A token is no way around it: the API answers plainly instead of redirecting.
+            abort_if($request->is('api/*'), 403, 'This panel requires two-factor authentication. Set it up in the panel first.');
+
             Inertia::flash('toast', ['type' => 'error', 'message' => __('This panel requires two-factor authentication. Set it up to continue.')]);
 
             return redirect()->route('security.edit');

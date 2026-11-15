@@ -54,11 +54,16 @@ class PanelController extends Controller
 
         Setting::put('base_domain', $data['base_domain']);
         Setting::put('bluemap_url', $data['bluemap_url']);
-        Setting::put('memory_limit_mb', isset($data['memory_limit_mb']) ? (string) $data['memory_limit_mb'] : null);
-        Setting::put('activity_retention_days', isset($data['activity_retention_days']) ? (string) $data['activity_retention_days'] : null);
-        Setting::put('require_two_factor', ($data['require_two_factor'] ?? false) ? '1' : null);
-        Setting::put('dns_target', $data['dns_target'] ?? null);
-        Setting::put('privacy_contact', $data['privacy_contact'] ?? null);
+        // Only what was sent: an app changes one setting, it does not post the whole form as the
+        // web page does, and leaving one out must not switch it off.
+        foreach (['memory_limit_mb', 'activity_retention_days', 'dns_target', 'privacy_contact'] as $key) {
+            if (array_key_exists($key, $data)) {
+                Setting::put($key, isset($data[$key]) ? (string) $data[$key] : null);
+            }
+        }
+        if (array_key_exists('require_two_factor', $data)) {
+            Setting::put('require_two_factor', $data['require_two_factor'] ? '1' : null);
+        }
 
         // An empty secret means "keep the saved one"; removing it is asked for by name.
         foreach (['curseforge_key', 'cloudflare_token'] as $secret) {

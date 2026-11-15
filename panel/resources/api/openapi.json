@@ -239,11 +239,17 @@
                                                     ]
                                                 },
                                                 "detail": {
-                                                    "type": ["string", "null"],
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
                                                     "description": "Why the server is in this state, when there is something to say."
                                                 },
                                                 "players": {
-                                                    "type": ["object", "null"],
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
                                                     "properties": {
                                                         "online": {
                                                             "type": "integer"
@@ -260,7 +266,10 @@
                                                     }
                                                 },
                                                 "usage": {
-                                                    "type": ["object", "null"],
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
                                                     "properties": {
                                                         "at": {
                                                             "type": "integer"
@@ -286,10 +295,16 @@
                                                     }
                                                 },
                                                 "disk_bytes": {
-                                                    "type": ["integer", "null"]
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
                                                 },
                                                 "last_backup": {
-                                                    "type": ["integer", "null"],
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
                                                     "description": "Unix seconds."
                                                 }
                                             }
@@ -356,7 +371,12 @@
                         "required": true,
                         "schema": {
                             "type": "string",
-                            "enum": ["start", "stop", "restart", "kill"]
+                            "enum": [
+                                "start",
+                                "stop",
+                                "restart",
+                                "kill"
+                            ]
                         }
                     }
                 ],
@@ -640,7 +660,9 @@
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "enum": [1]
+                            "enum": [
+                                1
+                            ]
                         },
                         "description": "Set to 1 to read the path as a text file of up to 1 MB."
                     }
@@ -713,7 +735,10 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["path", "content"],
+                                "required": [
+                                    "path",
+                                    "content"
+                                ],
                                 "properties": {
                                     "path": {
                                         "type": "string",
@@ -778,7 +803,9 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["path"],
+                                "required": [
+                                    "path"
+                                ],
                                 "properties": {
                                     "path": {
                                         "type": "string"
@@ -886,7 +913,7 @@
             "post": {
                 "summary": "Stop every server that is running",
                 "x-ability": "servers:power",
-                "description": "Needs servers:power and an admin owner.",
+                "description": "Needs servers:power and an admin owner. A server that refuses does not stop the rest; its slug is in the failed list of the answer.",
                 "responses": {
                     "202": {
                         "description": "Stopping"
@@ -1269,7 +1296,7 @@
             "put": {
                 "summary": "Change the panel settings",
                 "x-ability": "settings:manage",
-                "description": "Needs settings:manage and an admin owner. Leaving a secret empty keeps the saved one; remove_curseforge_key or remove_cloudflare_token deletes it.",
+                "description": "Needs settings:manage and an admin owner. Only the settings in the request change; one that is left out keeps its value, and one sent as null is cleared. Leaving a secret empty keeps the saved one; remove_curseforge_key or remove_cloudflare_token deletes it.",
                 "responses": {
                     "200": {
                         "description": "The settings as they now are"

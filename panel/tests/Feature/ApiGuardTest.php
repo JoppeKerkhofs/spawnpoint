@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Server;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -50,4 +51,14 @@ test('a token that may only read files gets a download address and no upload add
 
     $this->getJson('/api/v1/servers/survival/files/transfer', bearer($admin->createToken('Logs', ['logs:read'])->plainTextToken))
         ->assertStatus(403)->assertJsonPath('message', 'This token lacks the files:read ability.');
+});
+
+test('a panel that requires two-factor refuses the token of a user without it', function () {
+    Setting::put('require_two_factor', '1');
+    $token = User::factory()->admin()->create()->createToken('Phone', ['servers:read'])->plainTextToken;
+
+    // Otherwise a user the web pages lock out could still do everything through the API.
+    $this->getJson('/api/v1/me', bearer($token))
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'This panel requires two-factor authentication. Set it up in the panel first.');
 });

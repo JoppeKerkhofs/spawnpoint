@@ -12,11 +12,12 @@ use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WebhookController;
+use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
 
 // Two guards on every route: ability: is what the token may ask for, can: is what its owner
 // may do. A token never exceeds its owner.
-Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFactor::class])->group(function () {
     // No ability: an app must be able to ask who it is and what it may do.
     Route::get('me', [MeController::class, 'show']);
     Route::get('options', [MeController::class, 'options'])->middleware('ability:servers:read');

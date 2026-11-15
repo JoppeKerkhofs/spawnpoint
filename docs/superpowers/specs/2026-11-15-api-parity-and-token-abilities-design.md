@@ -101,7 +101,11 @@ are the destructive ones. The other six existing names keep their current meanin
 widenings deliberately avoided: `files:write` does not gain world import (that is
 `backups:restore`), and `servers:read` does not gain `nodes:read`.
 
-This is the one place where a token issued before 1.5.0 can do something it could not before.
+This is the one place where a retired name gains something. Beyond it, a token issued before
+1.5.0 reaches the new endpoints that fall under an ability it already holds, as the parity matrix
+lists them: `files:write` gains folder and rename, `logs:read` the whole-log download,
+`servers:power` stop-all (admin owner only), `servers:read` the form options, and `files:read`
+the transfer download address. Each is of the same kind as what that ability already allowed.
 If even that is unacceptable, the alternative is to split retention and cancellation into a
 `backups:configure` ability and leave the alias at read plus create exactly — a twenty-fourth
 ability for a narrow gain. The design takes the simpler option deliberately.

@@ -56,3 +56,19 @@ test('the activity log is read newest first and can be filtered by server', func
     $this->getJson('/api/v1/activity?server=survival', bearer($token))
         ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.subject', 'survival');
 });
+
+test('a setting that is left out of the request keeps its value', function () {
+    Setting::put('memory_limit_mb', '4096');
+    Setting::put('privacy_contact', 'Joppe');
+    Setting::put('activity_retention_days', '30');
+    $token = $this->admin->createToken('Write', ['settings:manage'])->plainTextToken;
+
+    // An app sends what it changes, not the whole form as the web page does.
+    $this->putJson('/api/v1/settings', ['base_domain' => 'mc.example.net', 'bluemap_url' => 'https://maps.example.com', 'activity_retention_days' => null], bearer($token))
+        ->assertOk();
+
+    expect(Setting::value('memory_limit_mb'))->toBe('4096')
+        ->and(Setting::value('privacy_contact'))->toBe('Joppe')
+        // Sent as null, so this one is cleared on purpose and the environment's value applies again.
+        ->and(Setting::query()->find('activity_retention_days'))->toBeNull();
+});

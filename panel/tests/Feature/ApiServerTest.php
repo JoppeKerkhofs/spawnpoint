@@ -4,6 +4,7 @@ use App\Jobs\MoveServer;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\User;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -65,4 +66,25 @@ test('a move is queued and a delete removes the server', function () {
 
     $this->deleteJson('/api/v1/servers/survival', [], bearer($token))->assertStatus(204);
     expect(Server::count())->toBe(0);
+});
+
+test('stop-all carries on when one server refuses', function () {
+    Http::swap(new Factory);
+    Server::factory()->for($this->node)->create(['slug' => 'busy']);
+    Server::factory()->for($this->node)->create(['slug' => 'idle']);
+    Http::fake([
+        'node.test:8080/servers' => Http::response([
+            ['slug' => 'busy', 'state' => 'running', 'detail' => null],
+            ['slug' => 'idle', 'state' => 'running', 'detail' => null],
+        ]),
+        'node.test:8080/servers/busy/stop' => Http::response(status: 409),
+        'node.test:8080/*' => Http::response(status: 202),
+    ]);
+    $token = $this->admin->createToken('Phone', ['servers:power'])->plainTextToken;
+
+    $this->postJson('/api/v1/servers/stop-all', [], bearer($token))
+        ->assertStatus(202)
+        ->assertJsonPath('failed', ['busy']);
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/servers/idle/stop'));
 });
