@@ -2,6 +2,7 @@
 
 use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
+use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\ServerController;
 use Illuminate\Support\Facades\Route;
@@ -58,6 +59,9 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::get('servers/{server}/files', [ServerController::class, 'files'])->middleware('ability:files:read');
         Route::put('servers/{server}/files', [ServerController::class, 'writeFile'])->middleware('ability:files:write');
         Route::delete('servers/{server}/files', [ServerController::class, 'deleteFile'])->middleware('ability:files:write');
+        Route::post('servers/{server}/files/folder', [FileController::class, 'folder'])->middleware('ability:files:write');
+        Route::post('servers/{server}/files/rename', [FileController::class, 'rename'])->middleware('ability:files:write');
+
         // Either is enough: a token that may write could always fetch both addresses.
         Route::get('servers/{server}/files/transfer', [ServerController::class, 'transfer'])->middleware('ability:files:read,files:write');
     });
@@ -65,4 +69,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
     Route::post('servers/{server}/power/{action}', [ServerController::class, 'power'])
         ->whereIn('action', PowerServer::ACTIONS)
         ->middleware(['ability:servers:power', 'can:act,server,"power"']);
+
+    Route::get('servers/{server}/logs/download', [FileController::class, 'log'])
+        ->middleware(['ability:logs:read', 'can:act,server,"logs"']);
 });

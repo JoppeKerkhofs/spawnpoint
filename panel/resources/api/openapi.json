@@ -820,7 +820,7 @@
         "/servers/{server}/files/transfer": {
             "get": {
                 "summary": "Get addresses for uploading and downloading files of any size",
-                "x-ability": "files:write",
+                "x-ability": "files:read",
                 "parameters": [
                     {
                         "name": "server",
@@ -861,7 +861,7 @@
                         "description": "The Rust service on the host did not answer or refused."
                     }
                 },
-                "description": "Upload with PUT to the upload address plus \"&path=<folder>&name=<file name>\", with the file as the request body. Download with GET from the download address plus \"&path=<file>\"."
+                "description": "Needs files:read for the download address; the upload address is only in the answer for a token with files:write. Upload with PUT to the upload address plus \"&path=<folder>&name=<file name>\", with the file as the request body. Download with GET from the download address plus \"&path=<file>\"."
             }
         },
         "/me": {
@@ -1052,6 +1052,51 @@
                 "responses": {
                     "202": {
                         "description": "The import has started"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/files/folder": {
+            "post": {
+                "summary": "Make a folder",
+                "x-ability": "files:write",
+                "description": "Needs files:write and the files permission on the server.",
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "422": {
+                        "description": "The path was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/files/rename": {
+            "post": {
+                "summary": "Rename or move a file",
+                "x-ability": "files:write",
+                "description": "Needs files:write and the files permission on the server.",
+                "responses": {
+                    "200": {
+                        "description": "Renamed"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/logs/download": {
+            "get": {
+                "summary": "Download a whole log file",
+                "x-ability": "logs:read",
+                "description": "Needs logs:read and the logs permission on the server. Comes back as plain text, gzipped files unpacked.",
+                "responses": {
+                    "200": {
+                        "description": "The log"
+                    },
+                    "404": {
+                        "description": "No such log file"
                     }
                 },
                 "parameters": []
