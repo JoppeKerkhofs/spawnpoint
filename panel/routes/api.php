@@ -4,6 +4,7 @@ use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +41,11 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::post('servers/{server}/backups', [BackupController::class, 'store'])->middleware('ability:backups:create');
         Route::delete('servers/{server}/backups/running', [BackupController::class, 'cancel'])->middleware('ability:backups:create');
         Route::put('servers/{server}/backups/retention', [BackupController::class, 'retention'])->middleware('ability:backups:create');
+        Route::get('servers/{server}/schedules', [ScheduleController::class, 'index'])->middleware('ability:schedules:manage');
+        Route::post('servers/{server}/schedules', [ScheduleController::class, 'store'])->middleware('ability:schedules:manage');
+        Route::put('servers/{server}/schedules/{schedule}', [ScheduleController::class, 'update'])->middleware('ability:schedules:manage');
+        Route::delete('servers/{server}/schedules/{schedule}', [ScheduleController::class, 'destroy'])->middleware('ability:schedules:manage');
+
         Route::get('servers/{server}/import', [BackupController::class, 'imports'])->middleware('ability:backups:restore');
         Route::post('servers/{server}/import', [BackupController::class, 'import'])->middleware('ability:backups:restore');
 

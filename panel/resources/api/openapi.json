@@ -1101,6 +1101,57 @@
                 },
                 "parameters": []
             }
+        },
+        "/servers/{server}/schedules": {
+            "get": {
+                "summary": "List the server's scheduled actions",
+                "x-ability": "schedules:manage",
+                "description": "Needs schedules:manage and the backups permission on the server.",
+                "responses": {
+                    "200": {
+                        "description": "The schedules"
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Add a scheduled action",
+                "x-ability": "schedules:manage",
+                "description": "Needs schedules:manage. A backup, restart, start, stop or console command, daily or on one weekday.",
+                "responses": {
+                    "201": {
+                        "description": "The schedule"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/schedules/{schedule}": {
+            "put": {
+                "summary": "Pause or resume a schedule",
+                "x-ability": "schedules:manage",
+                "description": "Needs schedules:manage.",
+                "responses": {
+                    "200": {
+                        "description": "The schedule"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Remove a schedule",
+                "x-ability": "schedules:manage",
+                "description": "Needs schedules:manage.",
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    }
+                },
+                "parameters": []
+            }
         }
     }
 }
