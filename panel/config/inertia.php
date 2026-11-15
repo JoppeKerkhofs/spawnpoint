@@ -16,7 +16,8 @@ return [
     */
 
     'ssr' => [
-        'enabled' => true,
+        // Off in tests: with a Vite dev server running, every rendered page would call it.
+        'enabled' => (bool) env('INERTIA_SSR_ENABLED', true),
         'url' => 'http://127.0.0.1:13714',
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 
