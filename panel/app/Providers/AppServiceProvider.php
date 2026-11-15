@@ -48,6 +48,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
             $request->bearerToken() !== null ? hash('sha256', $request->bearerToken()) : (string) ($request->user()?->id ?: $request->ip()),
         ));
+
+        // Unauthenticated, so by address. Starting a pairing writes a row, so it is tight; the
+        // app then polls every 3 seconds, which is 20 a minute, and gets room above that.
+        RateLimiter::for('pairing', fn (Request $request) => Limit::perMinute(5)->by((string) $request->ip()));
+        RateLimiter::for('pairing-poll', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
     }
 
     /**

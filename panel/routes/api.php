@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\ModpackController;
 use App\Http\Controllers\Api\V1\NodeController;
+use App\Http\Controllers\Api\V1\PairingController;
 use App\Http\Controllers\Api\V1\PanelController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
@@ -112,4 +113,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::get('modpacks/search', [ModpackController::class, 'search']);
         Route::get('modpacks/versions', [ModpackController::class, 'versions']);
     });
+});
+
+// Pairing a device. No token yet, so each of the two is guarded by a limiter of its own.
+Route::prefix('v1')->group(function () {
+    Route::post('pair', [PairingController::class, 'start'])->middleware('throttle:pairing');
+    Route::post('pair/token', [PairingController::class, 'token'])->middleware('throttle:pairing-poll');
 });

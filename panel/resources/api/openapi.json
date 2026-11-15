@@ -239,11 +239,17 @@
                                                     ]
                                                 },
                                                 "detail": {
-                                                    "type": ["string", "null"],
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
                                                     "description": "Why the server is in this state, when there is something to say."
                                                 },
                                                 "players": {
-                                                    "type": ["object", "null"],
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
                                                     "properties": {
                                                         "online": {
                                                             "type": "integer"
@@ -260,7 +266,10 @@
                                                     }
                                                 },
                                                 "usage": {
-                                                    "type": ["object", "null"],
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
                                                     "properties": {
                                                         "at": {
                                                             "type": "integer"
@@ -286,10 +295,16 @@
                                                     }
                                                 },
                                                 "disk_bytes": {
-                                                    "type": ["integer", "null"]
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
                                                 },
                                                 "last_backup": {
-                                                    "type": ["integer", "null"],
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
                                                     "description": "Unix seconds."
                                                 }
                                             }
@@ -356,7 +371,12 @@
                         "required": true,
                         "schema": {
                             "type": "string",
-                            "enum": ["start", "stop", "restart", "kill"]
+                            "enum": [
+                                "start",
+                                "stop",
+                                "restart",
+                                "kill"
+                            ]
                         }
                     }
                 ],
@@ -640,7 +660,9 @@
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "enum": [1]
+                            "enum": [
+                                1
+                            ]
                         },
                         "description": "Set to 1 to read the path as a text file of up to 1 MB."
                     }
@@ -713,7 +735,10 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["path", "content"],
+                                "required": [
+                                    "path",
+                                    "content"
+                                ],
                                 "properties": {
                                     "path": {
                                         "type": "string",
@@ -778,7 +803,9 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["path"],
+                                "required": [
+                                    "path"
+                                ],
                                 "properties": {
                                     "path": {
                                         "type": "string"
@@ -1385,6 +1412,39 @@
                 "responses": {
                     "200": {
                         "description": "The versions"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/pair": {
+            "post": {
+                "summary": "Start pairing a device",
+                "description": "Needs no token. Answers with a code to show the person and a secret to keep. Show the code; they approve it in the panel.",
+                "responses": {
+                    "201": {
+                        "description": "The code and the secret"
+                    },
+                    "429": {
+                        "description": "More than 5 pairings started from this address in a minute"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/pair/token": {
+            "post": {
+                "summary": "Collect the token once the pairing is approved",
+                "description": "Needs no token. Poll with the code and the secret, waiting the interval the pairing answer gave: 202 while it is pending, 200 with the token once approved. The pairing is gone after that.",
+                "responses": {
+                    "200": {
+                        "description": "The token"
+                    },
+                    "202": {
+                        "description": "Nobody has approved it yet"
+                    },
+                    "404": {
+                        "description": "Unknown, expired or already collected"
                     }
                 },
                 "parameters": []

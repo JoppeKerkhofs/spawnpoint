@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ActivityLog;
+use App\Models\DevicePairing;
 use App\Models\Setting;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -17,6 +18,9 @@ class PruneActivity extends Command
      */
     public function handle(): int
     {
+        $pairings = DevicePairing::pruneExpired();
+        $this->info("{$pairings} pairings that nobody finished deleted.");
+
         $days = (int) Setting::value('activity_retention_days');
 
         if ($days < 1) {
