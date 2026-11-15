@@ -1,12 +1,17 @@
 <?php
 
 use App\Actions\Servers\PowerServer;
+use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\ServerController;
 use Illuminate\Support\Facades\Route;
 
 // Two guards on every route: ability: is what the token may ask for, can: is what its owner
 // may do. A token never exceeds its owner.
 Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    // No ability: an app must be able to ask who it is and what it may do.
+    Route::get('me', [MeController::class, 'show']);
+    Route::get('options', [MeController::class, 'options'])->middleware('ability:servers:read');
+
     Route::get('servers', [ServerController::class, 'index'])->middleware('ability:servers:read');
 
     Route::middleware('can:view,server')->group(function () {
