@@ -23,6 +23,7 @@ class ScheduleController extends Controller
             // The same limits the Rust service applies to a command.
             'command' => ['nullable', 'required_if:action,command', 'string', 'max:500', 'regex:/^[^-\x00-\x1F\x7F][^\x00-\x1F\x7F]*$/'],
         ]);
+        abort_unless($request->user()->can('act', [$server, Schedule::permission($data['action'])]), 403);
 
         $server->schedules()->create([
             ...$data,
@@ -39,6 +40,7 @@ class ScheduleController extends Controller
     public function update(Request $request, Server $server, Schedule $schedule): RedirectResponse
     {
         abort_unless($schedule->server_id === $server->id, 404);
+        abort_unless($request->user()->can('act', [$server, Schedule::permission($schedule->action)]), 403);
 
         $schedule->update($request->validate(['is_active' => ['required', 'boolean']]));
 
@@ -48,9 +50,10 @@ class ScheduleController extends Controller
     /**
      * Remove a schedule.
      */
-    public function destroy(Server $server, Schedule $schedule): RedirectResponse
+    public function destroy(Request $request, Server $server, Schedule $schedule): RedirectResponse
     {
         abort_unless($schedule->server_id === $server->id, 404);
+        abort_unless($request->user()->can('act', [$server, Schedule::permission($schedule->action)]), 403);
 
         $schedule->delete();
         ActivityLog::record('schedule.delete', $server, ['action' => $schedule->action, 'time' => $schedule->time]);

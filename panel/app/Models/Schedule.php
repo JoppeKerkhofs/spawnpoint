@@ -22,6 +22,19 @@ class Schedule extends Model
     public const array ACTIONS = ['backup', 'restart', 'start', 'stop', 'command'];
 
     /**
+     * The share permission an action needs. Schedules sit under "backups", but one that sends a
+     * command or stops the server does what those permissions guard, so it needs them too.
+     */
+    public static function permission(string $action): string
+    {
+        return match ($action) {
+            'command' => 'commands',
+            'start', 'stop', 'restart' => 'power',
+            default => 'backups',
+        };
+    }
+
+    /**
      * @return BelongsTo<Server, $this>
      */
     public function server(): BelongsTo

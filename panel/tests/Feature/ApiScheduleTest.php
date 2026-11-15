@@ -40,3 +40,25 @@ test('a command schedule needs a command, and a schedule of another server is no
     $this->deleteJson("/api/v1/servers/survival/schedules/{$other->id}", [], bearer($this->token))
         ->assertStatus(404);
 });
+
+test('a schedule needs the permission of what it does, not only the backups permission', function () {
+    $viewer = User::factory()->create();
+    $this->server->viewers()->attach($viewer, ['permissions' => json_encode(['backups'])]);
+    $token = $viewer->createToken('Phone', ['schedules:manage'])->plainTextToken;
+    $command = $this->server->schedules()->create(['action' => 'command', 'time' => '06:00', 'command' => 'say hi', 'is_active' => false]);
+
+    $this->postJson('/api/v1/servers/survival/schedules', ['action' => 'backup', 'time' => '04:30'], bearer($token))->assertStatus(201);
+    // Scheduling a command is sending a command; scheduling a stop is using the power buttons.
+    $this->postJson('/api/v1/servers/survival/schedules', ['action' => 'command', 'time' => '04:30', 'command' => 'op Steve'], bearer($token))->assertStatus(403);
+    $this->postJson('/api/v1/servers/survival/schedules', ['action' => 'stop', 'time' => '04:30'], bearer($token))->assertStatus(403);
+    // Nor may someone else's command schedule be switched back on, or removed.
+    $this->putJson("/api/v1/servers/survival/schedules/{$command->id}", ['is_active' => true], bearer($token))->assertStatus(403);
+    $this->deleteJson("/api/v1/servers/survival/schedules/{$command->id}", [], bearer($token))->assertStatus(403);
+
+    // The web form follows the same rule.
+    $this->actingAs($viewer)->post(route('servers.schedules.store', $this->server), ['action' => 'command', 'time' => '04:30', 'command' => 'op Steve'])->assertForbidden();
+    $this->put(route('servers.schedules.update', [$this->server, $command]), ['is_active' => true])->assertForbidden();
+
+    expect(Schedule::query()->where('action', 'command')->where('is_active', true)->count())->toBe(0)
+        ->and(Schedule::query()->where('action', 'stop')->count())->toBe(0);
+});
