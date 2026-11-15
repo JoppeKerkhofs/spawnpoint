@@ -12,6 +12,17 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
     Route::get('me', [MeController::class, 'show']);
     Route::get('options', [MeController::class, 'options'])->middleware('ability:servers:read');
 
+    Route::middleware('can:manage-servers')->group(function () {
+        Route::post('servers', [ServerController::class, 'store'])->middleware('ability:servers:manage');
+        Route::post('servers/stop-all', [ServerController::class, 'stopAll'])->middleware('ability:servers:power');
+        Route::delete('servers/{server}', [ServerController::class, 'destroy'])->middleware('ability:servers:manage');
+        Route::post('servers/{server}/move', [ServerController::class, 'move'])->middleware('ability:servers:manage');
+        Route::post('servers/{server}/dns', [ServerController::class, 'dns'])->middleware('ability:servers:manage');
+    });
+
+    Route::put('servers/{server}', [ServerController::class, 'update'])
+        ->middleware(['ability:servers:configure', 'can:act,server,"configure"']);
+
     Route::get('servers', [ServerController::class, 'index'])->middleware('ability:servers:read');
 
     Route::middleware('can:view,server')->group(function () {

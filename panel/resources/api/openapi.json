@@ -164,6 +164,20 @@
                         "description": "The Rust service on the host did not answer or refused."
                     }
                 }
+            },
+            "post": {
+                "summary": "Create a server",
+                "x-ability": "servers:manage",
+                "description": "Needs servers:manage and an admin owner. Takes the same fields as the web form; the answer has dns_error set when the server was made but its DNS record was refused.",
+                "responses": {
+                    "201": {
+                        "description": "The server"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
             }
         },
         "/servers/{server}": {
@@ -310,6 +324,31 @@
                         "description": "The Rust service on the host did not answer or refused."
                     }
                 }
+            },
+            "put": {
+                "summary": "Change a server's settings and recreate its container",
+                "x-ability": "servers:configure",
+                "description": "Needs servers:configure and the configure permission on the server.",
+                "responses": {
+                    "200": {
+                        "description": "The server"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Delete a server and its container",
+                "x-ability": "servers:manage",
+                "description": "Needs servers:manage and an admin owner. The data folder stays on the host.",
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    }
+                },
+                "parameters": []
             }
         },
         "/servers/{server}/power/{action}": {
@@ -851,6 +890,57 @@
                     },
                     "403": {
                         "description": "The token lacks servers:read"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/stop-all": {
+            "post": {
+                "summary": "Stop every server that is running",
+                "x-ability": "servers:power",
+                "description": "Needs servers:power and an admin owner.",
+                "responses": {
+                    "202": {
+                        "description": "Stopping"
+                    },
+                    "403": {
+                        "description": "The token lacks servers:power, or its owner is not an admin"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/move": {
+            "post": {
+                "summary": "Move a server to another node",
+                "x-ability": "servers:manage",
+                "description": "Needs servers:manage and an admin owner. The move is queued; watch the server's state to see it finish.",
+                "responses": {
+                    "202": {
+                        "description": "The move has started"
+                    },
+                    "422": {
+                        "description": "Not enough memory is free on that node"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/dns": {
+            "post": {
+                "summary": "Add the server's DNS record again",
+                "x-ability": "servers:manage",
+                "description": "Needs servers:manage and an admin owner. Only when Cloudflare is configured.",
+                "responses": {
+                    "200": {
+                        "description": "The record is in place"
+                    },
+                    "404": {
+                        "description": "Cloudflare is not configured"
+                    },
+                    "502": {
+                        "description": "Cloudflare refused the record"
                     }
                 },
                 "parameters": []

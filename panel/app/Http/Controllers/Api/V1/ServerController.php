@@ -2,17 +2,28 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Servers\CreateServer;
+use App\Actions\Servers\DeleteServer;
 use App\Actions\Servers\PowerServer;
+use App\Actions\Servers\UpdateServer;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\FileRequest;
 use App\Http\Requests\LogRequest;
+use App\Http\Requests\StoreServerRequest;
+use App\Http\Requests\UpdateServerRequest;
+use App\Jobs\MoveServer;
 use App\Models\ActivityLog;
+use App\Models\Node;
 use App\Models\Server;
+use App\Services\CloudflareDns;
+use App\Services\MemoryLimit;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Validation\Rule;
 
 class ServerController extends Controller
 {
@@ -170,5 +181,105 @@ class ServerController extends Controller
         }
 
         return response()->json(['message' => "Accepted: {$action} {$server->slug}."], 202);
+    }
+
+    /**
+     * Create a server, the same way the web form does.
+     */
+    public function store(StoreServerRequest $request, CreateServer $createServer): JsonResponse
+    {
+        $server = $createServer($request->user(), $request->validated());
+
+        return response()->json([
+            'data' => self::describe($server, NodeClient::states()),
+            // Null unless the server was made but its DNS record was refused.
+            'dns_error' => $createServer->dnsError,
+        ], 201);
+    }
+
+    /**
+     * Change a server's settings and recreate its container.
+     */
+    public function update(UpdateServerRequest $request, Server $server, UpdateServer $updateServer): JsonResponse
+    {
+        $updateServer($server, [
+            ...$request->validated(),
+            'is_default' => $request->user()->isAdmin() ? $request->boolean('is_default') : $server->is_default,
+        ]);
+
+        return response()->json(['data' => self::describe($server->refresh(), NodeClient::states())]);
+    }
+
+    /**
+     * Delete a server and its container. The data folder stays on the host.
+     */
+    public function destroy(Server $server, DeleteServer $deleteServer): Response
+    {
+        $deleteServer($server);
+
+        return response()->noContent();
+    }
+
+    /**
+     * Hand a server over to another node; the work itself is queued.
+     */
+    public function move(Request $request, Server $server): JsonResponse
+    {
+        $data = $request->validate([
+            'node_id' => ['required', 'integer', Rule::exists('nodes', 'id')->whereNot('id', $server->node_id)],
+        ]);
+
+        $target = Node::query()->whereKey($data['node_id'])->firstOrFail();
+        $free = MemoryLimit::freeMb($target);
+
+        if ($free !== null && $free < $server->memory_mb) {
+            return response()->json(['message' => __('Only :free MB is free on :node, and this server needs :needed MB.', [
+                'free' => $free, 'node' => $target->name, 'needed' => $server->memory_mb,
+            ])], 422);
+        }
+
+        MoveServer::dispatch($server->id, $target->id, $request->user()->id);
+
+        return response()->json(['message' => __('The move has started.')], 202);
+    }
+
+    /**
+     * Add the server's DNS record in Cloudflare again.
+     */
+    public function dns(Server $server): JsonResponse
+    {
+        abort_unless(CloudflareDns::enabled(), 404);
+
+        // Caught here: left alone, the handler in bootstrap/app.php would blame the Rust service.
+        try {
+            CloudflareDns::create($server->hostname, $server->node->dns_target);
+        } catch (ConnectionException|RequestException $exception) {
+            report($exception);
+            ActivityLog::record('dns.failed', $server, ['hostname' => $server->hostname]);
+
+            return response()->json(['message' => __('Cloudflare did not accept the DNS record. Check the token and its zone access in Settings.')], 502);
+        }
+
+        ActivityLog::record('dns.create', $server, ['hostname' => $server->hostname]);
+
+        return response()->json(['message' => __('The DNS record for :hostname is in place.', ['hostname' => $server->hostname])]);
+    }
+
+    /**
+     * Stop every server that is running or starting.
+     */
+    public function stopAll(PowerServer $powerServer): JsonResponse
+    {
+        $up = array_keys(array_filter(
+            NodeClient::states()['servers'],
+            fn (array $live): bool => in_array($live['state'], ['running', 'starting'], true),
+        ));
+
+        $servers = Server::query()->whereIn('slug', $up)->get();
+        foreach ($servers as $server) {
+            $powerServer($server, 'stop');
+        }
+
+        return response()->json(['message' => trans_choice('{0} No server was running.|{1} Stopping one server.|[2,*] Stopping :count servers.', $servers->count())], 202);
     }
 }
