@@ -162,6 +162,34 @@ class ServerController extends Controller
     }
 
     /**
+     * Stop every server that is running or starting.
+     */
+    public function stopAll(PowerServer $powerServer): RedirectResponse
+    {
+        $up = array_keys(array_filter(
+            NodeClient::states()['servers'],
+            fn (array $live): bool => in_array($live['state'], ['running', 'starting'], true),
+        ));
+        $servers = Server::query()->whereIn('slug', $up)->get();
+        $stopped = 0;
+
+        foreach ($servers as $server) {
+            $stopped += (int) $this->attempt(function () use ($powerServer, $server): true {
+                $powerServer($server, 'stop');
+
+                return true;
+            });
+        }
+
+        // A failure has already left its own message.
+        if ($stopped === $servers->count()) {
+            Inertia::flash('toast', ['type' => 'success', 'message' => trans_choice('{0} No server was running.|{1} Stopping one server.|[2,*] Stopping :count servers.', $stopped)]);
+        }
+
+        return back();
+    }
+
+    /**
      * Delete a server and its container.
      */
     public function destroy(Server $server, DeleteServer $deleteServer): RedirectResponse

@@ -77,7 +77,7 @@ class WebhookController extends Controller
         $message = __('This is a test from :name.', ['name' => config('app.name')]);
 
         SendWebhook::dispatchSync($webhook->id, $message, [
-            'event' => 'test', 'server' => null, 'hostname' => null, 'actor' => $request->user()->name,
+            'event' => 'test', 'server' => null, 'name' => null, 'hostname' => null, 'actor' => $request->user()->name,
             'message' => $message, 'at' => now()->toIso8601String(),
         ]);
 

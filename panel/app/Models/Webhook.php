@@ -64,6 +64,7 @@ class Webhook extends Model
             ->each(fn (self $webhook) => SendWebhook::dispatch($webhook->id, $message, [
                 'event' => $event,
                 'server' => $server->slug,
+                'name' => $server->name,
                 'hostname' => $server->hostname,
                 'actor' => $actor,
                 'message' => $message,
@@ -100,7 +101,23 @@ class Webhook extends Model
     public function payload(string $message, array $details): array
     {
         return match ($this->format) {
-            'discord' => ['content' => $message],
+            // An embed: the server as the title, a coloured bar for the kind of news, and the details as fields.
+            'discord' => ['embeds' => [array_filter([
+                'title' => $details['name'] ?? config('app.name'),
+                'description' => $message,
+                'color' => match ($details['event']) {
+                    'server.crashed', 'server.kill', 'server.delete' => 0xD64545,
+                    'server.stop', 'server.offline', 'server.restart' => 0xE0A526,
+                    'server.online', 'server.start', 'server.create' => 0x3FA36B,
+                    default => 0x4F8FD6,
+                },
+                'fields' => isset($details['hostname']) ? [
+                    ['name' => 'Address', 'value' => $details['hostname'], 'inline' => true],
+                    ['name' => 'By', 'value' => $details['actor'], 'inline' => true],
+                ] : null,
+                'footer' => ['text' => config('app.name')],
+                'timestamp' => $details['at'],
+            ])]],
             'slack' => ['text' => $message],
             default => $details,
         };

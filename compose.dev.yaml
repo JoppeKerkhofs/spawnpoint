@@ -1,0 +1,73 @@
+# For working on the panel with PHP and Node on your own machine: the node, the router and
+# the map proxy, without the panel and its database. The node listens on localhost:8080.
+#
+#   docker compose -f compose.dev.yaml up -d --build
+#
+# MCPANEL_TOKEN comes from .env in this folder; `php artisan node:register` prints one.
+
+name: minecraft-panel-dev
+
+services:
+  node:
+    build: ./service
+    init: true
+    restart: unless-stopped
+    environment:
+      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Put the token from "php artisan node:register" in .env}
+      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
+      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+
+  router:
+    image: itzg/mc-router:1.56.4
+    restart: unless-stopped
+    depends_on:
+      - socket-proxy
+    environment:
+      IN_DOCKER: "true"
+      DOCKER_SOCKET: tcp://socket-proxy:2375
+      DOCKER_NETWORK: minecraft
+    ports:
+      - "25565:25565"
+    networks:
+      - minecraft
+      - socket
+
+  maps:
+    image: traefik:v3
+    restart: unless-stopped
+    depends_on:
+      - socket-proxy
+    command:
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.bluemap.address=:8100
+    ports:
+      - "8100:8100"
+    networks:
+      - minecraft
+      - socket
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+
+networks:
+  minecraft:
+    name: minecraft
+  socket:
+    internal: true

@@ -1,0 +1,24 @@
+{
+	admin off
+	frankenphp
+}
+
+:8080 {
+	root * /app/public
+	encode zstd br gzip
+
+	# The browser talks to the Rust service only for what a token authorises: the live
+	# console, uploads and downloads. Its signed API is never reachable through here.
+	@node path_regexp ^/node/servers/[^/]+/(console|upload|download|backups/[^/]+/download)$
+	handle @node {
+		uri strip_prefix /node
+		reverse_proxy {$PANEL_NODE_URL} {
+			# Console output and file transfers are passed on as they come, whatever their size.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		php_server
+	}
+}

@@ -58,6 +58,8 @@ export type Usage = {
     cpu: number;
     memory: number;
     memory_limit: number;
+    // Average milliseconds per game tick, measured once a minute; missing before Minecraft 1.20.3.
+    mspt?: number | null;
 };
 
 export type ServerState = {
@@ -95,15 +97,21 @@ export const typeLabels: Record<string, string> = {
     FABRIC: 'Fabric',
     FORGE: 'Forge',
     NEOFORGE: 'NeoForge',
+    PUMPKIN: 'Pumpkin (Rust)',
     MODRINTH: 'Modrinth modpack',
     AUTO_CURSEFORGE: 'CurseForge modpack',
     FTBA: 'FTB modpack',
 };
 
+// Pumpkin is a native program: it has no Minecraft version to pick and does not use Java.
+export const NATIVE_TYPES = ['PUMPKIN'];
+
 export const software = (server: Server): string =>
-    server.modpack
-        ? `${typeLabels[server.server_type]} · ${server.modpack.name} · Java ${server.java_version}`
-        : `${typeLabels[server.server_type]} ${server.mc_version === 'LATEST' ? 'latest' : server.mc_version} · Java ${server.java_version}`;
+    NATIVE_TYPES.includes(server.server_type)
+        ? `${typeLabels[server.server_type]} · latest release`
+        : server.modpack
+          ? `${typeLabels[server.server_type]} · ${server.modpack.name} · Java ${server.java_version}`
+          : `${typeLabels[server.server_type]} ${server.mc_version === 'LATEST' ? 'latest' : server.mc_version} · Java ${server.java_version}`;
 
 // States the Rust service reports, plus two the panel adds: loading and unknown.
 export function serverState(

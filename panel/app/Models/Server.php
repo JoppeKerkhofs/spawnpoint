@@ -41,7 +41,7 @@ class Server extends Model
     use HasFactory;
 
     // These lists mirror the ones the Rust service accepts (service/src/main.rs).
-    public const array TYPES = ['VANILLA', 'PAPER', 'FABRIC', 'FORGE', 'NEOFORGE', 'MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
+    public const array TYPES = ['VANILLA', 'PAPER', 'FABRIC', 'FORGE', 'NEOFORGE', 'PUMPKIN', 'MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
     // Server types that install a whole modpack instead of one loader.
     public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];

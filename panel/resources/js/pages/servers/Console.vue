@@ -333,6 +333,50 @@ onBeforeUnmount(() => {
                                 label="Memory use over the last ten minutes"
                             />
                         </div>
+                        <div v-if="latest.mspt != null">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-muted-foreground"
+                                    >Tick time</span
+                                >
+                                <span
+                                    class="font-semibold tabular-nums"
+                                    :class="
+                                        latest.mspt > 50
+                                            ? 'text-destructive'
+                                            : 'text-primary'
+                                    "
+                                >
+                                    {{ latest.mspt.toFixed(1) }} ms ·
+                                    {{
+                                        Math.min(
+                                            20,
+                                            1000 / Math.max(latest.mspt, 1),
+                                        ).toFixed(1)
+                                    }}
+                                    TPS
+                                </span>
+                            </div>
+                            <Sparkline
+                                :values="
+                                    samples.map((sample) => sample.mspt ?? 0)
+                                "
+                                :max="
+                                    Math.max(
+                                        50,
+                                        ...samples.map(
+                                            (sample) => sample.mspt ?? 0,
+                                        ),
+                                    )
+                                "
+                                label="Milliseconds per game tick over the last ten minutes"
+                            />
+                            <p
+                                class="mt-1 text-[0.8125rem] text-muted-foreground"
+                            >
+                                A tick may take 50 ms; above that the game runs
+                                slow. Measured once a minute.
+                            </p>
+                        </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-muted-foreground">Disk</span>
                             <span
@@ -366,8 +410,17 @@ onBeforeUnmount(() => {
                             <li
                                 v-for="name in players.names"
                                 :key="name"
-                                class="border-t border-divider py-1.5 first:border-t-0"
+                                class="flex items-center gap-2.5 border-t border-divider py-1.5 first:border-t-0"
                             >
+                                <!-- The player's face, from a public skin service by name. -->
+                                <img
+                                    :src="`https://mc-heads.net/avatar/${encodeURIComponent(name)}/24`"
+                                    alt=""
+                                    width="24"
+                                    height="24"
+                                    loading="lazy"
+                                    class="size-6 rounded-sm bg-muted [image-rendering:pixelated]"
+                                />
                                 {{ name }}
                             </li>
                         </ul>

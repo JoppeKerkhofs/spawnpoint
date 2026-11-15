@@ -68,6 +68,8 @@ const USAGE_SAMPLES: usize = 60;
 // Walking a world folder costs more than a sample, so its size is measured once a minute.
 const DISK_EVERY_SAMPLES: u64 = 6;
 const MAX_COMMAND_CHARS: usize = 500;
+// The image runs the server as this user, and only it may write to the console pipe.
+const CONSOLE_USER: &str = "1000";
 // Also bounds what a gzipped log may expand to.
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 // ponytail: bodies are buffered to verify the signature; file uploads will need a streamed scheme.
@@ -100,6 +102,8 @@ pub struct AppState {
     // Per server: the start it belongs to and the moment that start finished booting. Jars newer
     // than that moment were added by a person, not installed by the image, and are not loaded yet.
     booted: Arc<Mutex<HashMap<String, (String, u64)>>>,
+    // The latest average milliseconds per game tick of each server that reports it.
+    mspt: Arc<Mutex<HashMap<String, f64>>>,
 }
 
 #[cfg(test)]
@@ -118,6 +122,7 @@ impl AppState {
             disk: Default::default(),
             cancels: Default::default(),
             booted: Default::default(),
+            mspt: Default::default(),
         }
     }
 }
@@ -178,7 +183,8 @@ fn valid_player_names(names: &[String]) -> bool {
         })
 }
 
-const LOADER_TYPES: [&str; 5] = ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE"];
+// PUMPKIN is a server written in Rust; the image runs it as a native program and ignores the version and Java.
+const LOADER_TYPES: [&str; 6] = ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE", "PUMPKIN"];
 
 fn valid_modpack(server_type: &str, modpack: Option<&str>) -> bool {
     let plain = |text: &str, extra: &[u8]| {
@@ -294,6 +300,8 @@ impl ServerConfig {
             format!("DIFFICULTY={}", self.difficulty),
             format!("MODE={}", self.mode),
             format!("MAX_PLAYERS={}", self.max_players),
+            // Lets commands be written to the server's own console instead of going through RCON.
+            "CREATE_CONSOLE_IN_PIPE=true".into(),
         ]
     }
 }
@@ -729,15 +737,23 @@ pub async fn run_command(docker: &Docker, name: &str, command: &str) -> String {
         return "That command cannot be sent.\n".into();
     }
 
-    exec(docker, name, vec!["rcon-cli", command])
+    // Written to the server's console as if typed there, so the answer shows up in the log like any
+    // other output. A container made before the pipe existed falls back to RCON, which answers directly.
+    if let Ok((_, 0)) = exec(docker, name, vec!["mc-send-to-console", command], Some(CONSOLE_USER)).await {
+        return String::new();
+    }
+
+    exec(docker, name, vec!["rcon-cli", command], None)
         .await
+        .map(|(reply, _)| reply)
         .unwrap_or_else(|_| "The command could not be run. Is the server running?\n".into())
 }
 
-// Runs a program inside the server's container and returns what it printed.
-async fn exec(docker: &Docker, name: &str, command: Vec<&str>) -> Result<String, DockerError> {
+// Runs a program inside the server's container and returns what it printed and its exit code.
+async fn exec(docker: &Docker, name: &str, command: Vec<&str>, user: Option<&str>) -> Result<(String, i64), DockerError> {
     let options = CreateExecOptions {
         cmd: Some(command),
+        user,
         attach_stdout: Some(true),
         attach_stderr: Some(true),
         ..Default::default()
@@ -751,7 +767,12 @@ async fn exec(docker: &Docker, name: &str, command: Vec<&str>) -> Result<String,
         }
     }
 
-    Ok(text)
+    Ok((text, docker.inspect_exec(&created.id).await?.exit_code.unwrap_or(0)))
+}
+
+// "tick query" answers "Average time per tick: 4.2ms (Target: 50.0ms)" on Minecraft 1.20.3 and later.
+fn parse_mspt(reply: &str) -> Option<f64> {
+    reply.split("Average time per tick: ").nth(1)?.split("ms").next()?.trim().parse().ok()
 }
 
 // Who is online, from the same status ping a Minecraft client's server list uses. Unlike the
@@ -764,8 +785,8 @@ async fn players(state: &AppState, slug: &str) -> Value {
         }
     }
 
-    let status = exec(&state.docker, &container_name(slug), vec!["mc-monitor", "status", "-json", "-timeout", "3s"]).await;
-    let info = status.ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let status = exec(&state.docker, &container_name(slug), vec!["mc-monitor", "status", "-json", "-timeout", "3s"], None).await;
+    let info = status.ok().and_then(|(text, _)| serde_json::from_str::<Value>(&text).ok());
     let value = match info.as_ref().map(|info| &info["server_info"]["players"]) {
         Some(found) if found["max"].is_u64() => json!({
             "online": found["online"],
@@ -828,7 +849,7 @@ async fn monitor(state: AppState) {
 
     loop {
         tick.tick().await;
-        let measure_disk = round % DISK_EVERY_SAMPLES == 0;
+        let slow_round = round % DISK_EVERY_SAMPLES == 0;
         round += 1;
 
         let filters = HashMap::from([("label", vec![label.as_str()]), ("status", vec!["running"])]);
@@ -844,7 +865,21 @@ async fn monitor(state: AppState) {
             let Some(Ok(stats)) = state.docker.stats(&container_name(slug), Some(options)).next().await else { continue };
             let previous = previous_cpu.entry(slug.clone()).or_default();
             let first = previous.is_none();
-            let sample = usage_sample(previous, stats);
+            let mut sample = usage_sample(previous, stats);
+
+            // Only a server that answers can be asked how long its ticks take. This goes through RCON
+            // because the answer is needed here, not in the log. Every RCON connection leaves two
+            // lines in the server's log, so it is asked once a minute, not with every sample.
+            if players(&state, slug).await.is_null() {
+                state.mspt.lock().unwrap().remove(slug);
+            } else if slow_round {
+                let reply = exec(&state.docker, &container_name(slug), vec!["rcon-cli", "tick query"], None).await;
+                match reply.ok().and_then(|(reply, _)| parse_mspt(&reply)) {
+                    Some(mspt) => state.mspt.lock().unwrap().insert(slug.clone(), mspt),
+                    None => state.mspt.lock().unwrap().remove(slug),
+                };
+            }
+            sample["mspt"] = json!(state.mspt.lock().unwrap().get(slug));
 
             // The first sample has no CPU reading yet.
             if !first {
@@ -855,7 +890,6 @@ async fn monitor(state: AppState) {
                     samples.pop_front();
                 }
             }
-            players(&state, slug).await;
 
             // Once per start, when the server first answers as running: from then on a new jar is a person's doing.
             if let Ok(Some(inspected)) = managed(&state.docker, slug).await {
@@ -868,7 +902,7 @@ async fn monitor(state: AppState) {
             }
 
             // Also the first time a server is seen, so a new one has a figure at once.
-            if measure_disk || !state.disk.lock().unwrap().contains_key(slug) {
+            if slow_round || !state.disk.lock().unwrap().contains_key(slug) {
                 if let Some(bytes) = folder_bytes(FsPath::new(&*state.data_dir).join(slug)).await {
                     state.disk.lock().unwrap().insert(slug.clone(), bytes);
                 }
@@ -877,6 +911,7 @@ async fn monitor(state: AppState) {
 
         previous_cpu.retain(|slug, _| running.contains(slug));
         state.usage.lock().unwrap().retain(|slug, _| running.contains(slug));
+        state.mspt.lock().unwrap().retain(|slug, _| running.contains(slug));
     }
 }
 
@@ -931,11 +966,24 @@ async fn console_session(state: AppState, slug: String, write: bool, mut socket:
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => continue,
             },
-            Some(chunk) = logs.next() => json!({ "t": "log", "d": chunk.to_string() }),
+            Some(chunk) = logs.next() => {
+                let text = chunk.to_string();
+                // Left by the tick time measurement, once a minute; noise to someone reading the console.
+                if text.contains("Thread RCON Client") {
+                    continue;
+                }
+                // Someone came or went: read the player list again right away instead of at the next round.
+                if text.contains("joined the game") || text.contains("left the game") {
+                    state.players.lock().unwrap().remove(&slug);
+                    player_check.reset_after(Duration::from_secs(1));
+                }
+                json!({ "t": "log", "d": text })
+            }
             _ = player_check.tick() => json!({ "t": "players", "d": players(&state, &slug).await }),
             Some(sample) = stats.next() => {
                 let mut frame = usage_sample(&mut previous_cpu, sample);
                 frame["t"] = json!("stats");
+                frame["mspt"] = json!(state.mspt.lock().unwrap().get(&slug));
                 frame
             }
         };
@@ -1104,6 +1152,7 @@ async fn main() {
         disk: Default::default(),
         cancels: Default::default(),
         booted: Default::default(),
+        mspt: Default::default(),
     };
     let app = Router::new()
         .route("/servers", get(list_servers))
@@ -1186,6 +1235,13 @@ mod tests {
         assert!(!valid_command("say a\nstop"));
         assert!(valid_log_name("latest.log") && valid_log_name("2026-11-14-1.log.gz"));
         assert!(!valid_log_name("../server.properties") && !valid_log_name("ops.json") && !valid_log_name(".log"));
+    }
+
+    #[test]
+    fn the_tick_time_is_read_from_the_tick_query_reply() {
+        let reply = "The game is running normally\nTarget tick rate: 20.0 per second.\nAverage time per tick: 4.2ms (Target: 50.0ms)\nPercentiles: P50: 3.9ms";
+        assert_eq!(parse_mspt(reply), Some(4.2));
+        assert_eq!(parse_mspt("Unknown or incomplete command"), None);
     }
 
     fn config(change: impl FnOnce(&mut Value)) -> Result<ServerConfig, serde_json::Error> {

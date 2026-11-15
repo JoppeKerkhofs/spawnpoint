@@ -5,6 +5,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Services\NodeClient;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 
 afterEach(function () {
@@ -61,4 +62,15 @@ test('browser addresses go through the panel when a public node path is set', fu
     expect($client->consoleUrl($server, true))->toStartWith('wss://panel.example.com/node/servers/survival/console?token=')
         ->and($client->fileUrl($server, 'upload'))->toStartWith('https://panel.example.com/node/servers/survival/upload?token=')
         ->and($client->backupUrl($server, '1.tar.gz'))->toStartWith('https://panel.example.com/node/servers/survival/backups/1.tar.gz/download?token=');
+});
+
+test('only a trusted proxy is believed about https and the visitor\'s address', function () {
+    Route::get('whoami', fn () => [request()->ip(), request()->isSecure()]);
+    $forwarded = ['X-Forwarded-For' => '203.0.113.9', 'X-Forwarded-Proto' => 'https'];
+
+    config(['trustedproxy.proxies' => null]);
+    $this->get('whoami', $forwarded)->assertExactJson(['127.0.0.1', false]);
+
+    config(['trustedproxy.proxies' => '127.0.0.0/8,10.0.0.0/8']);
+    $this->get('whoami', $forwarded)->assertExactJson(['203.0.113.9', true]);
 });

@@ -44,7 +44,12 @@ test('a power action reaches the webhooks that asked for it, of users who can se
 
     $this->actingAs($this->admin)->post(route('servers.power', [$this->server, 'stop']));
 
-    Http::assertSent(fn (Request $request) => $request->url() === 'https://93.184.216.34/discord' && $request->data() === ['content' => 'Joppe stopped Survival.']);
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://93.184.216.34/discord'
+        && data_get($request->data(), 'embeds.0.title') === 'Survival'
+        && data_get($request->data(), 'embeds.0.description') === 'Joppe stopped Survival.'
+        && data_get($request->data(), 'embeds.0.color') === 0xE0A526
+        && data_get($request->data(), 'embeds.0.fields.0.value') === $this->server->hostname
+        && ! isset($request->data()['content']));
     Http::assertNotSent(fn (Request $request) => (bool) preg_match('#/(crash|paused|outsider)$#', $request->url()));
     expect($discord->refresh()->last_status)->toBe(204);
 });

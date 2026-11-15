@@ -11,7 +11,7 @@ import type {
     Server,
     ServerOptions,
 } from '@/lib/servers';
-import { PACK_TYPES, title, typeLabels } from '@/lib/servers';
+import { NATIVE_TYPES, PACK_TYPES, title, typeLabels } from '@/lib/servers';
 
 const props = defineProps<{
     options: ServerOptions;
@@ -39,6 +39,9 @@ const isPack = ref(PACK_TYPES.includes(initialType));
 const loader = ref(isPack.value ? 'PAPER' : initialType);
 const platform = ref<PackPlatform>(
     isPack.value ? (initialType as PackPlatform) : 'MODRINTH',
+);
+const isNative = computed(
+    () => !isPack.value && NATIVE_TYPES.includes(loader.value),
 );
 const typeButton =
     'flex h-9 cursor-pointer items-center rounded-md border border-primary px-3 text-sm has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50';
@@ -115,8 +118,23 @@ const selectClass =
                 :error="errors.modpack_project"
             />
 
+            <template v-if="isNative">
+                <input type="hidden" name="mc_version" value="LATEST" />
+                <p class="text-sm text-muted-foreground">
+                    Pumpkin is a Minecraft server written in Rust. It is fast
+                    and light, but still in development: not every game feature
+                    works yet, plugins and mods for other servers do not load,
+                    and its world format can change between releases. The newest
+                    release is installed; it follows the newest Minecraft
+                    version and does not use Java.
+                </p>
+            </template>
+
             <div class="grid gap-4 sm:grid-cols-2">
-                <div v-if="!isPack" class="grid content-start gap-2">
+                <div
+                    v-if="!isPack && !isNative"
+                    class="grid content-start gap-2"
+                >
                     <Label for="mc_version">Minecraft version</Label>
                     <select
                         id="mc_version"
@@ -147,7 +165,7 @@ const selectClass =
                     <InputError :message="errors.mc_version" />
                 </div>
 
-                <div class="grid content-start gap-2">
+                <div v-show="!isNative" class="grid content-start gap-2">
                     <Label for="java_version">Java version</Label>
                     <select
                         id="java_version"

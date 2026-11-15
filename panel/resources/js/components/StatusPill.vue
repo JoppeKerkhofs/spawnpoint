@@ -33,10 +33,12 @@ const toneClasses = {
         <span
             v-else
             aria-hidden="true"
-            class="size-1.5 rounded-full border-[1.5px] border-current"
+            class="rounded-full border-[1.5px] border-current"
             :class="{
+                'size-1.5': tone !== 'busy',
                 'bg-current': tone === 'ok',
-                'border-r-transparent': tone === 'busy',
+                'size-2.5 border-r-transparent motion-safe:animate-spin':
+                    tone === 'busy',
             }"
         />
         <slot />

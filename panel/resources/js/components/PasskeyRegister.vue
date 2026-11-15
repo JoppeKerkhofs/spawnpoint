@@ -61,7 +61,8 @@ const handleCancel = () => {
 
 <template>
     <div v-if="!isSupported" class="text-sm text-muted-foreground">
-        Passkeys are not supported in this browser.
+        Passkeys need an https address (or localhost) and a browser that
+        supports them.
     </div>
 
     <Button v-else-if="!showForm" variant="outline" @click="showForm = true">

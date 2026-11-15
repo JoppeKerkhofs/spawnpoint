@@ -2,6 +2,7 @@
 
 use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\ApiDocsController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
@@ -14,17 +15,20 @@ use App\Http\Controllers\UserController;
 use App\Http\Middleware\RequireTwoFactor;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'Welcome')->name('home');
+Route::redirect('/', '/dashboard')->name('home');
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('service-status', ServiceStatusController::class)->name('service-status');
+    Route::get('api-docs', ApiDocsController::class)->name('api-docs');
+    Route::get('api-docs/openapi.json', ApiDocsController::class)->name('api-docs.spec');
 
     // Creating and deleting servers is for admins. Everything else on a server goes by the
     // permissions of the share: an admin has them all, a viewer the ones ticked on the Users page.
     Route::middleware('can:manage-servers')->group(function () {
         Route::get('servers/create', [ServerController::class, 'create'])->name('servers.create');
         Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
+        Route::post('servers/stop-all', [ServerController::class, 'stopAll'])->name('servers.stop-all');
         Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
     });
 

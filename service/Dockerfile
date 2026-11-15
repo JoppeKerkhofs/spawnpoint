@@ -1,3 +1,7 @@
+# syntax=docker/dockerfile:1
+# The node: the Rust service that creates the Minecraft containers and handles their files and
+# backups. It needs the Docker socket and the server folders of the host it runs on.
+
 FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./

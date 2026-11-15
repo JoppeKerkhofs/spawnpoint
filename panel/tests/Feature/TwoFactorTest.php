@@ -32,3 +32,11 @@ test('a wrong code does not complete the challenge', function () {
 
     $this->assertGuest();
 });
+
+test('passkeys are bound to the address the panel is reached on, not the configured one', function () {
+    config(['app.url' => 'http://localhost']);
+
+    $this->get('https://panel.example.net/passkeys/login/options')->assertOk()->assertJsonPath('options.rpId', 'panel.example.net');
+
+    expect(config('passkeys.allowed_origins'))->toContain('https://panel.example.net');
+});

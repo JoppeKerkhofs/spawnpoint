@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PasskeysFollowTheAddress;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -9,6 +10,8 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -20,10 +23,17 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // Which proxies are trusted is set in config/trustedproxy.php. From them only the scheme,
+        // port and client address are taken; the host comes from the Host header.
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_PORT
+            | Request::HEADER_X_FORWARDED_PROTO);
+
         // File contents from the editor must be saved exactly as typed, trailing newline included.
         $middleware->trimStrings(except: ['content']);
 
         $middleware->web(append: [
+            PasskeysFollowTheAddress::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -38,6 +48,27 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (RequestException $exception, Request $request) => $request->is('api/*') && in_array($exception->response->status(), [403, 404, 409, 413, 415], true)
             ? response()->json(['message' => 'The Rust service refused: '.$exception->response->status().'.'], $exception->response->status())
             : $nodeFailure($exception, $request));
+
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            $status = $response->getStatusCode();
+
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return $response;
+            }
+
+            if ($status === 419) {
+                Inertia::flash('toast', ['type' => 'error', 'message' => __('The page had expired. Please try again.')]);
+
+                return back();
+            }
+
+            // With debugging on, a crash keeps Laravel's page with the stack trace.
+            if (in_array($status, [403, 404, 500, 503], true) && ! ($status === 500 && config('app.debug'))) {
+                return Inertia::render('Error', ['status' => $status])->toResponse($request)->setStatusCode($status);
+            }
+
+            return $response;
+        });
 
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),

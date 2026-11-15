@@ -267,7 +267,7 @@ components:
         hostname: { type: string, examples: [survival.mc.example.com] }
         server_type:
           type: string
-          enum: [VANILLA, PAPER, FABRIC, FORGE, NEOFORGE, MODRINTH, AUTO_CURSEFORGE, FTBA]
+          enum: [VANILLA, PAPER, FABRIC, FORGE, NEOFORGE, PUMPKIN, MODRINTH, AUTO_CURSEFORGE, FTBA]
         mc_version: { type: string, examples: [LATEST, "1.21.10"] }
         state:
           type: string

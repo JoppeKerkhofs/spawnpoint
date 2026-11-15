@@ -1,0 +1,802 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Minecraft Panel API",
+        "version": "1",
+        "description": "Everything here needs a token from Settings, API tokens, sent as \"Authorization: Bearer <token>\". A token carries abilities, and it can never do more than its owner: an admin's token reaches every server, a viewer's token only the servers shared with them and only what the share allows."
+    },
+    "servers": [
+        {
+            "url": "/api/v1"
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "token": {
+                "type": "http",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "security": [
+        {
+            "token": []
+        }
+    ],
+    "paths": {
+        "/servers": {
+            "get": {
+                "summary": "List the servers with their live state",
+                "x-ability": "servers:read",
+                "parameters": [],
+                "responses": {
+                    "200": {
+                        "description": "The servers the token's owner may see.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "service_online": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "slug": {
+                                                        "type": "string"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "hostname": {
+                                                        "type": "string"
+                                                    },
+                                                    "server_type": {
+                                                        "type": "string",
+                                                        "example": "PAPER"
+                                                    },
+                                                    "mc_version": {
+                                                        "type": "string",
+                                                        "example": "1.21.10"
+                                                    },
+                                                    "state": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "running",
+                                                            "starting",
+                                                            "offline",
+                                                            "error",
+                                                            "installing",
+                                                            "restarting",
+                                                            "backing up",
+                                                            "restoring",
+                                                            "importing",
+                                                            "unknown"
+                                                        ]
+                                                    },
+                                                    "detail": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ],
+                                                        "description": "Why the server is in this state, when there is something to say."
+                                                    },
+                                                    "players": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "online": {
+                                                                "type": "integer"
+                                                            },
+                                                            "max": {
+                                                                "type": "integer"
+                                                            },
+                                                            "names": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "usage": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "at": {
+                                                                "type": "integer"
+                                                            },
+                                                            "cpu": {
+                                                                "type": "number",
+                                                                "description": "Percent of one core."
+                                                            },
+                                                            "memory": {
+                                                                "type": "integer",
+                                                                "description": "Bytes."
+                                                            },
+                                                            "memory_limit": {
+                                                                "type": "integer"
+                                                            },
+                                                            "mspt": {
+                                                                "type": [
+                                                                    "number",
+                                                                    "null"
+                                                                ],
+                                                                "description": "Milliseconds per game tick; 50 or less is full speed."
+                                                            }
+                                                        }
+                                                    },
+                                                    "disk_bytes": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "last_backup": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ],
+                                                        "description": "Unix seconds."
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            }
+        },
+        "/servers/{server}": {
+            "get": {
+                "summary": "Show one server",
+                "x-ability": "servers:read",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The server with its state, players and resource use.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "slug": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "hostname": {
+                                                    "type": "string"
+                                                },
+                                                "server_type": {
+                                                    "type": "string",
+                                                    "example": "PAPER"
+                                                },
+                                                "mc_version": {
+                                                    "type": "string",
+                                                    "example": "1.21.10"
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "running",
+                                                        "starting",
+                                                        "offline",
+                                                        "error",
+                                                        "installing",
+                                                        "restarting",
+                                                        "backing up",
+                                                        "restoring",
+                                                        "importing",
+                                                        "unknown"
+                                                    ]
+                                                },
+                                                "detail": {
+                                                    "type": ["string", "null"],
+                                                    "description": "Why the server is in this state, when there is something to say."
+                                                },
+                                                "players": {
+                                                    "type": ["object", "null"],
+                                                    "properties": {
+                                                        "online": {
+                                                            "type": "integer"
+                                                        },
+                                                        "max": {
+                                                            "type": "integer"
+                                                        },
+                                                        "names": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "usage": {
+                                                    "type": ["object", "null"],
+                                                    "properties": {
+                                                        "at": {
+                                                            "type": "integer"
+                                                        },
+                                                        "cpu": {
+                                                            "type": "number",
+                                                            "description": "Percent of one core."
+                                                        },
+                                                        "memory": {
+                                                            "type": "integer",
+                                                            "description": "Bytes."
+                                                        },
+                                                        "memory_limit": {
+                                                            "type": "integer"
+                                                        },
+                                                        "mspt": {
+                                                            "type": [
+                                                                "number",
+                                                                "null"
+                                                            ],
+                                                            "description": "Milliseconds per game tick; 50 or less is full speed."
+                                                        }
+                                                    }
+                                                },
+                                                "disk_bytes": {
+                                                    "type": ["integer", "null"]
+                                                },
+                                                "last_backup": {
+                                                    "type": ["integer", "null"],
+                                                    "description": "Unix seconds."
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            }
+        },
+        "/servers/{server}/power/{action}": {
+            "post": {
+                "summary": "Start, stop, restart or kill a server",
+                "x-ability": "servers:power",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    },
+                    {
+                        "name": "action",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": ["start", "stop", "restart", "kill"]
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted; the state changes shortly after.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The server is busy with another task, such as a backup."
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            }
+        },
+        "/servers/{server}/console": {
+            "get": {
+                "summary": "Get the address of the live console",
+                "x-ability": "console:use",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A WebSocket address that is valid for one minute.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "url": {
+                                            "type": "string",
+                                            "example": "wss://panel.example.com/node/servers/survival/console?token=..."
+                                        },
+                                        "write": {
+                                            "type": "boolean",
+                                            "description": "Whether this connection may send commands."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                },
+                "description": "Connect to the address with a WebSocket. The server sends JSON frames: {\"t\":\"log\",\"d\":\"text\"} for console output, {\"t\":\"stats\",...} with cpu, memory and mspt every second, {\"t\":\"history\",\"d\":[...]} once with the last ten minutes, {\"t\":\"players\",\"d\":{...}} when the player list is read, and {\"t\":\"out\",\"d\":\"text\"} with the direct reply to a command, if there is one. Send a command as a plain text frame; its output arrives as log frames."
+            }
+        },
+        "/servers/{server}/logs": {
+            "get": {
+                "summary": "List the log files, or read one",
+                "x-ability": "logs:read",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    },
+                    {
+                        "name": "file",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "example": "latest.log"
+                        },
+                        "description": "A name from the list. Compressed logs are unpacked."
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Only return the lines that contain this text."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Without \"file\": {\"files\":[{name,size,modified}]}. With it: {\"file\",\"content\"}.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            }
+        },
+        "/servers/{server}/backups": {
+            "get": {
+                "summary": "List the backups",
+                "x-ability": "backups:manage",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Newest first.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "created": {
+                                                        "type": "integer"
+                                                    },
+                                                    "size": {
+                                                        "type": "integer"
+                                                    },
+                                                    "locked": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "complete",
+                                                            "running",
+                                                            "failed"
+                                                        ]
+                                                    },
+                                                    "by": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            },
+            "post": {
+                "summary": "Start a backup",
+                "x-ability": "backups:manage",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted; the backup appears in the list as \"running\".",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Another task is running on this server."
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            }
+        },
+        "/servers/{server}/files": {
+            "get": {
+                "summary": "List a folder, or read a text file",
+                "x-ability": "files:read",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    },
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Relative to the server's data folder; empty for the folder itself."
+                    },
+                    {
+                        "name": "file",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "enum": [1]
+                        },
+                        "description": "Set to 1 to read the path as a text file of up to 1 MB."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A folder: {\"path\",\"entries\":[{name,dir,size,modified}]}. With file=1: {\"path\",\"content\"}.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                }
+            },
+            "put": {
+                "summary": "Write a text file",
+                "x-ability": "files:write",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Saved.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["path", "content"],
+                                "properties": {
+                                    "path": {
+                                        "type": "string",
+                                        "example": "server.properties"
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "Up to 1 MB."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a file or a folder with everything in it",
+                "x-ability": "files:write",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nothing is at that path."
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["path"],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/servers/{server}/files/transfer": {
+            "get": {
+                "summary": "Get addresses for uploading and downloading files of any size",
+                "x-ability": "files:write",
+                "parameters": [
+                    {
+                        "name": "server",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The server's short name, the first label of its hostname: \"survival\" for survival.mc.example.com."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Two addresses that are valid for five minutes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "upload": {
+                                            "type": "string"
+                                        },
+                                        "download": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No token, or a revoked one."
+                    },
+                    "403": {
+                        "description": "The token lacks the ability, or its owner may not do this on this server."
+                    },
+                    "502": {
+                        "description": "The Rust service on the host did not answer or refused."
+                    }
+                },
+                "description": "Upload with PUT to the upload address plus \"&path=<folder>&name=<file name>\", with the file as the request body. Download with GET from the download address plus \"&path=<file>\"."
+            }
+        }
+    }
+}

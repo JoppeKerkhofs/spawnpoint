@@ -9,6 +9,7 @@ use App\Services\NodeClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
 
@@ -155,4 +156,24 @@ test('a server saved before these options existed still sends valid defaults', f
     (new NodeClient($this->server->node))->apply($this->server->refresh());
 
     Http::assertSent(fn (Request $request) => $request['ops'] === [] && $request['whitelist_on'] === false && $request['cpu_limit'] === null);
+});
+
+test('the api documentation covers every api route', function () {
+    $documented = [];
+    foreach (json_decode(file_get_contents(resource_path('api/openapi.json')), true)['paths'] as $path => $methods) {
+        foreach (array_keys($methods) as $method) {
+            $documented[] = strtoupper($method).' api/v1'.$path;
+        }
+    }
+
+    $routes = collect(Route::getRoutes()->getRoutes())
+        ->filter(fn ($route) => str_starts_with($route->uri(), 'api/v1/'))
+        ->map(fn ($route) => $route->methods()[0].' '.$route->uri())
+        ->sort()->values()->all();
+    sort($documented);
+
+    expect($documented)->toBe($routes);
+
+    $this->actingAs(User::factory()->create())->get(route('api-docs'))->assertOk();
+    $this->get(route('api-docs.spec'))->assertOk()->assertJsonPath('openapi', '3.1.0');
 });

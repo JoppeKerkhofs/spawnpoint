@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('panel:setup')]
-#[Description('Register the Rust service in this container and create the first admin; run on every container start')]
+#[Description('Register the node this panel was started with and create the first admin; run on every container start')]
 class SetupPanel extends Command
 {
     /**

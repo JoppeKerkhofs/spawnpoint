@@ -66,14 +66,23 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
 
-  # Builds on every run; from main it publishes to the GitHub container registry,
-  # as "latest" and as the version in panel/composer.json.
+  # Builds both images on every run; from main it publishes them to the GitHub container
+  # registry, as "latest" and as the version in panel/composer.json.
   image:
     needs: [panel, service]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        include:
+          # The panel: the Laravel application.
+          - suffix: ''
+            context: .
+          # The node: the Rust service.
+          - suffix: -node
+            context: service
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,16 +106,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=image${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=image${{ matrix.suffix }}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, usePage, usePoll } from '@inertiajs/vue3';
+import { Head, Link, router, usePage, usePoll } from '@inertiajs/vue3';
 import { Plus } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
@@ -14,7 +14,7 @@ import {
     typeLabels,
 } from '@/lib/servers';
 import { dashboard } from '@/routes';
-import { create, show } from '@/routes/servers';
+import { create, show, stopAll } from '@/routes/servers';
 
 const props = defineProps<{
     servers: Server[];
@@ -91,6 +91,16 @@ const playersOnline = computed(() =>
     ),
 );
 
+const stopEverything = () => {
+    if (
+        confirm(
+            `Stop all ${runningCount.value} running servers? Players are disconnected.`,
+        )
+    ) {
+        router.post(stopAll.url(), {}, { preserveScroll: true });
+    }
+};
+
 const memoryGb = computed(
     () =>
         props.servers.reduce((total, server) => total + server.memory_mb, 0) /
@@ -112,6 +122,15 @@ const memoryGb = computed(
                     container. Players join on port 25565 by hostname.
                 </p>
             </div>
+            <Button
+                v-if="canManage && runningCount"
+                type="button"
+                variant="outline"
+                class="border-destructive text-destructive hover:text-destructive"
+                @click="stopEverything"
+            >
+                Stop all
+            </Button>
             <Button v-if="canManage" as-child>
                 <Link :href="create()">
                     <Plus aria-hidden="true" />
@@ -263,13 +282,17 @@ const memoryGb = computed(
             <article
                 v-for="{ server, current } in visibleCards"
                 :key="server.id"
-                class="overflow-hidden rounded-md border border-border bg-card"
+                class="relative overflow-hidden rounded-md border border-border bg-card transition-colors hover:border-ring"
             >
                 <div
                     class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
                 >
                     <h2 class="text-lg leading-[1.35] font-bold text-primary">
-                        <Link :href="show({ server: server.slug })">
+                        <!-- The link covers the whole card, so a click anywhere on it opens the server. -->
+                        <Link
+                            :href="show({ server: server.slug })"
+                            class="after:absolute after:inset-0"
+                        >
                             {{ server.name }}
                         </Link>
                     </h2>
@@ -341,6 +364,7 @@ const memoryGb = computed(
                         <div v-else class="text-muted-foreground">—</div>
                     </div>
                     <ServerPowerButtons
+                        class="relative z-10"
                         :slug="server.slug"
                         :state="current.state"
                         :can-manage="server.can.includes('power')"

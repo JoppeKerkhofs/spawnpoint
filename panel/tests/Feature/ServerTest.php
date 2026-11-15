@@ -250,3 +250,24 @@ test('a server is still created when cloudflare refuses the dns record', functio
     expect(Server::count())->toBe(1)
         ->and(ActivityLog::query()->where('event', 'dns.failed')->exists())->toBeTrue();
 });
+
+test('stop all stops the servers that are up and leaves the rest alone', function () {
+    $running = Server::factory()->create(['slug' => 'running']);
+    Server::factory()->for($running->node)->create(['slug' => 'starting']);
+    Server::factory()->for($running->node)->create(['slug' => 'resting']);
+    Http::fake([
+        'node.test:8080/servers' => Http::response([
+            ['slug' => 'running', 'state' => 'running', 'detail' => null],
+            ['slug' => 'starting', 'state' => 'starting', 'detail' => null],
+            ['slug' => 'resting', 'state' => 'offline', 'detail' => null],
+        ]),
+        'node.test:8080/servers/*' => Http::response(status: 202),
+    ]);
+
+    $this->actingAs(User::factory()->create())->post(route('servers.stop-all'))->assertForbidden();
+    $this->actingAs(User::factory()->admin()->create())->post(route('servers.stop-all'))->assertRedirect();
+
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/running/stop'));
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/servers/starting/stop'));
+    Http::assertNotSent(fn (Request $request) => str_ends_with($request->url(), '/servers/resting/stop'));
+});

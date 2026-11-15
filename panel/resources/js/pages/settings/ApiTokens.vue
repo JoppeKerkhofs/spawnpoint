@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Form, Head, router } from '@inertiajs/vue3';
+import { Form, Head, Link, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { apiDocs } from '@/routes';
 import { destroy, index, store } from '@/routes/api-tokens';
 
 type Token = {
@@ -64,6 +65,12 @@ const revoke = (token: Token) => {
             title="API tokens"
             description="Let another app, such as a phone app, use the panel through /api/v1. A token can never do more than your own role allows."
         />
+
+        <p class="text-sm">
+            <Link :href="apiDocs()" class="text-primary underline"
+                >Read the API documentation</Link
+            >
+        </p>
 
         <div
             v-if="newToken"

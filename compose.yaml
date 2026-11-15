@@ -1,90 +1,148 @@
-# Profiles: "prod" runs the whole panel from one image; "dev" runs only the Rust service,
-# for a panel started from panel/ with PHP on the host. Set COMPOSE_PROFILES in .env.
+# Runs the panel with its own MySQL database, the node (the Rust service) and the two proxies
+# players and web maps come in through.
+#
+#   docker network create proxy            # once, if your reverse proxy has not created it
+#   cp .env.compose.example .env.compose   # then fill it in
+#   docker compose --env-file .env.compose up -d
+#
+# The app joins the external `proxy` network, so a TLS-terminating reverse proxy on that
+# network can reach it as minecraft-panel-app:8080. Set APP_URL to the https address people use.
 
-x-service-env: &service-env
-  MCPANEL_TOKEN: ${MCPANEL_TOKEN:?copy .env.example to .env and fill it in}
-  MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
-  MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-  MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
-
-x-service-volumes: &service-volumes
-  - /var/run/docker.sock:/var/run/docker.sock
-  # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
-  - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
-  # Outside the data folder, so the file manager can never reach the archives.
-  - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
-  # Host worlds offered for import; read-only.
-  - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+# The web server, the queue worker and the scheduler are the same image with the same settings.
+x-panel: &panel
+  image: ghcr.io/joppekerkhofs/minecraft-panel:${PANEL_VERSION:-latest}
+  restart: unless-stopped
+  environment: &panel-environment
+    APP_KEY: ${APP_KEY:?Set APP_KEY, see .env.compose.example}
+    APP_URL: ${APP_URL:?Set APP_URL to the address people open the panel on}
+    # Believe a reverse proxy on a private network about the visitor's address and https.
+    # Not `*`: the port below is open to anyone, who could then claim any address.
+    TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+    DB_CONNECTION: mysql
+    DB_HOST: db
+    DB_PORT: 3306
+    DB_DATABASE: ${DB_DATABASE:-panel}
+    DB_USERNAME: ${DB_USERNAME:-panel}
+    DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD, see .env.compose.example}
+    # Shared with the node: every request to it is signed with this.
+    MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Set MCPANEL_TOKEN to a random string of at least 32 characters}
+    PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:?Set PANEL_BASE_DOMAIN, for example mc.example.com}
+    PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
+    CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+    CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+    PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
+    # Only used on the first start, to create the first admin.
+    PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
+    PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}
+    # Without an SMTP server, invitations and password reset links are only written to the log.
+    MAIL_MAILER: ${MAIL_MAILER:-log}
+    MAIL_HOST: ${MAIL_HOST:-}
+    MAIL_PORT: ${MAIL_PORT:-587}
+    MAIL_USERNAME: ${MAIL_USERNAME:-}
+    MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-panel@example.com}
+    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Minecraft Panel}
 
 services:
-  app:
-    profiles: [prod]
-    # Pulled from the registry when it is there, built from this checkout otherwise.
-    image: ghcr.io/joppekerkhofs/minecraft-panel:${PANEL_VERSION:-latest}
-    build: .
-    init: true
-    restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      <<: *service-env
-      APP_KEY: ${APP_KEY:-}
-      APP_URL: ${APP_URL:-http://localhost}
-      APP_NAME: Minecraft Panel
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_DATABASE: panel
-      DB_USERNAME: panel
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      PANEL_BASE_DOMAIN: ${PANEL_BASE_DOMAIN:-mc.localhost}
-      PANEL_BLUEMAP_URL: ${PANEL_BLUEMAP_URL:-http://localhost:8100}
-      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
-      PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
-      # Only used on the first start, to create the first admin.
-      PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
-      PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}
-    ports:
-      - "${PANEL_PORT:-80}:80"
-    volumes: *service-volumes
-    networks:
-      - panel
-      - default
-
-  mysql:
-    profiles: [prod]
+  db:
+    # Pinned to a release line: `latest` would jump to the next major version on a pull and
+    # may then refuse the existing data directory.
     image: mysql:8.4
+    container_name: minecraft-panel-database
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: panel
-      MYSQL_USER: panel
-      MYSQL_PASSWORD: ${DB_PASSWORD:-}
+      MYSQL_DATABASE: ${DB_DATABASE:-panel}
+      MYSQL_USER: ${DB_USERNAME:-panel}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD, see .env.compose.example}
+      # Nobody logs in as root; a random password is printed once in the logs of the very first start.
       MYSQL_RANDOM_ROOT_PASSWORD: "yes"
     volumes:
-      - mysql:/var/lib/mysql
+      - database:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u panel -p$$MYSQL_PASSWORD --silent"]
-      interval: 5s
+      test: ["CMD-SHELL", 'mysqladmin ping --host=127.0.0.1 --user="$$MYSQL_USER" --password="$$MYSQL_PASSWORD" --silent']
+      interval: 10s
       timeout: 5s
-      retries: 20
-    # Minecraft containers are never on this network, so they cannot reach the database.
+      retries: 10
+      start_period: 30s
     networks:
       - panel
 
-  service:
-    profiles: [dev]
+  app:
+    <<: *panel
+    # Pulled from the registry; `docker compose build` builds it from this repository instead.
+    # Only here: the queue and the scheduler use the image this one builds.
+    build: .
+    container_name: minecraft-panel-app
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - panel
+      - proxy
+
+  # Sends webhooks and mail.
+  queue:
+    <<: *panel
+    container_name: minecraft-panel-queue
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600"]
+    environment:
+      <<: *panel-environment
+      RUN_MIGRATIONS: "false"
+    healthcheck:
+      disable: true
+    # The app container has migrated the database once it is healthy.
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - panel
+
+  # Starts the scheduled backups and commands, and watches for crashes.
+  scheduler:
+    <<: *panel
+    container_name: minecraft-panel-scheduler
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *panel-environment
+      RUN_MIGRATIONS: "false"
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - panel
+
+  # The only container with the Docker socket and the server folders. It has no published
+  # port: the panel reaches it over the `panel` network, and every request must be signed.
+  node:
+    image: ghcr.io/joppekerkhofs/minecraft-panel-node:${PANEL_VERSION:-latest}
     build: ./service
+    container_name: minecraft-panel-node
     init: true
     restart: unless-stopped
-    environment: *service-env
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes: *service-volumes
+    environment:
+      MCPANEL_TOKEN: ${MCPANEL_TOKEN:?Set MCPANEL_TOKEN to a random string of at least 32 characters}
+      MCPANEL_DATA_DIR: ${MCPANEL_DATA_DIR:-/srv/mc}
+      MCPANEL_BACKUP_DIR: ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      MCPANEL_IMPORT_DIR: ${MCPANEL_IMPORT_DIR:-/srv/mc-import}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same path inside and outside: Docker resolves the servers' bind mounts on the host.
+      - ${MCPANEL_DATA_DIR:-/srv/mc}:${MCPANEL_DATA_DIR:-/srv/mc}
+      # Outside the data folder, so the file manager can never reach the archives.
+      - ${MCPANEL_BACKUP_DIR:-/srv/mc-backups}:${MCPANEL_BACKUP_DIR:-/srv/mc-backups}
+      # Host worlds offered for import; read-only.
+      - ${MCPANEL_IMPORT_DIR:-/srv/mc-import}:${MCPANEL_IMPORT_DIR:-/srv/mc-import}:ro
+    networks:
+      - panel
 
   # Players connect here; it forwards each connection to the server whose hostname they typed.
   router:
-    image: itzg/mc-router
+    image: itzg/mc-router:1.56.4
+    container_name: minecraft-panel-router
     restart: unless-stopped
     depends_on:
       - socket-proxy
@@ -93,7 +151,7 @@ services:
       DOCKER_SOCKET: tcp://socket-proxy:2375
       DOCKER_NETWORK: minecraft
     ports:
-      - "25565:25565"
+      - "${MINECRAFT_PORT:-25565}:25565"
     networks:
       - minecraft
       - socket
@@ -101,6 +159,7 @@ services:
   # Serves each server's BlueMap at /<server>/, for servers that have it switched on.
   maps:
     image: traefik:v3
+    container_name: minecraft-panel-maps
     restart: unless-stopped
     depends_on:
       - socket-proxy
@@ -109,14 +168,15 @@ services:
       - --providers.docker.exposedbydefault=false
       - --entrypoints.bluemap.address=:8100
     ports:
-      - "8100:8100"
+      - "${BLUEMAP_PORT:-8100}:8100"
     networks:
       - minecraft
       - socket
 
   # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
   socket-proxy:
-    image: tecnativa/docker-socket-proxy
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: minecraft-panel-socket-proxy
     restart: unless-stopped
     environment:
       CONTAINERS: 1
@@ -126,14 +186,18 @@ services:
     networks:
       - socket
 
+volumes:
+  database:
+
 networks:
-  # Fixed name: the Rust service attaches every Minecraft container to it.
+  # The panel, its database and the node. Minecraft containers are never on it.
+  panel:
+    driver: bridge
+  # Fixed name: the node attaches every Minecraft container to it.
   minecraft:
     name: minecraft
   socket:
     internal: true
-  panel:
-    internal: true
-
-volumes:
-  mysql:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}
