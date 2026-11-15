@@ -44,7 +44,15 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * The header for a request with an API token. The sanctum guard keeps the first token it saw
+ * for the whole test, so it is told to forget before each one.
+ *
+ * @return array<string, string>
+ */
+function bearer(string $token): array
 {
-    // ..
+    app('auth')->forgetGuards();
+
+    return ['Authorization' => "Bearer {$token}"];
 }
