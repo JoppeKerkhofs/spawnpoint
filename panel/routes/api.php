@@ -4,11 +4,13 @@ use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\ModpackController;
 use App\Http\Controllers\Api\V1\NodeController;
 use App\Http\Controllers\Api\V1\PanelController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 // Two guards on every route: ability: is what the token may ask for, can: is what its owner
@@ -94,5 +96,20 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
         Route::get('settings', [PanelController::class, 'settings'])->middleware('ability:settings:read');
         Route::put('settings', [PanelController::class, 'saveSettings'])->middleware('ability:settings:manage');
         Route::get('activity', [PanelController::class, 'activity'])->middleware('ability:activity:read');
+    });
+
+    Route::patch('me', [MeController::class, 'update'])->middleware('ability:profile:manage');
+
+    Route::middleware('ability:webhooks:manage')->group(function () {
+        Route::get('webhooks', [WebhookController::class, 'index']);
+        Route::post('webhooks', [WebhookController::class, 'store']);
+        Route::put('webhooks/{webhook}', [WebhookController::class, 'update']);
+        Route::delete('webhooks/{webhook}', [WebhookController::class, 'destroy']);
+        Route::post('webhooks/{webhook}/test', [WebhookController::class, 'test']);
+    });
+
+    Route::middleware(['ability:modpacks:search', 'can:search-modpacks'])->group(function () {
+        Route::get('modpacks/search', [ModpackController::class, 'search']);
+        Route::get('modpacks/versions', [ModpackController::class, 'versions']);
     });
 });

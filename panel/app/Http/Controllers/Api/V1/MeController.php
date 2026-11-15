@@ -7,10 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Services\Languages;
 use App\Services\MemoryLimit;
 use App\Services\MinecraftVersions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class MeController extends Controller
 {
@@ -61,5 +63,23 @@ class MeController extends Controller
                 'free_mb' => MemoryLimit::freeMb($node),
             ]),
         ]]);
+    }
+
+    /**
+     * Change the owner's display name and language. Never the e-mail, password, two-factor or tokens.
+     */
+    public function update(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'locale' => ['nullable', 'string', Rule::in(array_keys(Languages::available()))],
+        ]);
+
+        $request->user()->forceFill(array_filter([
+            'name' => $data['name'],
+            'locale' => $data['locale'] ?? null,
+        ]))->save();
+
+        return $this->show($request);
     }
 }

@@ -877,6 +877,20 @@
                     }
                 },
                 "parameters": []
+            },
+            "patch": {
+                "summary": "Change your name and language",
+                "x-ability": "profile:manage",
+                "description": "Needs profile:manage. Nothing else about the account can be changed through the API.",
+                "responses": {
+                    "200": {
+                        "description": "The token's owner"
+                    },
+                    "422": {
+                        "description": "The form was refused"
+                    }
+                },
+                "parameters": []
             }
         },
         "/options": {
@@ -1302,6 +1316,102 @@
                 "responses": {
                     "200": {
                         "description": "The entries"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/webhooks": {
+            "get": {
+                "summary": "List your own webhooks",
+                "x-ability": "webhooks:manage",
+                "description": "Needs webhooks:manage. Only the host of each address is sent back; the rest is the secret.",
+                "responses": {
+                    "200": {
+                        "description": "The webhooks"
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Add a webhook",
+                "x-ability": "webhooks:manage",
+                "description": "Needs webhooks:manage. The address must be https on the public internet.",
+                "responses": {
+                    "201": {
+                        "description": "The webhook"
+                    },
+                    "422": {
+                        "description": "The address was refused"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/webhooks/{webhook}": {
+            "put": {
+                "summary": "Pause or resume a webhook",
+                "x-ability": "webhooks:manage",
+                "description": "Needs webhooks:manage, and the webhook must be yours. Only is_active changes; to change the address, remove the webhook and add it again.",
+                "responses": {
+                    "200": {
+                        "description": "The webhook"
+                    },
+                    "404": {
+                        "description": "Not your webhook"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Remove a webhook",
+                "x-ability": "webhooks:manage",
+                "description": "Needs webhooks:manage, and the webhook must be yours.",
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/webhooks/{webhook}/test": {
+            "post": {
+                "summary": "Send a test message",
+                "x-ability": "webhooks:manage",
+                "description": "Needs webhooks:manage. Answers with what the receiving service replied.",
+                "responses": {
+                    "200": {
+                        "description": "The status the service answered"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/modpacks/search": {
+            "get": {
+                "summary": "Search modpacks",
+                "x-ability": "modpacks:search",
+                "description": "Needs modpacks:search. Modrinth, CurseForge or FTB, chosen with ?platform=.",
+                "responses": {
+                    "200": {
+                        "description": "The results"
+                    },
+                    "422": {
+                        "description": "CurseForge needs an API key"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/modpacks/versions": {
+            "get": {
+                "summary": "List the versions of a modpack",
+                "x-ability": "modpacks:search",
+                "description": "Needs modpacks:search.",
+                "responses": {
+                    "200": {
+                        "description": "The versions"
                     }
                 },
                 "parameters": []
