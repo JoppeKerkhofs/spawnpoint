@@ -29,7 +29,11 @@ class ModController extends Controller implements HasMiddleware
      */
     public static function middleware(): array
     {
-        return [fn (Request $request, Closure $next) => $request->route('server')->hasMods() ? $next($request) : abort(404)];
+        return [function (Request $request, Closure $next) {
+            $server = $request->route('server');
+
+            return $server instanceof Server && $server->hasMods() ? $next($request) : abort(404);
+        }];
     }
 
     /**

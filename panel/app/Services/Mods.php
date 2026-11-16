@@ -7,6 +7,7 @@ use App\Models\Server;
 use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
@@ -69,16 +70,18 @@ class Mods
             'limit' => 20,
         ]);
 
-        return [
-            'mods' => array_map(fn (array $hit): array => [
+        $mods = [];
+        foreach ($found['hits'] as $hit) {
+            $mods[] = [
                 'project' => (string) $hit['project_id'],
                 'name' => (string) $hit['title'],
                 'description' => (string) $hit['description'],
-                'icon' => $hit['icon_url'] ?: null,
+                'icon' => filled($hit['icon_url']) ? (string) $hit['icon_url'] : null,
                 'downloads' => (int) $hit['downloads'],
-            ], $found['hits']),
-            'more' => $found['total_hits'] > $offset + 20,
-        ];
+            ];
+        }
+
+        return ['mods' => $mods, 'more' => $found['total_hits'] > $offset + 20];
     }
 
     /**
@@ -160,7 +163,7 @@ class Mods
                 continue;
             }
 
-            $file = collect($version['files'])->firstWhere('primary', true) ?? $version['files'][0];
+            $file = Arr::first($version['files'], fn (array $file): bool => $file['primary']) ?? $version['files'][0];
             $client->installMod($server, $file['url'], $file['filename'], $file['hashes']['sha512']);
             $installed[] = $id = $version['project_id'];
 
@@ -242,10 +245,10 @@ class Mods
 
         if ($server->server_type === 'FTBA') {
             $pack = "https://api.feed-the-beast.com/v1/modpacks/public/modpack/{$project}";
-            $version = $version !== '' ? $version : (string) (collect(Modpacks::http()->get($pack)->throw()->json('versions'))->last()['id'] ?? '');
-            $targets = collect(Modpacks::http()->get("{$pack}/{$version}")->throw()->json('targets'));
+            $version = $version !== '' ? $version : (string) (Arr::last((array) Modpacks::http()->get($pack)->throw()->json('versions'))['id'] ?? '');
+            $targets = array_column((array) Modpacks::http()->get("{$pack}/{$version}")->throw()->json('targets'), null, 'type');
 
-            return self::pair($targets->firstWhere('type', 'modloader')['name'] ?? null, $targets->firstWhere('type', 'game')['version'] ?? null);
+            return self::pair($targets['modloader']['name'] ?? null, $targets['game']['version'] ?? null);
         }
 
         // A pasted link names the pack, and maybe a version, in its path.

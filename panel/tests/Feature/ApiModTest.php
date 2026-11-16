@@ -3,6 +3,7 @@
 use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\User;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -51,7 +52,7 @@ test('a files:write token installs, updates and removes mods', function () {
     $this->putJson('/api/v1/servers/survival/mods/sodium.jar', [], bearer($this->write))->assertOk()->assertJsonPath('installed', ['Sodium']);
     $this->deleteJson('/api/v1/servers/survival/mods/sodium.jar', [], bearer($this->write))->assertOk();
 
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && $request['name'] === 'sodium-2.jar');
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/servers/survival/mods') && $request->method() === 'POST' && $request['name'] === 'sodium-2.jar');
     expect(ActivityLog::query()->pluck('event')->all())->toBe(['mod.install', 'mod.update', 'mod.remove']);
 });
 
@@ -60,7 +61,7 @@ test('the API explains what it could not do', function () {
     $this->putJson('/api/v1/servers/survival/mods/private.jar', [], bearer($this->write))
         ->assertStatus(422)->assertJsonPath('message', 'Modrinth does not know this file, so it cannot be updated here.');
 
-    Http::swap(new Illuminate\Http\Client\Factory);
+    Http::swap(new Factory);
     Http::fake(['node.test:8080/*' => Http::response([]), 'api.modrinth.com/*' => Http::response(status: 500)]);
 
     $this->postJson('/api/v1/servers/survival/mods', ['project' => 'sodium'], bearer($this->write))

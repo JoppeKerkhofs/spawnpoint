@@ -4,6 +4,7 @@ use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\ModController;
 use App\Http\Controllers\Api\V1\ModpackController;
 use App\Http\Controllers\Api\V1\NodeController;
 use App\Http\Controllers\Api\V1\PairingController;
@@ -74,6 +75,15 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFacto
         Route::delete('servers/{server}/files', [ServerController::class, 'deleteFile'])->middleware('ability:files:write');
         Route::post('servers/{server}/files/folder', [FileController::class, 'folder'])->middleware('ability:files:write');
         Route::post('servers/{server}/files/rename', [FileController::class, 'rename'])->middleware('ability:files:write');
+
+        Route::get('servers/{server}/mods', [ModController::class, 'index'])->middleware('ability:files:read');
+        Route::get('servers/{server}/mods/search', [ModController::class, 'search'])->middleware('ability:files:read');
+        Route::post('servers/{server}/mods', [ModController::class, 'store'])->middleware('ability:files:write');
+        // The name becomes part of a path on the node.
+        Route::where(['file' => '[^/]+\\.jar'])->middleware('ability:files:write')->group(function () {
+            Route::put('servers/{server}/mods/{file}', [ModController::class, 'update']);
+            Route::delete('servers/{server}/mods/{file}', [ModController::class, 'destroy']);
+        });
 
         // Either is enough: a token that may write could always fetch both addresses.
         Route::get('servers/{server}/files/transfer', [ServerController::class, 'transfer'])->middleware('ability:files:read,files:write');

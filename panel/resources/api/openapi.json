@@ -1073,6 +1073,164 @@
                 "parameters": []
             }
         },
+        "/servers/{server}/mods": {
+            "get": {
+                "summary": "List the installed mods",
+                "x-ability": "files:read",
+                "description": "Needs files:read and the files permission on the server. Only servers that run Fabric, Forge, NeoForge or a modpack have mods; others answer 404. The list is the server's mods folder; \"target\" is the loader and Minecraft version new mods must fit, or null when unknown.",
+                "responses": {
+                    "200": {
+                        "description": "The mods",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "file": {
+                                                        "type": "string"
+                                                    },
+                                                    "size": {
+                                                        "type": "integer"
+                                                    },
+                                                    "project": {
+                                                        "type": "string",
+                                                        "description": "The Modrinth project, or null for a file Modrinth does not know."
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "icon": {
+                                                        "type": "string"
+                                                    },
+                                                    "version": {
+                                                        "type": "string"
+                                                    },
+                                                    "update": {
+                                                        "type": "boolean",
+                                                        "description": "Whether a newer build for this server exists."
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "target": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": []
+            },
+            "post": {
+                "summary": "Install a mod",
+                "x-ability": "files:write",
+                "description": "Needs files:write and the files permission on the server. Installs the newest build for the server from Modrinth, with the dependencies it requires. It loads on the next restart.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "project": {
+                                        "type": "string",
+                                        "description": "A Modrinth project id or slug.",
+                                        "example": "sodium"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Installed. \"installed\" names what was added; \"missing\" lists required mods that were not, which happens on CurseForge and FTB packs."
+                    },
+                    "422": {
+                        "description": "The mod has no build for this server, or the server's loader could not be determined"
+                    },
+                    "502": {
+                        "description": "Modrinth or the node could not be reached"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/mods/search": {
+            "get": {
+                "summary": "Search mods that fit the server",
+                "x-ability": "files:read",
+                "description": "Needs files:read and the files permission on the server. Only servers that run Fabric, Forge, NeoForge or a modpack have mods; others answer 404. Twenty results at a time, most downloaded first when there is no search text.",
+                "responses": {
+                    "200": {
+                        "description": "The mods, and whether there are more"
+                    },
+                    "422": {
+                        "description": "The server's loader could not be determined"
+                    },
+                    "502": {
+                        "description": "Modrinth could not be reached"
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Search text.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "description": "How many results to skip.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            }
+        },
+        "/servers/{server}/mods/{file}": {
+            "put": {
+                "summary": "Update a mod",
+                "x-ability": "files:write",
+                "description": "Needs files:write and the files permission on the server. Replaces the jar with the newest build for the server. The file is the jar's name in the mods folder.",
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    },
+                    "422": {
+                        "description": "Modrinth does not know this file"
+                    },
+                    "502": {
+                        "description": "Modrinth or the node could not be reached"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Remove a mod",
+                "x-ability": "files:write",
+                "description": "Needs files:write and the files permission on the server. Deletes the jar. The mod stays loaded until the next restart.",
+                "responses": {
+                    "200": {
+                        "description": "Removed"
+                    },
+                    "404": {
+                        "description": "No such file"
+                    }
+                },
+                "parameters": []
+            }
+        },
         "/servers/{server}/logs/download": {
             "get": {
                 "summary": "Download a whole log file",

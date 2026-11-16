@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ModrinthUnavailable;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PasskeysFollowTheAddress;
@@ -55,6 +56,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (RequestException $exception, Request $request) => $request->is('api/*') && in_array($exception->response->status(), [403, 404, 409, 413, 415], true)
             ? response()->json(['message' => 'The Rust service refused: '.$exception->response->status().'.'], $exception->response->status())
             : $nodeFailure($exception, $request));
+
+        $exceptions->render(fn (ModrinthUnavailable $exception, Request $request) => $request->is('api/*')
+            ? response()->json(['message' => 'Modrinth could not be reached.'], 502)
+            : null);
 
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
             $status = $response->getStatusCode();
