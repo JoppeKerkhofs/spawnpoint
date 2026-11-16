@@ -377,6 +377,13 @@ html[data-theme='blocky'] .status-pill {
     font-size: 0.9375rem;
     letter-spacing: 0;
     text-transform: capitalize;
+    /* The header around it shadows its text, which makes dark text on a light pill unreadable. */
+    text-shadow: none;
+}
+
+/* The one round thing in this theme: a square cannot be seen to spin. */
+html[data-theme='blocky'] .status-pill > span[aria-hidden] {
+    border-radius: 9999px !important;
 }
 
 html[data-theme='blocky'] .status-pill[data-tone='ok'] {
