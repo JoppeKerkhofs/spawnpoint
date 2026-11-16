@@ -13,6 +13,7 @@ use App\Http\Controllers\PanelSettingsController;
 use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ServerController;
+use App\Http\Controllers\ServerIconController;
 use App\Http\Controllers\ServiceStatusController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\UserController;
@@ -51,6 +52,8 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
     Route::middleware('can:act,server,"configure"')->group(function () {
         Route::get('servers/{server}/configuration', [ServerController::class, 'configuration'])->name('servers.configuration');
         Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
+        Route::put('servers/{server}/icon', [ServerIconController::class, 'update'])->name('servers.icon.update');
+        Route::delete('servers/{server}/icon', [ServerIconController::class, 'destroy'])->name('servers.icon.destroy');
     });
 
     Route::middleware('can:act,server,"files"')->group(function () {

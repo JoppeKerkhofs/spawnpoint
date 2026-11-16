@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\ServerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\DB;
  * @property int $memory_mb
  * @property array<string, mixed> $settings Game settings; servers saved before a setting existed lack its key.
  * @property array{project: string, name: string, icon: string|null, version?: string|null, version_name?: string|null}|null $modpack
+ * @property string|null $icon The uploaded picture: a 64x64 PNG as base64.
  * @property bool $bluemap_enabled
  * @property bool $is_default
  * @property int $backup_keep
@@ -34,7 +36,9 @@ use Illuminate\Support\Facades\DB;
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'backup_retention_days', 'eula_accepted_at'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'backup_retention_days', 'eula_accepted_at', 'icon'])]
+// The picture travels as "picture" (forUser), not as raw base64 in every list.
+#[Hidden(['icon'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -116,7 +120,15 @@ class Server extends Model
      */
     public function forUser(User $user): array
     {
-        return [...$this->toArray(), 'can' => $this->permissionsFor($user), 'node' => $this->node->name, 'has_mods' => $this->hasMods()];
+        return [...$this->toArray(), 'can' => $this->permissionsFor($user), 'node' => $this->node->name, 'has_mods' => $this->hasMods(), 'picture' => $this->picture(), 'has_own_picture' => $this->icon !== null];
+    }
+
+    /**
+     * What to show for this server: the uploaded picture, else its modpack's, else nothing.
+     */
+    public function picture(): ?string
+    {
+        return $this->icon !== null ? "data:image/png;base64,{$this->icon}" : ($this->modpack['icon'] ?? null);
     }
 
     /**

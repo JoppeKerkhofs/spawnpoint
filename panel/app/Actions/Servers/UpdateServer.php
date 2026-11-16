@@ -21,7 +21,9 @@ class UpdateServer
      */
     public function __invoke(Server $server, array $data): void
     {
-        DB::transaction(function () use ($server, $data): void {
+        $pack = $server->modpack['project'] ?? null;
+
+        DB::transaction(function () use ($server, $data, $pack): void {
             $server->update([
                 'name' => $data['name'],
                 'server_type' => $data['server_type'],
@@ -36,6 +38,10 @@ class UpdateServer
             ]);
 
             self::demoteOtherDefaults($server);
+            // Another pack: its picture is only fetched while the old one is not in the way.
+            if ($server->icon === null && ($server->modpack['project'] ?? null) !== $pack) {
+                rescue(fn () => (new NodeClient($server->node))->deleteFile($server, 'server-icon.png'), report: false);
+            }
             (new NodeClient($server->node))->apply($server);
             ActivityLog::record('server.update', $server);
         });

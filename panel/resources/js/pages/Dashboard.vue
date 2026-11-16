@@ -322,8 +322,16 @@ const memoryGb = computed(
                 <div
                     class="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted px-4 pt-3.5 pb-2.5"
                 >
+                    <img
+                        v-if="server.picture"
+                        :src="server.picture"
+                        alt=""
+                        width="34"
+                        height="34"
+                        class="mr-1.5 size-[34px] shrink-0 [image-rendering:pixelated]"
+                    />
                     <BlockCube
-                        v-if="blocky"
+                        v-else-if="blocky"
                         :texture="cubeTexture(server.server_type)"
                         :size="34"
                         :spin="current.state !== 'offline'"

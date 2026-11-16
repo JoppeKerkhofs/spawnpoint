@@ -25,7 +25,7 @@ x-logging: &logging
 
 # The web server, the queue worker and the scheduler are the same image with the same settings.
 x-panel: &panel
-  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.6.1}
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.6.2}
   restart: unless-stopped
   logging: *logging
   security_opt:
@@ -160,7 +160,7 @@ services:
   # The only container with the Docker socket and the server folders. It has no published
   # port: the panel reaches it over the `panel` network, and every request must be signed.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.1}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.2}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped

@@ -6,6 +6,7 @@ import InputError from '@/components/InputError.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerFields from '@/components/ServerFields.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
+import ServerPicture from '@/components/ServerPicture.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -97,6 +98,8 @@ const remove = async () => {
             </Form>
 
             <aside class="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
+                <ServerPicture :server="server" />
+
                 <SectionCard
                     v-if="dnsEnabled && server.can.includes('admin')"
                     :title="t('DNS record')"

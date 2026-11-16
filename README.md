@@ -125,6 +125,13 @@ with `scripts/check-version.sh`.
 there is no version to fill in; a test keeps them equal to `composer.json`. To run another
 release, set `PANEL_VERSION` in the env file (for example `1.2.0`); it pins both images.
 
+## Server pictures
+
+On a server's Configuration page you can upload a picture. Players see it in their server list
+after the next restart, and the panel shows it in its own lists. Any image works: the browser
+cuts it to a square and scales it to the 64 by 64 pixels Minecraft wants. A modpack server shows
+its pack's picture until you upload one.
+
 ## Web maps behind your proxy
 
 The `maps` container serves every server's BlueMap over plain http on port 8100, open to

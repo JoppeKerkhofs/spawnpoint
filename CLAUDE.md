@@ -77,6 +77,12 @@ sends it for everything a person does; `servers:broadcast` (started every minute
 two seconds, only while a page is connected) sends `state` and caches what it fetched for
 `NodeClient::recentStates()`. Reverb's credentials are derived from `APP_KEY`.
 
+**Pictures.** A server's picture is `servers.icon` (a 64x64 PNG as base64, hidden; pages get
+`picture`) and the same bytes as `server-icon.png` in its folder, written through the node's
+file API without recreating the container. A modpack server without one gets the pack's picture
+address as `ICON`, which the Minecraft image downloads only while no `server-icon.png` exists.
+The image stops a server whose `ICON` cannot be fetched, so the panel first checks it answers.
+
 **Panel containers.** `app` (web), `queue` (webhooks, mail), `scheduler` (`schedules:run`,
 `servers:watch` and `servers:broadcast` every minute) and `realtime` (`reverb:start`, reached
 through the app's Caddy at `/app/*`) are the same image. Only `app` runs migrations.

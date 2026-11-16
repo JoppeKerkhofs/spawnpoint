@@ -106,6 +106,7 @@ class NodeClient
     public function apply(Server $server, bool $start = false, ?string $importHost = null): void
     {
         $this->send('PUT', "/servers/{$server->slug}", [
+            ...self::packPicture($server),
             'hostname' => $server->hostname,
             'java_version' => $server->java_version,
             'server_type' => $server->server_type,
@@ -313,6 +314,28 @@ class NodeClient
     public static function signature(string $token, int $timestamp, string $method, string $path, string $body): string
     {
         return hash_hmac('sha256', "{$timestamp}\n{$method}\n{$path}\n{$body}", $token);
+    }
+
+    /**
+     * The modpack's picture for the Minecraft image to fetch as the server's own, used while
+     * no server-icon.png exists. Only when the address answers: the image stops a server whose
+     * picture it cannot download. No key at all otherwise, which a node from before 1.6.2 needs.
+     *
+     * @return array{icon?: string}
+     */
+    private static function packPicture(Server $server): array
+    {
+        $address = (string) ($server->modpack['icon'] ?? '');
+
+        if (! str_starts_with($address, 'https://') || preg_match('/^[\x21-\x7E]{1,300}$/', $address) !== 1) {
+            return [];
+        }
+
+        try {
+            return Http::connectTimeout(2)->timeout(4)->head($address)->successful() ? ['icon' => $address] : [];
+        } catch (ConnectionException) {
+            return [];
+        }
     }
 
     /**

@@ -33,6 +33,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFacto
 
     Route::put('servers/{server}', [ServerController::class, 'update'])
         ->middleware(['ability:servers:configure', 'can:act,server,"configure"']);
+    Route::middleware(['ability:servers:configure', 'can:act,server,"configure"'])->group(function () {
+        Route::put('servers/{server}/icon', [ServerController::class, 'icon']);
+        Route::delete('servers/{server}/icon', [ServerController::class, 'removeIcon']);
+    });
 
     Route::get('servers', [ServerController::class, 'index'])->middleware('ability:servers:read');
 

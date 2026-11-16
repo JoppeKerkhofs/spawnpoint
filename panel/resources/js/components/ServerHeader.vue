@@ -90,8 +90,16 @@ const tabs = computed(() =>
             </nav>
 
             <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+                <img
+                    v-if="server.picture"
+                    :src="server.picture"
+                    alt=""
+                    width="44"
+                    height="44"
+                    class="size-11 shrink-0 [image-rendering:pixelated]"
+                />
                 <BlockCube
-                    v-if="blocky"
+                    v-else-if="blocky"
                     :texture="cubeTexture(server.server_type)"
                     :size="44"
                     :spin="current.state !== 'offline'"

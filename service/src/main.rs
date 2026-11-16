@@ -150,6 +150,9 @@ struct ServerConfig {
     // A specific FTB pack version; none installs the newest.
     #[serde(default)]
     modpack_version: Option<String>,
+    // A picture for the Minecraft image to fetch as server-icon.png while the server has none.
+    #[serde(default)]
+    icon: Option<String>,
     // Publishes the server's BlueMap web map under /<slug>/ on the map port.
     #[serde(default)]
     bluemap: bool,
@@ -251,6 +254,9 @@ impl ServerConfig {
             Err("cpu_limit")
         } else if self.seed.as_deref().is_some_and(|seed| seed.chars().count() > 64 || seed.chars().any(char::is_control)) {
             Err("seed")
+        } else if self.icon.as_deref().is_some_and(|icon| !icon.starts_with("https://") || icon.len() > 300 || !icon.bytes().all(|b| b.is_ascii_graphic())) {
+            // It becomes an environment variable the Minecraft image downloads from.
+            Err("icon")
         } else {
             Ok(())
         }
@@ -286,6 +292,9 @@ impl ServerConfig {
         }
         if let Some(seed) = self.seed.as_deref().filter(|seed| !seed.is_empty()) {
             env.push(format!("SEED={seed}"));
+        }
+        if let Some(icon) = &self.icon {
+            env.push(format!("ICON={icon}"));
         }
         // The image fetches the BlueMap build that fits this server from Modrinth. The question mark
         // makes it optional: without a fitting build the server still starts, just without a map.
@@ -1300,6 +1309,19 @@ mod tests {
         });
         change(&mut value);
         serde_json::from_value(value)
+    }
+
+    #[test]
+    fn a_pack_picture_is_a_plain_https_address() {
+        let with = |icon: &str| config(|value| value["icon"] = json!(icon)).unwrap();
+        let picture = "https://cdn.modrinth.com/data/x/icon.png";
+
+        assert_eq!(with(picture).validate(), Ok(()));
+        assert!(with(picture).env().contains(&format!("ICON={picture}")));
+        assert!(!config(|_| {}).unwrap().env().iter().any(|entry| entry.starts_with("ICON=")));
+        assert_eq!(with("http://cdn.modrinth.com/icon.png").validate(), Err("icon"));
+        assert_eq!(with("/etc/passwd").validate(), Err("icon"));
+        assert_eq!(with("https://cdn.modrinth.com/a b.png").validate(), Err("icon"));
     }
 
     #[test]

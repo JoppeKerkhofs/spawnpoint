@@ -336,6 +336,49 @@
                 "parameters": []
             }
         },
+        "/servers/{server}/icon": {
+            "put": {
+                "summary": "Set the server's picture",
+                "x-ability": "servers:configure",
+                "description": "Needs servers:configure and the configure permission on the server. The picture players see in their server list, and the panel shows for the server. It must already be a PNG of exactly 64 by 64 pixels; players see it after the next restart.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "icon": {
+                                        "type": "string",
+                                        "description": "The PNG as a data URL.",
+                                        "example": "data:image/png;base64,iVBORw0KGgo..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Saved; \"picture\" is what is shown now"
+                    },
+                    "422": {
+                        "description": "Not a PNG of 64 by 64 pixels"
+                    }
+                },
+                "parameters": []
+            },
+            "delete": {
+                "summary": "Remove the server's picture",
+                "x-ability": "servers:configure",
+                "description": "Needs servers:configure and the configure permission on the server. A modpack server shows its pack's picture again; \"picture\" in the answer is what is shown now, or null.",
+                "responses": {
+                    "200": {
+                        "description": "Removed"
+                    }
+                },
+                "parameters": []
+            }
+        },
         "/servers/{server}/power/{action}": {
             "post": {
                 "summary": "Start, stop, restart or kill a server",

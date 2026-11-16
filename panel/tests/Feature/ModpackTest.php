@@ -93,13 +93,13 @@ test('ftb search looks up each hit, and a pack is installed by its number and ch
 
 test('a chosen modrinth version is sent as a link to that version', function () {
     Node::factory()->create();
-    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202)]);
+    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202), '*' => Http::response()]);
 
     $this->actingAs(User::factory()->admin()->create())
         ->post(route('servers.store'), packForm(['modpack_version' => 'OWMBuM7X', 'modpack_version_name' => '26.5.1']))
         ->assertSessionHasNoErrors();
 
-    Http::assertSent(fn (Request $request) => $request['modpack'] === 'https://modrinth.com/modpack/cobblemon-fabric/version/OWMBuM7X' && $request['modpack_version'] === null);
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['modpack'] === 'https://modrinth.com/modpack/cobblemon-fabric/version/OWMBuM7X' && $request['modpack_version'] === null);
 });
 
 test('viewers cannot search modpacks', function () {
@@ -110,14 +110,14 @@ test('viewers cannot search modpacks', function () {
 
 test('a modrinth pack is stored and passed to the node', function () {
     Node::factory()->create();
-    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202)]);
+    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202), '*' => Http::response()]);
 
     $this->actingAs(User::factory()->admin()->create())
         ->post(route('servers.store'), packForm())
         ->assertRedirect(route('servers.show', 'cobblemon'));
 
     expect(Server::sole()->modpack)->toBe(['project' => 'cobblemon-fabric', 'name' => 'Cobblemon Official', 'icon' => 'https://cdn.modrinth.com/data/x/icon.png', 'version' => null, 'version_name' => null]);
-    Http::assertSent(fn (Request $request) => $request['server_type'] === 'MODRINTH'
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['server_type'] === 'MODRINTH'
         && $request['modpack'] === 'cobblemon-fabric'
         && $request['cf_api_key'] === null);
 });
@@ -125,12 +125,12 @@ test('a modrinth pack is stored and passed to the node', function () {
 test('a curseforge pack sends the key to the node only', function () {
     config(['panel.curseforge_key' => 'secret-key']);
     Node::factory()->create();
-    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202)]);
+    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202), '*' => Http::response()]);
 
     $this->actingAs(User::factory()->admin()->create())
         ->post(route('servers.store'), packForm(['server_type' => 'AUTO_CURSEFORGE', 'modpack_project' => 'all-the-mods-10']));
 
-    Http::assertSent(fn (Request $request) => $request['modpack'] === 'all-the-mods-10' && $request['cf_api_key'] === 'secret-key');
+    Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['modpack'] === 'all-the-mods-10' && $request['cf_api_key'] === 'secret-key');
 });
 
 test('a pack must be a slug or a modrinth link', function (array $overrides) {
@@ -150,7 +150,7 @@ test('a pack must be a slug or a modrinth link', function (array $overrides) {
 
 test('a plain loader server drops any pack fields', function () {
     Node::factory()->create();
-    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202)]);
+    Http::fake(['node.test:8080/servers/cobblemon' => Http::response(status: 202), '*' => Http::response()]);
 
     $this->actingAs(User::factory()->admin()->create())
         ->post(route('servers.store'), packForm(['server_type' => 'FABRIC']));

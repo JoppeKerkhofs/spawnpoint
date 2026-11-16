@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Servers\CreateServer;
 use App\Actions\Servers\DeleteServer;
 use App\Actions\Servers\PowerServer;
+use App\Actions\Servers\SetServerIcon;
 use App\Actions\Servers\UpdateServer;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\FileRequest;
 use App\Http\Requests\LogRequest;
+use App\Http\Requests\ServerIconRequest;
 use App\Http\Requests\StoreServerRequest;
 use App\Http\Requests\UpdateServerRequest;
 use App\Jobs\MoveServer;
@@ -136,6 +138,7 @@ class ServerController extends Controller
             'hostname' => $server->hostname,
             'server_type' => $server->server_type,
             'mc_version' => $server->mc_version,
+            'picture' => $server->picture(),
             'state' => $live['state'] ?? ($states['online'] ? 'offline' : 'unknown'),
             'detail' => $live['detail'] ?? null,
             'players' => $live['players'] ?? null,
@@ -189,6 +192,26 @@ class ServerController extends Controller
         ]);
 
         return response()->json(['data' => self::describe($server->refresh(), NodeClient::states())]);
+    }
+
+    /**
+     * Set the server's picture: a PNG of 64 by 64 as a data URL.
+     */
+    public function icon(ServerIconRequest $request, Server $server, SetServerIcon $setIcon): JsonResponse
+    {
+        $setIcon($server, $request->png());
+
+        return response()->json(['message' => __('Picture saved. Players see it after the next restart.'), 'picture' => $server->picture()]);
+    }
+
+    /**
+     * Take the server's picture away; a modpack server shows its pack's picture again.
+     */
+    public function removeIcon(Server $server, SetServerIcon $setIcon): JsonResponse
+    {
+        $setIcon($server, null);
+
+        return response()->json(['message' => __('Picture removed. Players see that after the next restart.'), 'picture' => $server->picture()]);
     }
 
     /**

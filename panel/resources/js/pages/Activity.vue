@@ -34,6 +34,7 @@ const labels: Record<string, string> = {
     'server.create': t('Created the server'),
     'server.update': t('Changed the configuration'),
     'server.delete': t('Deleted the server'),
+    'server.icon': t('Changed the picture'),
     'server.start': t('Started the server'),
     'server.stop': t('Stopped the server'),
     'server.restart': t('Restarted the server'),
