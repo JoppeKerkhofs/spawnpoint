@@ -25,10 +25,10 @@ class Changed implements ShouldBroadcastNow
      * Announce a change. Live updates are a convenience, so failing to reach the WebSocket
      * server never fails what caused the change.
      */
-    public static function send(?Server $server, string $what): void
+    public static function send(Server|string|null $server, string $what): void
     {
         try {
-            event(new self($server?->slug, $what));
+            event(new self($server instanceof Server ? $server->slug : $server, $what));
         } catch (Throwable $exception) {
             // Once a minute at most: without the realtime container every action would log this.
             if (Cache::add('live-unreachable', true, 60)) {

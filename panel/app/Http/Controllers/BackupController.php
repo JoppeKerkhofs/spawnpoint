@@ -33,7 +33,7 @@ class BackupController extends Controller
         return Inertia::render('servers/Backups', [
             'server' => $server->forUser($request->user()),
             'autoBackupAt' => $server->schedules()->where(['action' => 'backup', 'is_active' => true])->whereNull('weekday')->value('time'),
-            'states' => Inertia::defer(fn () => NodeClient::states()),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates()),
             'backups' => $backups ?? [],
             'imports' => $imports ?? [],
             // A closure, so an upload can ask for a fresh token first.

@@ -4,7 +4,11 @@ use App\Events\Changed;
 use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\User;
+use App\Services\LiveListeners;
+use App\Services\NodeClient;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function channelsOf(Changed $event): array
@@ -80,4 +84,60 @@ test('pages are told how to connect only when there is something to connect to',
     $this->get(route('dashboard'))->assertInertia(fn (Assert $page) => $page
         ->where('live.key', config('broadcasting.connections.reverb.key'))
         ->missing('live.secret'));
+});
+
+// One node with one server, as its /servers answer; the watcher is told someone is connected.
+function watching(bool $connected, array ...$answers): void
+{
+    test()->mock(LiveListeners::class)->shouldReceive('any')->andReturn($connected);
+    Server::factory()->create(['slug' => 'survival']);
+    $sequence = Http::sequence();
+    foreach ($answers as $answer) {
+        $sequence->push([['slug' => 'survival', 'state' => 'running', 'detail' => null, 'players' => null, 'usage' => ['cpu' => 1], 'disk_bytes' => 1, 'last_backup' => null, 'mods_changed' => 0, ...$answer]]);
+    }
+    Http::fake(['node.test:8080/servers' => $sequence]);
+    Event::fake([Changed::class]);
+}
+
+test('the nodes are left alone while no one is connected', function () {
+    watching(false, []);
+
+    $this->artisan('servers:broadcast --once')->assertSuccessful();
+
+    Http::assertNothingSent();
+});
+
+test('a server whose state changed is announced, once', function () {
+    watching(true, [], [], ['state' => 'offline'], ['state' => 'offline']);
+
+    foreach (range(1, 4) as $run) {
+        $this->artisan('servers:broadcast --once');
+    }
+
+    Event::assertDispatchedTimes(Changed::class, 1);
+    Event::assertDispatched(fn (Changed $event): bool => $event->server === 'survival' && $event->what === 'state');
+});
+
+test('numbers that always move are announced every fifth round only', function () {
+    watching(true, ...array_map(fn (int $cpu): array => ['usage' => ['cpu' => $cpu]], range(1, 6)));
+
+    foreach (range(1, 4) as $run) {
+        $this->artisan('servers:broadcast --once');
+    }
+    Event::assertNotDispatched(Changed::class);
+
+    $this->artisan('servers:broadcast --once');
+    Event::assertDispatchedTimes(Changed::class, 1);
+});
+
+test('pages read the state the watcher just fetched instead of asking the nodes again', function () {
+    watching(true, [], ['state' => 'offline']);
+
+    $this->artisan('servers:broadcast --once');
+    expect(NodeClient::recentStates()['servers']['survival']['state'])->toBe('running');
+    Http::assertSentCount(1);
+
+    // Without a watcher the page asks for itself.
+    Cache::flush();
+    expect(NodeClient::recentStates()['servers']['survival']['state'])->toBe('offline');
 });

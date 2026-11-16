@@ -8,6 +8,7 @@ use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class NodeClient
@@ -44,6 +45,17 @@ class NodeClient
         }
 
         return ['online' => $online, 'servers' => $servers];
+    }
+
+    /**
+     * The state as pages get it: what the watcher (servers:broadcast) fetched a moment ago while
+     * pages are open, so a reload after an announcement costs the nodes nothing, or else live.
+     *
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
+     */
+    public static function recentStates(): array
+    {
+        return Cache::get('server-states') ?? self::states();
     }
 
     /**
