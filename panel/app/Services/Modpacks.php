@@ -109,7 +109,7 @@ class Modpacks
         return null;
     }
 
-    private static function http(): PendingRequest
+    public static function http(): PendingRequest
     {
         return Http::connectTimeout(2)->timeout(5)->withUserAgent('self-hosted-minecraft-panel');
     }

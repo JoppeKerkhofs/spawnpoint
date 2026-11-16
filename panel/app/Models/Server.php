@@ -46,6 +46,9 @@ class Server extends Model
     // Server types that install a whole modpack instead of one loader.
     public const array PACK_TYPES = ['MODRINTH', 'AUTO_CURSEFORGE', 'FTBA'];
 
+    // Loaders whose mods the Mods page can install; modpacks are built on one of them.
+    public const array MOD_LOADERS = ['FABRIC', 'FORGE', 'NEOFORGE'];
+
     public const array JAVA_VERSIONS = [8, 17, 21, 25];
 
     // What a viewer can be allowed on a shared server, beyond seeing it and watching its console.
@@ -113,7 +116,15 @@ class Server extends Model
      */
     public function forUser(User $user): array
     {
-        return [...$this->toArray(), 'can' => $this->permissionsFor($user), 'node' => $this->node->name];
+        return [...$this->toArray(), 'can' => $this->permissionsFor($user), 'node' => $this->node->name, 'has_mods' => $this->hasMods()];
+    }
+
+    /**
+     * Whether mods can be added to this server: a mod loader, or a modpack built on one.
+     */
+    public function hasMods(): bool
+    {
+        return in_array($this->server_type, [...self::MOD_LOADERS, ...self::PACK_TYPES], true);
     }
 
     /**

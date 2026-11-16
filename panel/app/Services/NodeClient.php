@@ -235,6 +235,32 @@ class NodeClient
     }
 
     /**
+     * The jars in the server's mods folder, each with the fingerprint Modrinth knows it by.
+     *
+     * @return list<array{name: string, size: int, sha512: string}>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function mods(Server $server): array
+    {
+        // Every jar is read to fingerprint it, which takes a while for a large pack.
+        return $this->send('GET', "/servers/{$server->slug}/mods", timeout: 30)->json();
+    }
+
+    /**
+     * Have the node download a jar from Modrinth into the mods folder.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function installMod(Server $server, string $url, string $name, string $sha512): void
+    {
+        // ponytail: the node answers once the jar is in place; make it a task if mods outgrow a minute.
+        $this->send('POST', "/servers/{$server->slug}/mods", ['url' => $url, 'name' => $name, 'sha512' => $sha512], timeout: 60);
+    }
+
+    /**
      * List a server's log files, newest first.
      *
      * @return list<array{name: string, size: int, modified: int}>
@@ -447,14 +473,14 @@ class NodeClient
      * @throws ConnectionException
      * @throws RequestException
      */
-    private function send(string $method, string $path, ?array $data = null, string $body = ''): Response
+    private function send(string $method, string $path, ?array $data = null, string $body = '', int $timeout = 5): Response
     {
         $body = $data === null ? $body : json_encode($data, JSON_THROW_ON_ERROR);
         $timestamp = now()->getTimestamp();
 
         return Http::baseUrl($this->node->base_url)
             ->connectTimeout(2)
-            ->timeout(5)
+            ->timeout($timeout)
             ->withHeaders([
                 'X-Timestamp' => (string) $timestamp,
                 'X-Signature' => self::signature($this->node->token, $timestamp, $method, $path, $body),
