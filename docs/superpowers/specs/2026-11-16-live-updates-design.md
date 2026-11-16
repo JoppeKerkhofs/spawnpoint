@@ -1,6 +1,6 @@
 # Live updates over WebSockets
 
-Status: design, not built. Ships with 1.6.0 (not yet published), so the version stays 1.6.0.
+Status: built. Ships with 1.6.0 (not yet published), so the version stays 1.6.0.
 
 ## Intent
 

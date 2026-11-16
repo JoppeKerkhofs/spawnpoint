@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ask } from '@/lib/dialogs';
 import { t } from '@/lib/i18n';
+import { useLiveReload } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import { destroy, search, store, update } from '@/routes/servers/mods';
 
@@ -153,6 +154,12 @@ watch(query, () => {
 void load();
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
+
+// Only for mods: this list is costly, every jar is fingerprinted to make it.
+useLiveReload(
+    (change) => change.server === props.server.slug && change.what === 'mod',
+    ['installed', 'error'],
+);
 </script>
 
 <template>

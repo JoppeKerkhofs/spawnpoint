@@ -14,6 +14,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/lib/i18n';
+import { useLiveReload } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import { files } from '@/routes/servers';
 import {
@@ -83,6 +84,15 @@ watch(
     (file) => (draft.value = file?.content ?? ''),
 );
 const unsaved = computed(() => draft.value !== (props.file?.content ?? ''));
+
+// Never over text that is being written: the file itself is not reloaded, only the folder.
+useLiveReload(
+    (change) =>
+        change.server === props.server.slug &&
+        ['file', 'mod'].includes(change.what),
+    ['entries', 'error'],
+    () => !unsaved.value,
+);
 
 const saveFile = () => {
     router.put(

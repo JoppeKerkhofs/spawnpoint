@@ -51,7 +51,7 @@ class Changed implements ShouldBroadcastNow
             $users = $users->merge(User::query()->whereHas('servers', fn ($servers) => $servers->where('slug', $this->server))->pluck('id'));
         }
 
-        return $users->unique()->map(fn (int $id): PrivateChannel => new PrivateChannel("users.{$id}"))->values()->all();
+        return array_values($users->unique()->map(fn (int $id): PrivateChannel => new PrivateChannel("users.{$id}"))->all());
     }
 
     public function broadcastAs(): string

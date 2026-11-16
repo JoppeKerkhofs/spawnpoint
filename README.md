@@ -124,6 +124,21 @@ with `scripts/check-version.sh`.
 To run a fixed release, set `PANEL_VERSION` in `.env.compose` (for example `1.2.0`); it pins both
 images.
 
+## Live updates
+
+Pages update by themselves: the panel tells open pages over a WebSocket that something changed,
+and the page fetches that part again. The WebSocket server is the `realtime` container, the same
+image as the panel. It has no port of its own: browsers reach it through the panel's address,
+at `/app/...`, so a reverse proxy in front of the panel has to pass WebSocket upgrades on (Caddy
+and Traefik do; nginx needs the `Upgrade` and `Connection` headers).
+
+When you upgrade from a version before 1.6.0, add the `realtime` service and the
+`BROADCAST_CONNECTION: reverb` line from `compose.yaml` to your own compose file. Without them,
+or whenever the connection drops, the pages ask every few seconds as they did before.
+
+While at least one page is open, the scheduler container asks the nodes every two seconds what
+their servers are doing, once for everyone.
+
 ## Mods
 
 Servers that run Fabric, Forge, NeoForge or a modpack have a **Mods** page. It lists the mods

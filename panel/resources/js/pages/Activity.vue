@@ -2,6 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/i18n';
+import { useLiveReload } from '@/lib/live';
 import { index } from '@/routes/activity';
 import { dns } from '@/routes/servers';
 
@@ -14,13 +15,20 @@ type Entry = {
     at: string;
 };
 
-defineProps<{
+const props = defineProps<{
     entries: Entry[];
     server: string;
     dnsRetry: string[];
     newerUrl: string | null;
     olderUrl: string | null;
 }>();
+
+// New entries appear by themselves, but only on the newest page: older pages would shift.
+useLiveReload(
+    (change) => change.what !== 'state',
+    ['entries', 'olderUrl'],
+    () => props.newerUrl === null,
+);
 
 const labels: Record<string, string> = {
     'server.create': t('Created the server'),

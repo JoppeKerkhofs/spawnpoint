@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Link, usePage, usePoll } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import BlockCube from '@/components/BlockCube.vue';
 import BlockySky from '@/components/BlockySky.vue';
 import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { t } from '@/lib/i18n';
+import { useLiveStates } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import { cubeTexture, serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
@@ -24,7 +25,7 @@ const props = defineProps<{
     tab: 'console' | 'configuration' | 'files' | 'mods' | 'logs' | 'backups';
 }>();
 
-usePoll(4000, { only: ['states'] });
+useLiveStates(() => props.server.slug);
 
 const blocky = usePage().props.theme === 'blocky';
 

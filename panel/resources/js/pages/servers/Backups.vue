@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/lib/i18n';
+import { useLiveReload } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import { title } from '@/lib/servers';
 import { importMethod } from '@/routes/servers';
@@ -219,6 +220,13 @@ const submitImport = async () => {
         onError: () => (importing.value = ''),
     });
 };
+// A backup that started, finished or was removed, here or in another tab.
+useLiveReload(
+    (change) =>
+        change.server === props.server.slug &&
+        ['backup', 'world', 'schedule', 'state'].includes(change.what),
+    ['backups', 'schedules', 'autoBackupAt', 'error'],
+);
 </script>
 
 <template>

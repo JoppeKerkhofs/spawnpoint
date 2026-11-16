@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ask } from '@/lib/dialogs';
-import { Head, Link, router, usePage, usePoll } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { Plus } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import BlockCube from '@/components/BlockCube.vue';
@@ -10,6 +10,7 @@ import ServerPowerButtons from '@/components/ServerPowerButtons.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/i18n';
+import { useLiveReload, useLiveStates } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import {
     bytesLabel,
@@ -39,7 +40,9 @@ defineOptions({
     },
 });
 
-usePoll(4000, { only: ['states'] });
+useLiveStates();
+// A server was created, changed or deleted, perhaps by someone else.
+useLiveReload((change) => change.what === 'server', ['servers', 'states']);
 
 const page = usePage();
 const canManage = computed(() => page.props.auth.user.role === 'admin');

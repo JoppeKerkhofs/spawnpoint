@@ -69,8 +69,17 @@ node lists the jars in `mods/` with their SHA-512, and Modrinth names them by th
 (`App\Services\Mods`). To install, the panel picks the build and the node downloads it; the node
 only fetches from `https://cdn.modrinth.com/`, without redirects, and checks the hash.
 
-**Panel containers.** `app` (web), `queue` (webhooks, mail) and `scheduler` (`schedules:run`,
-`servers:watch` every minute) are the same image. Only `app` runs migrations.
+**Live updates.** `App\Events\Changed` (a server's slug or null, and what: `state` or the
+first part of an activity event) is broadcast through Reverb to one private channel per user;
+who gets it is decided when it is sent. It never carries data: pages answer with a partial
+reload (`resources/js/lib/live.ts`), and poll while the socket is down. `ActivityLog::record()`
+sends it for everything a person does; `servers:broadcast` (started every minute, looks every
+two seconds, only while a page is connected) sends `state` and caches what it fetched for
+`NodeClient::recentStates()`. Reverb's credentials are derived from `APP_KEY`.
+
+**Panel containers.** `app` (web), `queue` (webhooks, mail), `scheduler` (`schedules:run`,
+`servers:watch` and `servers:broadcast` every minute) and `realtime` (`reverb:start`, reached
+through the app's Caddy at `/app/*`) are the same image. Only `app` runs migrations.
 
 ## Working on it
 
@@ -144,6 +153,9 @@ was looked at in a browser against a real server.
   connection leaves two lines in the server log.
 - **Modrinth and the node fail alike**: both raise the HTTP client's exceptions. `Mods` wraps
   Modrinth's in `ModrinthUnavailable` so a message can say which of the two it was.
+- **A page that needs fresh data after someone else's action** listens with `useLiveReload`;
+  a new kind of action is announced by recording it in the activity log, nothing else.
+- **Tests run with the `null` broadcaster**, where no channel is registered and `live` is null.
 - **Player lists** come from `mc-monitor status`, which reports at most about a dozen names.
 - **Images are pulled only when missing.** A new server type may need a manual `docker pull`.
 - **A node on the same Docker daemon as another sees its containers too**; only use that for tests.
