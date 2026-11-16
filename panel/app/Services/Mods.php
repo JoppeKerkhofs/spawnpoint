@@ -7,6 +7,7 @@ use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Mods from Modrinth for one server. Nothing is recorded: the server's mods folder is the truth.
@@ -47,6 +48,160 @@ class Mods
         }
 
         return $target;
+    }
+
+    /**
+     * Search Modrinth for mods that have a build for the target and run on a server.
+     *
+     * @param  array{loader: string, version: string}  $target
+     * @return array{mods: list<array{project: string, name: string, description: string, icon: string|null, downloads: int}>, more: bool}
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public static function search(array $target, string $query, int $offset): array
+    {
+        $found = Modpacks::http()->get(self::MODRINTH.'/search', [
+            'query' => $query,
+            'facets' => json_encode([['project_type:mod'], ["categories:{$target['loader']}"], ["versions:{$target['version']}"], ['server_side:required', 'server_side:optional']]),
+            'index' => $query === '' ? 'downloads' : 'relevance',
+            'offset' => $offset,
+            'limit' => 20,
+        ])->throw()->json();
+
+        return [
+            'mods' => array_map(fn (array $hit): array => [
+                'project' => (string) $hit['project_id'],
+                'name' => (string) $hit['title'],
+                'description' => (string) $hit['description'],
+                'icon' => $hit['icon_url'] ?: null,
+                'downloads' => (int) $hit['downloads'],
+            ], $found['hits']),
+            'more' => $found['total_hits'] > $offset + 20,
+        ];
+    }
+
+    /**
+     * The jars in the server's mods folder. Those Modrinth knows by their fingerprint get a name,
+     * icon and version; without Modrinth they are all listed by file name.
+     *
+     * @param  array{loader: string, version: string}|null  $target
+     * @return list<array{file: string, size: int, project: string|null, name: string|null, icon: string|null, version: string|null, update: bool}>
+     *
+     * @throws ConnectionException When the node does not answer.
+     * @throws RequestException
+     */
+    public static function installed(Server $server, ?array $target): array
+    {
+        $jars = (new NodeClient($server->node))->mods($server);
+        $hashes = ['hashes' => array_column($jars, 'sha512'), 'algorithm' => 'sha512'];
+        $known = $projects = $newer = [];
+
+        try {
+            if ($jars !== []) {
+                $known = Modpacks::http()->post(self::MODRINTH.'/version_files', $hashes)->throw()->json();
+            }
+            if ($known !== []) {
+                $projects = self::projects(array_column($known, 'project_id'));
+                $newer = $target === null ? [] : Modpacks::http()
+                    ->post(self::MODRINTH.'/version_files/update', [...$hashes, 'loaders' => [$target['loader']], 'game_versions' => [$target['version']]])
+                    ->throw()->json();
+            }
+        } catch (ConnectionException|RequestException) {
+            // The folder is still worth showing.
+        }
+
+        return array_map(function (array $jar) use ($known, $projects, $newer): array {
+            $version = $known[$jar['sha512']] ?? null;
+            $project = $projects[$version['project_id'] ?? ''] ?? null;
+
+            return [
+                'file' => $jar['name'],
+                'size' => $jar['size'],
+                'project' => $version['project_id'] ?? null,
+                'name' => $project['title'] ?? null,
+                'icon' => ($project['icon_url'] ?? null) ?: null,
+                'version' => $version['version_number'] ?? null,
+                'update' => isset($version, $newer[$jar['sha512']]) && $newer[$jar['sha512']]['id'] !== $version['id'],
+            ];
+        }, $jars);
+    }
+
+    /**
+     * Install the newest build of a mod for the target, replacing the jar of that mod if there
+     * is one. Required dependencies that are not installed come along, except on CurseForge and
+     * FTB packs: their jars are often unknown to Modrinth, and a second copy of a mod keeps the
+     * server from starting, so there they are only named.
+     *
+     * @param  array{loader: string, version: string}  $target
+     * @return array{installed: list<string>, missing: list<array{project: string, name: string}>}
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     * @throws ValidationException When the mod has no build for the target.
+     */
+    public static function install(Server $server, array $target, string $project): array
+    {
+        $client = new NodeClient($server->node);
+        $have = array_column(array_filter(self::installed($server, $target), fn (array $jar): bool => $jar['project'] !== null), 'file', 'project');
+        $automatic = ! in_array($server->server_type, ['AUTO_CURSEFORGE', 'FTBA'], true);
+        $queue = [$project];
+        $installed = $missing = [];
+
+        while ($queue !== []) {
+            $next = array_shift($queue);
+            $version = Modpacks::http()
+                ->get(self::MODRINTH."/project/{$next}/version", ['loaders' => json_encode([$target['loader']]), 'game_versions' => json_encode([$target['version']])])
+                ->throw()->json(0);
+
+            if ($version === null) {
+                if ($next === $project) {
+                    throw ValidationException::withMessages(['project' => __('This mod has no version for :loader :version.', $target)]);
+                }
+                $missing[] = $next;
+
+                continue;
+            }
+
+            $file = collect($version['files'])->firstWhere('primary', true) ?? $version['files'][0];
+            $client->installMod($server, $file['url'], $file['filename'], $file['hashes']['sha512']);
+            $installed[] = $id = $version['project_id'];
+
+            if (isset($have[$id]) && $have[$id] !== $file['filename']) {
+                $client->deleteFile($server, "mods/{$have[$id]}");
+            }
+
+            foreach ($version['dependencies'] as $dependency) {
+                $needed = $dependency['project_id'] ?? null;
+
+                if ($dependency['dependency_type'] === 'required' && $needed !== null && ! isset($have[$needed])
+                    && ! in_array($needed, [...$installed, ...$queue, ...$missing], true)) {
+                    $automatic ? $queue[] = $needed : $missing[] = $needed;
+                }
+            }
+        }
+
+        $projects = self::projects([...$installed, ...$missing]);
+        $name = fn (string $id): string => (string) ($projects[$id]['title'] ?? $id);
+
+        return [
+            'installed' => array_map($name, $installed),
+            'missing' => array_map(fn (string $id): array => ['project' => $id, 'name' => $name($id)], $missing),
+        ];
+    }
+
+    /**
+     * Modrinth projects by id, for their titles and icons.
+     *
+     * @param  list<string>  $ids
+     * @return array<string, array<string, mixed>>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    private static function projects(array $ids): array
+    {
+        return array_column(Modpacks::http()->get(self::MODRINTH.'/projects', ['ids' => json_encode(array_values(array_unique($ids)))])->throw()->json(), null, 'id');
     }
 
     /**
