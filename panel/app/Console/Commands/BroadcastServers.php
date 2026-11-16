@@ -18,12 +18,15 @@ class BroadcastServers extends Command
     // Numbers that move all the time; on their own they are worth an update every fifth round.
     private const array RESTLESS = ['usage', 'players', 'disk_bytes'];
 
+    // Well short of the minute: the next run must find this one finished, or it is skipped.
+    public const int SECONDS = 50;
+
     /**
      * The scheduler starts this every minute; it looks every two seconds until the next start.
      */
     public function handle(LiveListeners $listeners): int
     {
-        $until = now()->addSeconds(58);
+        $until = now()->addSeconds(self::SECONDS);
 
         do {
             $this->look($listeners);
@@ -43,8 +46,9 @@ class BroadcastServers extends Command
         // Pages reloading because of an announcement read this instead of asking the nodes again.
         Cache::put('server-states', $states, 6);
 
-        $thorough = Cache::increment('server-states-round') % 5 === 0;
-        $before = Cache::get('server-states-seen', []);
+        // The round is kept with what was seen: counting in the cache differs between its stores.
+        ['round' => $round, 'servers' => $before] = Cache::get('server-states-seen', ['round' => 0, 'servers' => []]);
+        $thorough = ++$round % 5 === 0;
         $seen = [];
 
         foreach ($states['servers'] as $slug => $state) {
@@ -59,6 +63,6 @@ class BroadcastServers extends Command
             $seen[$slug] = [$steady, $thorough ? $all : $allBefore];
         }
 
-        Cache::put('server-states-seen', $seen, 60);
+        Cache::put('server-states-seen', ['round' => $round, 'servers' => $seen], 60);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -50,12 +51,19 @@ class NodeClient
     /**
      * The state as pages get it: what the watcher (servers:broadcast) fetched a moment ago while
      * pages are open, so a reload after an announcement costs the nodes nothing, or else live.
+     * A viewer gets the servers shared with them and no others.
      *
      * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
      */
-    public static function recentStates(): array
+    public static function recentStates(User $user): array
     {
-        return Cache::get('server-states') ?? self::states();
+        $states = Cache::get('server-states') ?? self::states();
+
+        if (! $user->isAdmin()) {
+            $states['servers'] = array_intersect_key($states['servers'], Server::query()->visibleTo($user)->pluck('id', 'slug')->all());
+        }
+
+        return $states;
     }
 
     /**

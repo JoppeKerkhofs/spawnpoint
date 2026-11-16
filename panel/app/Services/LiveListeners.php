@@ -18,7 +18,8 @@ class LiveListeners
             $broadcaster = Broadcast::connection();
 
             return $broadcaster instanceof PusherBroadcaster
-                && ((array) ($broadcaster->getPusher()->get('/channels')->channels ?? [])) !== [];
+                // Only the users' own channels count: anyone can open a socket, joining one of these needs a session.
+                && ((array) ($broadcaster->getPusher()->get('/channels', ['filter_by_prefix' => 'private-users.'])->channels ?? [])) !== [];
         } catch (Throwable) {
             return false;
         }

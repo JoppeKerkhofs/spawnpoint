@@ -1,14 +1,17 @@
 <?php
 
+use App\Console\Commands\BroadcastServers;
 use App\Events\Changed;
 use App\Models\ActivityLog;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\LiveListeners;
 use App\Services\NodeClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schedule;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function channelsOf(Changed $event): array
@@ -36,7 +39,7 @@ test('a change to a server goes to the admins and to the viewers it is shared wi
     // Taking the share away stops the events at once, also for a tab that is still open.
     $viewer->servers()->detach($server);
     expect(channelsOf(new Changed('survival', 'backup')))->toBe(["private-users.{$admin->id}"])
-        ->and($stranger->id)->not->toBe($admin->id);
+        ->and(channelsOf(new Changed('survival', 'backup')))->not->toContain("private-users.{$stranger->id}");
 });
 
 test('a change without a server goes to the admins only', function () {
@@ -134,10 +137,49 @@ test('pages read the state the watcher just fetched instead of asking the nodes 
     watching(true, [], ['state' => 'offline']);
 
     $this->artisan('servers:broadcast --once');
-    expect(NodeClient::recentStates()['servers']['survival']['state'])->toBe('running');
+    expect(NodeClient::recentStates(User::factory()->admin()->create())['servers']['survival']['state'])->toBe('running');
     Http::assertSentCount(1);
 
     // Without a watcher the page asks for itself.
     Cache::flush();
-    expect(NodeClient::recentStates()['servers']['survival']['state'])->toBe('offline');
+    expect(NodeClient::recentStates(User::factory()->admin()->create())['servers']['survival']['state'])->toBe('offline');
+});
+
+test('a channel is only signed for someone who could open the panel itself', function () {
+    config(['broadcasting.default' => 'reverb']);
+    require base_path('routes/channels.php');
+    $user = User::factory()->create();
+    $join = ['socket_id' => '1.1', 'channel_name' => "private-users.{$user->id}"];
+
+    $this->postJson('/broadcasting/auth', $join)->assertUnauthorized();
+
+    // Held at the two-factor setup, a user gets no pages and so no announcements either.
+    Setting::put('require_two_factor', '1');
+    $this->actingAs($user)->postJson('/broadcasting/auth', $join)->assertRedirect(route('security.edit'));
+});
+
+test('a guest is not told how to connect', function () {
+    config(['broadcasting.default' => 'reverb']);
+
+    $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->where('live', null));
+});
+
+test('a viewer gets the state of their own servers only, also from what the watcher fetched', function () {
+    $shared = Server::factory()->create(['slug' => 'shared']);
+    Server::factory()->for($shared->node)->create(['slug' => 'hidden']);
+    $viewer = User::factory()->create();
+    $viewer->servers()->attach($shared, ['permissions' => '[]']);
+    $state = ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0];
+    Cache::put('server-states', ['online' => true, 'servers' => ['shared' => $state, 'hidden' => $state]], 6);
+
+    expect(array_keys(NodeClient::recentStates($viewer)['servers']))->toBe(['shared'])
+        ->and(array_keys(NodeClient::recentStates(User::factory()->admin()->create())['servers']))->toBe(['shared', 'hidden']);
+});
+
+test('the watcher stops in time for the next one to start', function () {
+    $event = collect(Schedule::events())->first(fn ($event): bool => str_contains((string) $event->command, 'servers:broadcast'));
+
+    expect($event->expression)->toBe('* * * * *')
+        ->and($event->runInBackground)->toBeTrue()
+        ->and(BroadcastServers::SECONDS)->toBeLessThanOrEqual(50);
 });

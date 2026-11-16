@@ -79,7 +79,7 @@ class ServerController extends Controller
 
         return Inertia::render('servers/Console', [
             'server' => $server->forUser($user),
-            'states' => Inertia::defer(fn () => NodeClient::recentStates()),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             // A closure, so a reconnect can ask for a fresh token on its own.
             // Without the commands permission the token streams output but refuses commands.
             'console' => fn () => ['url' => (new NodeClient($server->node))->consoleUrl($server, write: $user->can('act', [$server, 'commands']))],
@@ -95,7 +95,7 @@ class ServerController extends Controller
         return Inertia::render('servers/Configuration', [
             ...$this->options($server),
             'server' => $server->forUser($request->user()),
-            'states' => Inertia::defer(fn () => NodeClient::recentStates()),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             'dnsEnabled' => CloudflareDns::enabled(),
             // The other hosts this server could be moved to.
             'otherNodes' => Node::query()->whereKeyNot($server->node_id)->orderBy('id')->get()
@@ -121,7 +121,7 @@ class ServerController extends Controller
 
         return Inertia::render('servers/Logs', [
             'server' => $server->forUser($request->user()),
-            'states' => Inertia::defer(fn () => NodeClient::recentStates()),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             'files' => $files ?? [],
             'file' => $file ?? null,
             'q' => $search,

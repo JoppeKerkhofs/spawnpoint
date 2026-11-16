@@ -22,13 +22,7 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'servers' => $servers->map(fn (Server $server): array => $server->forUser($request->user())),
             'memoryLimitMb' => fn () => $request->user()->can('manage-servers') ? MemoryLimit::totalMb() : null,
-            'states' => Inertia::defer(function () use ($servers): array {
-                $states = NodeClient::recentStates();
-                // A viewer must not learn about servers that are not shared with them.
-                $states['servers'] = array_intersect_key($states['servers'], $servers->keyBy('slug')->all());
-
-                return $states;
-            }),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
         ]);
     }
 }

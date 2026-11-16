@@ -46,7 +46,7 @@ class HandleInertiaRequests extends Middleware
             // Keyed by the English text; empty for English itself.
             'translations' => (object) Languages::translations(app()->getLocale()),
             // How to open the WebSocket; null where there is none and pages poll instead.
-            'live' => config('broadcasting.default') === 'reverb'
+            'live' => $request->user() !== null && config('broadcasting.default') === 'reverb'
                 ? ['key' => config('broadcasting.connections.reverb.key'), ...config('broadcasting.connections.reverb.browser')]
                 : null,
             'auth' => [

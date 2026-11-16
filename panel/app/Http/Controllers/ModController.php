@@ -53,7 +53,7 @@ class ModController extends Controller implements HasMiddleware
 
         return Inertia::render('servers/Mods', [
             'server' => $server->forUser($request->user()),
-            'states' => Inertia::defer(fn () => NodeClient::recentStates()),
+            'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             'target' => $target,
             'installed' => $installed ?? [],
             'error' => $error ?? null,

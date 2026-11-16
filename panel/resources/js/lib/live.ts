@@ -18,6 +18,8 @@ export const connected = ref(false);
 
 const handlers = new Set<(change: Change) => void>();
 let echo: Echo<'reverb'> | null = null;
+// Whose channel the socket is on: another user in the same tab must not inherit it.
+let listener: number | null = null;
 
 // Laravel checks this cookie's value on the request that signs a channel subscription.
 const xsrf = () =>
@@ -70,23 +72,46 @@ const connect = (live: NonNullable<Live>, user: number) => {
         }),
     });
 
+    listener = user;
+    // Connected only once the channel is joined: an open socket that hears nothing must not
+    // stop the polling.
     echo.connector.pusher.connection.bind(
         'state_change',
-        (states: { current: string }) =>
-            (connected.value = states.current === 'connected'),
+        (states: { current: string }) => {
+            if (states.current !== 'connected') {
+                connected.value = false;
+            }
+        },
     );
-    echo.private(`users.${user}`).listen('.changed', (change: Change) =>
-        handlers.forEach((handler) => handler(change)),
-    );
+    echo.private(`users.${user}`)
+        .subscribed(() => (connected.value = true))
+        .error(() => (connected.value = false))
+        .listen('.changed', (change: Change) =>
+            handlers.forEach((handler) => handler(change)),
+        );
 };
+
+// Signing out, or in as someone else, ends the connection; the next page that listens opens its own.
+router.on('navigate', (event) => {
+    const user = event.detail.page.props.auth?.user?.id ?? null;
+
+    if (echo && user !== listener) {
+        echo.disconnect();
+        echo = null;
+        listener = null;
+        connected.value = false;
+    }
+});
 
 /** Hear what changes for as long as the component lives. */
 export const useLive = (handler: (change: Change) => void) => {
     const page = usePage();
     const live = page.props.live as Live;
 
-    if (live && !echo) {
-        connect(live, page.props.auth.user.id);
+    const user = page.props.auth?.user?.id;
+
+    if (live && user && !echo) {
+        connect(live, user);
     }
 
     handlers.add(handler);
@@ -104,27 +129,30 @@ export const useLiveReload = (
 ) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sending = 0;
+    let quietUntil = 0;
     const stops = [
         router.on('start', (event) => {
             sending += event.detail.visit.method === 'get' ? 0 : 1;
         }),
         router.on('finish', (event) => {
-            sending -= event.detail.visit.method === 'get' ? 0 : 1;
+            if (event.detail.visit.method !== 'get') {
+                // A page reached by a form never saw that form's start.
+                sending = Math.max(0, sending - 1);
+                // Its answer brought the new data, so the announcement of it is not acted on.
+                quietUntil = Date.now() + 1000;
+                clearTimeout(timer);
+            }
         }),
     ];
 
-    const reload = () => {
-        if (sending > 0) {
-            timer = setTimeout(reload, 300);
-        } else if (allowed()) {
-            router.reload({ only });
-        }
-    };
-
     useLive((change) => {
-        if (matters(change)) {
+        if (matters(change) && sending === 0 && Date.now() > quietUntil) {
             clearTimeout(timer);
-            timer = setTimeout(reload, 300);
+            timer = setTimeout(() => {
+                if (allowed()) {
+                    router.reload({ only });
+                }
+            }, 300);
         }
     });
     onUnmounted(() => {
