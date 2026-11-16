@@ -42,6 +42,22 @@ const props = defineProps<{
 }>();
 
 const slug = computed(() => ({ server: props.server.slug }));
+
+// Each install names what it still needs; the list is kept here so the next visit does not drop it.
+const needed = ref(props.missing);
+watch(
+    () => props.missing,
+    (now) =>
+        (needed.value = [
+            ...needed.value,
+            ...now.filter(
+                (mod) =>
+                    !needed.value.some((kept) => kept.project === mod.project),
+            ),
+        ]),
+);
+
+const loaderNames: Record<string, string> = { neoforge: 'NeoForge' };
 const have = computed(
     () => new Set(props.installed.map((mod) => mod.project).filter(Boolean)),
 );
@@ -156,20 +172,20 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
         </p>
 
         <SectionCard
-            v-if="missing.length"
+            v-if="needed.length"
             :title="t('Also needed')"
             role="status"
         >
             <p class="text-sm text-muted-foreground">
                 {{
                     t(
-                        'The mod you installed needs these. They were not added, because the modpack may already include them under another file. Install one only if it is missing.',
+                        'The mods you installed also need these, and they were not added. On a modpack, install one only if the pack does not already include it.',
                     )
                 }}
             </p>
             <ul class="mt-3 flex flex-col gap-2">
                 <li
-                    v-for="mod in missing"
+                    v-for="mod in needed"
                     :key="mod.project"
                     class="flex items-center gap-3"
                 >
@@ -181,7 +197,11 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                         variant="outline"
                         class="border-primary"
                         :disabled="!!busy || have.has(mod.project)"
-                        :aria-label="t('Install :name', { name: mod.name })"
+                        :aria-label="
+                            have.has(mod.project)
+                                ? t(':name is installed', { name: mod.name })
+                                : t('Install :name', { name: mod.name })
+                        "
                         @click="install(mod.project)"
                     >
                         {{
@@ -290,8 +310,9 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                     target
                         ? t('Add mods for :loader :version', {
                               loader:
+                                  loaderNames[target.loader] ??
                                   target.loader[0].toUpperCase() +
-                                  target.loader.slice(1),
+                                      target.loader.slice(1),
                               version: target.version,
                           })
                         : t('Add mods')
@@ -376,7 +397,11 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
                                 class="border-primary"
                                 :disabled="!!busy || have.has(mod.project)"
                                 :aria-label="
-                                    t('Install :name', { name: mod.name })
+                                    have.has(mod.project)
+                                        ? t(':name is installed', {
+                                              name: mod.name,
+                                          })
+                                        : t('Install :name', { name: mod.name })
                                 "
                                 @click="install(mod.project)"
                             >

@@ -18,8 +18,8 @@ beforeEach(function () {
             ? Http::response([['name' => 'sodium.jar', 'size' => 9, 'sha512' => 'h-sodium']])
             : Http::response(status: 204),
         'node.test:8080/servers/survival/files*' => Http::response(status: 204),
-        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2']]),
-        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'SODIUM', 'version_number' => '0.6.13']]),
+        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2', 'date_published' => '2026-02-01T00:00:00Z']]),
+        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'SODIUM', 'version_number' => '0.6.13', 'date_published' => '2026-01-01T00:00:00Z']]),
         'api.modrinth.com/v2/project/*/version*' => Http::response([[
             'id' => 'v2', 'project_id' => 'SODIUM', 'dependencies' => [],
             'files' => [['primary' => true, 'filename' => 'sodium-2.jar', 'url' => 'https://cdn.modrinth.com/data/SODIUM/sodium-2.jar', 'hashes' => ['sha512' => 'h2']]],
@@ -74,4 +74,13 @@ test('a server without mods has no mods in the API', function () {
 
     $this->getJson('/api/v1/servers/lobby/mods', bearer($this->read))->assertNotFound();
     $this->postJson('/api/v1/servers/lobby/mods', ['project' => 'sodium'], bearer($this->write))->assertNotFound();
+});
+
+test('a token never exceeds its owner: without the files permission there are no mods', function () {
+    $viewer = User::factory()->create();
+    $viewer->servers()->attach($this->server, ['permissions' => '["logs"]']);
+    $token = $viewer->createToken('Files', ['files:read', 'files:write'])->plainTextToken;
+
+    $this->getJson('/api/v1/servers/survival/mods', bearer($token))->assertForbidden();
+    $this->postJson('/api/v1/servers/survival/mods', ['project' => 'sodium'], bearer($token))->assertForbidden();
 });

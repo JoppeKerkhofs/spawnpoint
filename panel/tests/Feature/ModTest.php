@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ModrinthUnavailable;
 use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\Setting;
@@ -7,6 +8,7 @@ use App\Models\User;
 use App\Services\Mods;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function modServer(string $type = 'FABRIC', array $attributes = []): Server
@@ -123,8 +125,8 @@ test('installed jars are named by Modrinth, and an update is marked', function (
             ['name' => 'private.jar', 'size' => 5, 'sha512' => 'h-private'],
             ['name' => 'sodium.jar', 'size' => 9, 'sha512' => 'h-sodium'],
         ]),
-        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2']]),
-        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'AANobbMI', 'version_number' => '0.6.13']]),
+        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2', 'date_published' => '2026-02-01T00:00:00Z']]),
+        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'AANobbMI', 'version_number' => '0.6.13', 'date_published' => '2026-01-01T00:00:00Z']]),
         'api.modrinth.com/v2/projects*' => Http::response([['id' => 'AANobbMI', 'title' => 'Sodium', 'icon_url' => 'https://cdn.modrinth.com/icon.png']]),
     ]);
 
@@ -191,7 +193,7 @@ test('a mod without a build for the server is refused before anything is downloa
         'api.modrinth.com/v2/project/sodium/version*' => Http::response([]),
     ]);
 
-    expect(fn () => Mods::install(modServer(), FABRIC, 'sodium'))->toThrow(Illuminate\Validation\ValidationException::class)
+    expect(fn () => Mods::install(modServer(), FABRIC, 'sodium'))->toThrow(ValidationException::class)
         ->and(nodeDownloads())->toBe([]);
 });
 
@@ -213,6 +215,61 @@ test('installing a mod that is already there replaces its jar', function () {
     Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/servers/survival/files?path=mods%2Fsodium-old.jar'));
 });
 
+test('a release is preferred over a newer beta, and a dependency named only by version is found', function () {
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => fn (Request $request) => $request->method() === 'GET' ? Http::response([]) : Http::response(status: 204),
+        'api.modrinth.com/v2/project/sodium/version*' => Http::response([
+            [...modVersion('SODIUM', 'beta.jar'), 'version_type' => 'beta'],
+            [...modVersion('SODIUM', 'release.jar'), 'version_type' => 'release', 'dependencies' => [['project_id' => null, 'version_id' => 'api-v9', 'dependency_type' => 'required']]],
+        ]),
+        'api.modrinth.com/v2/version/api-v9' => Http::response(['project_id' => 'API']),
+        'api.modrinth.com/v2/project/API/version*' => Http::response([[...modVersion('API', 'only-beta.jar'), 'version_type' => 'beta']]),
+        'api.modrinth.com/v2/projects*' => Http::response([['id' => 'API', 'title' => 'Fabric API'], ['id' => 'SODIUM', 'title' => 'Sodium']]),
+    ]);
+
+    expect(Mods::install(modServer(), FABRIC, 'sodium')['installed'])->toBe(['Sodium', 'Fabric API'])
+        ->and(array_column(nodeDownloads(), 'name'))->toBe(['release.jar', 'only-beta.jar']);
+});
+
+test('a dependency that fails does not hide what was installed', function () {
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => fn (Request $request) => $request->method() === 'GET' ? Http::response([]) : Http::response(status: 204),
+        'api.modrinth.com/v2/project/sodium/version*' => Http::response([modVersion('SODIUM', 'sodium.jar', [['API', 'required'], ['NOBUILD', 'required']])]),
+        'api.modrinth.com/v2/project/API/version*' => Http::response(status: 500),
+        'api.modrinth.com/v2/project/NOBUILD/version*' => Http::response([]),
+        'api.modrinth.com/v2/projects*' => Http::response([['id' => 'API', 'title' => 'Fabric API'], ['id' => 'SODIUM', 'title' => 'Sodium'], ['id' => 'NOBUILD', 'title' => 'No build']]),
+    ]);
+
+    expect(Mods::install(modServer(), FABRIC, 'sodium'))->toBe([
+        'installed' => ['Sodium'],
+        'missing' => [['project' => 'API', 'name' => 'Fabric API'], ['project' => 'NOBUILD', 'name' => 'No build']],
+    ]);
+});
+
+test('nothing is installed when the installed mods cannot be identified', function () {
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => Http::response([['name' => 'have.jar', 'size' => 1, 'sha512' => 'h-have']]),
+        'api.modrinth.com/v2/version_files' => Http::response(status: 500),
+        'api.modrinth.com/*' => Http::response([modVersion('SODIUM', 'sodium.jar')]),
+    ]);
+
+    // Otherwise a dependency that is already there would be downloaded a second time.
+    expect(fn () => Mods::install(modServer(), FABRIC, 'sodium'))->toThrow(ModrinthUnavailable::class)
+        ->and(nodeDownloads())->toBe([]);
+});
+
+test('an update is a newer release, never an older one', function () {
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => Http::response([['name' => 'beta.jar', 'size' => 1, 'sha512' => 'h-beta']]),
+        'api.modrinth.com/v2/version_files/update' => Http::response(['h-beta' => ['id' => 'older-release', 'date_published' => '2026-01-01T00:00:00Z']]),
+        'api.modrinth.com/v2/version_files' => Http::response(['h-beta' => ['id' => 'beta', 'project_id' => 'SODIUM', 'version_number' => '2-beta', 'date_published' => '2026-02-01T00:00:00Z']]),
+        'api.modrinth.com/v2/projects*' => Http::response([['id' => 'SODIUM', 'title' => 'Sodium']]),
+    ]);
+
+    expect(Mods::installed(modServer(), FABRIC)[0]['update'])->toBeFalse();
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/update') && $request['version_types'] === ['release']);
+});
+
 // One installed, recognised mod with an update waiting, and Modrinth answering for an install.
 function fakeSodium(): void
 {
@@ -221,9 +278,9 @@ function fakeSodium(): void
             ? Http::response([['name' => 'sodium.jar', 'size' => 9, 'sha512' => 'h-sodium']])
             : Http::response(status: 204),
         'node.test:8080/servers/survival/files*' => Http::response(status: 204),
-        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2']]),
-        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'SODIUM', 'version_number' => '0.6.13']]),
-        'api.modrinth.com/v2/project/*/version*' => Http::response([modVersion('SODIUM', 'sodium-2.jar')]),
+        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2', 'date_published' => '2026-02-01T00:00:00Z']]),
+        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'SODIUM', 'version_number' => '0.6.13', 'date_published' => '2026-01-01T00:00:00Z']]),
+        'api.modrinth.com/v2/project/SODIUM/version*' => Http::response([modVersion('SODIUM', 'sodium-2.jar')]),
         'api.modrinth.com/v2/projects*' => Http::response([['id' => 'SODIUM', 'title' => 'Sodium', 'icon_url' => null]]),
         'api.modrinth.com/v2/search*' => Http::response(['total_hits' => 0, 'hits' => []]),
     ]);
@@ -268,7 +325,9 @@ test('mods need the files permission', function () {
     Http::fake();
 
     $this->actingAs($viewer)->get(route('servers.mods', $server))->assertForbidden();
+    $this->get(route('servers.mods.search', $server))->assertForbidden();
     $this->post(route('servers.mods.store', $server), ['project' => 'sodium'])->assertForbidden();
+    $this->put(route('servers.mods.update', [$server, 'sodium.jar']))->assertForbidden();
     $this->delete(route('servers.mods.destroy', [$server, 'sodium.jar']))->assertForbidden();
     Http::assertNothingSent();
 });

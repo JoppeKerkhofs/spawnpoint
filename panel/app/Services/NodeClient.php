@@ -256,7 +256,8 @@ class NodeClient
      */
     public function installMod(Server $server, string $url, string $name, string $sha512): void
     {
-        // ponytail: the node answers once the jar is in place; make it a task if mods outgrow a minute.
+        // The node gives up after 50 seconds, so this never ends before the node does.
+        // ponytail: the node answers once the jar is in place; make it a task if mods outgrow that.
         $this->send('POST', "/servers/{$server->slug}/mods", ['url' => $url, 'name' => $name, 'sha512' => $sha512], timeout: 60);
     }
 

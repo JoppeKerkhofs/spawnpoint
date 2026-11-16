@@ -282,11 +282,14 @@ pub async fn install_mod(State(state): State<AppState>, Path(slug): Path<String>
         adopt(&state, &slug, &folder);
     }
     let target = resolve(&state, &slug, &format!("mods/{}", body.name))?;
-    let partial = folder.join(format!(".{}.downloading", body.name));
+    // curl writes through a link, and a mod could have left one here pointing outside the folder.
+    let _ = tokio::fs::remove_file(folder.join(format!(".{}.downloading", body.name))).await;
+    let partial = resolve(&state, &slug, &format!("mods/.{}.downloading", body.name))?;
 
-    // No -L: the address was checked, a redirect could lead anywhere.
+    // No -L: the address was checked, a redirect could lead anywhere. -g: braces in it are not a pattern.
+    // The panel waits 60 seconds, so this gives up first and never finishes behind its back.
     let fetched = tokio::process::Command::new("curl")
-        .args(["-fsS", "--proto", "=https", "--max-time", "300", "--max-filesize", "1073741824", "-o"])
+        .args(["-fsSg", "--proto", "=https", "--max-time", "50", "--max-filesize", "1073741824", "-o"])
         .arg(&partial)
         .arg("--")
         .arg(&body.url)

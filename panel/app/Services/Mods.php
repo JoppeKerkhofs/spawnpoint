@@ -89,12 +89,14 @@ class Mods
      * icon and version; without Modrinth they are all listed by file name.
      *
      * @param  array{loader: string, version: string}|null  $target
+     * @param  bool  $strict  Fail when Modrinth cannot name the jars, for a caller that acts on the answer.
      * @return list<array{file: string, size: int, project: string|null, name: string|null, icon: string|null, version: string|null, update: bool}>
      *
      * @throws ConnectionException When the node does not answer.
      * @throws RequestException
+     * @throws ModrinthUnavailable Only when strict.
      */
-    public static function installed(Server $server, ?array $target): array
+    public static function installed(Server $server, ?array $target, bool $strict = false): array
     {
         $jars = (new NodeClient($server->node))->mods($server);
         $hashes = ['hashes' => array_column($jars, 'sha512'), 'algorithm' => 'sha512'];
@@ -106,10 +108,13 @@ class Mods
             }
             if ($known !== []) {
                 $projects = self::projects(array_column($known, 'project_id'));
-                $newer = $target === null ? [] : self::modrinth('post', '/version_files/update', [...$hashes, 'loaders' => [$target['loader']], 'game_versions' => [$target['version']]]);
+                $newer = $target === null ? [] : self::modrinth('post', '/version_files/update', [
+                    ...$hashes, 'loaders' => [$target['loader']], 'game_versions' => [$target['version']], 'version_types' => ['release'],
+                ]);
             }
-        } catch (ModrinthUnavailable) {
+        } catch (ModrinthUnavailable $exception) {
             // The folder is still worth showing.
+            throw_if($strict, $exception);
         }
 
         return array_map(function (array $jar) use ($known, $projects, $newer): array {
@@ -123,7 +128,8 @@ class Mods
                 'name' => $project['title'] ?? null,
                 'icon' => ($project['icon_url'] ?? null) ?: null,
                 'version' => $version['version_number'] ?? null,
-                'update' => isset($version, $newer[$jar['sha512']]) && $newer[$jar['sha512']]['id'] !== $version['id'],
+                // The newest release can be older than an installed beta.
+                'update' => isset($version, $newer[$jar['sha512']]) && ($newer[$jar['sha512']]['date_published'] ?? '') > ($version['date_published'] ?? ''),
             ];
         }, $jars);
     }
@@ -145,26 +151,43 @@ class Mods
     public static function install(Server $server, array $target, string $project): array
     {
         $client = new NodeClient($server->node);
-        $have = array_column(array_filter(self::installed($server, $target), fn (array $jar): bool => $jar['project'] !== null), 'file', 'project');
+        // ponytail: one request, one mod at a time; make it a queued job if installs outgrow this.
+        set_time_limit(300);
+        // Strict: without knowing what is there, a dependency could be installed a second time.
+        $have = array_column(array_filter(self::installed($server, $target, strict: true), fn (array $jar): bool => $jar['project'] !== null), 'file', 'project');
         $automatic = ! in_array($server->server_type, ['AUTO_CURSEFORGE', 'FTBA'], true);
         $queue = [$project];
         $installed = $missing = [];
 
         while ($queue !== []) {
             $next = array_shift($queue);
-            $version = self::modrinth('get', "/project/{$next}/version", ['loaders' => json_encode([$target['loader']]), 'game_versions' => json_encode([$target['version']])])[0] ?? null;
 
-            if ($version === null) {
-                if ($next === $project) {
+            try {
+                $versions = self::modrinth('get', "/project/{$next}/version", [
+                    'loaders' => json_encode([$target['loader']]), 'game_versions' => json_encode([$target['version']]), 'include_changelog' => 'false',
+                ]);
+                // Newest first, betas among them: a release when there is one.
+                $version = Arr::first($versions, fn (array $version): bool => ($version['version_type'] ?? 'release') === 'release') ?? $versions[0] ?? null;
+
+                if ($version === null && $next === $project) {
                     throw ValidationException::withMessages(['project' => __('This mod has no version for :loader :version.', $target)]);
                 }
+                $file = $version === null ? null : (Arr::first($version['files'], fn (array $file): bool => $file['primary']) ?? $version['files'][0]);
+                if ($file !== null) {
+                    $client->installMod($server, $file['url'], $file['filename'], $file['hashes']['sha512']);
+                }
+            } catch (ConnectionException|RequestException|ModrinthUnavailable $exception) {
+                // The mod itself is in place by now; a dependency that failed is reported, not fatal.
+                throw_if($next === $project, $exception);
+                $version = $file = null;
+            }
+
+            if ($version === null || $file === null) {
                 $missing[] = $next;
 
                 continue;
             }
 
-            $file = Arr::first($version['files'], fn (array $file): bool => $file['primary']) ?? $version['files'][0];
-            $client->installMod($server, $file['url'], $file['filename'], $file['hashes']['sha512']);
             $installed[] = $id = $version['project_id'];
 
             if (isset($have[$id]) && $have[$id] !== $file['filename']) {
@@ -172,9 +195,14 @@ class Mods
             }
 
             foreach ($version['dependencies'] as $dependency) {
-                $needed = $dependency['project_id'] ?? null;
+                if ($dependency['dependency_type'] !== 'required') {
+                    continue;
+                }
 
-                if ($dependency['dependency_type'] === 'required' && $needed !== null && ! isset($have[$needed])
+                // Some name only the version they need; its project is what gets installed.
+                $needed = $dependency['project_id'] ?? (isset($dependency['version_id']) ? self::versionProject($dependency['version_id']) : null);
+
+                if ($needed !== null && ! isset($have[$needed])
                     && ! in_array($needed, [...$installed, ...$queue, ...$missing], true)) {
                     $automatic ? $queue[] = $needed : $missing[] = $needed;
                 }
@@ -200,7 +228,23 @@ class Mods
      */
     private static function projects(array $ids): array
     {
-        return array_column(self::modrinth('get', '/projects', ['ids' => json_encode(array_values(array_unique($ids)))]), null, 'id');
+        $projects = [];
+
+        // In hundreds: the ids travel in the address, which has a length limit.
+        foreach (array_chunk(array_values(array_unique($ids)), 100) as $chunk) {
+            $projects += array_column(self::modrinth('get', '/projects', ['ids' => json_encode($chunk)]), null, 'id');
+        }
+
+        return $projects;
+    }
+
+    private static function versionProject(string $version): ?string
+    {
+        try {
+            return self::modrinth('get', "/version/{$version}")['project_id'] ?? null;
+        } catch (ModrinthUnavailable) {
+            return null;
+        }
     }
 
     /**
@@ -259,7 +303,7 @@ class Mods
         $found = self::modrinth('get', "/project/{$project}/version".($version !== '' ? "/{$version}" : ''));
         $found = $version !== '' ? $found : ($found[0] ?? []);
 
-        return self::pair($found['loaders'][0] ?? null, $found['game_versions'][0] ?? null);
+        return self::pair($found['loaders'][0] ?? null, array_slice((array) ($found['game_versions'] ?? []), -1)[0] ?? null);
     }
 
     /**
