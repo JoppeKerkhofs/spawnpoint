@@ -21,9 +21,12 @@ class ServerIconRequest extends FormRequest
         return [
             // 40 kB of image, which base64 makes a third longer.
             'icon' => ['required', 'string', 'max:54000', 'starts_with:'.self::PREFIX, function (string $attribute, mixed $value, Closure $fail): void {
-                $size = @getimagesizefromstring((string) base64_decode(substr((string) $value, strlen(self::PREFIX)), true));
+                $bytes = (string) base64_decode(substr((string) $value, strlen(self::PREFIX)), true);
+                $size = @getimagesizefromstring($bytes);
 
-                if ($size === false || $size[2] !== IMAGETYPE_PNG || $size[0] !== 64 || $size[1] !== 64) {
+                // The size is read from the start of the file; the end must be a PNG's own, so
+                // nothing rides along behind the picture.
+                if ($size === false || $size[2] !== IMAGETYPE_PNG || $size[0] !== 64 || $size[1] !== 64 || ! str_ends_with($bytes, "IEND\xAE\x42\x60\x82")) {
                     $fail(__('The picture must be a PNG of 64 by 64 pixels.'));
                 }
             }],

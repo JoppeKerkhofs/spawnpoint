@@ -57,6 +57,8 @@ test('only a 64 by 64 PNG is accepted', function (string $icon) {
     'another kind of image' => ['data:image/jpeg;base64,'.base64_encode(png(64, 64))],
     'not base64' => ['data:image/png;base64,***'],
     'far too large' => [dataUrl(png(64, 64).str_repeat('x', 60_000))],
+    'a GIF called a PNG' => [dataUrl('GIF89a'.pack('v2', 64, 64)."\x80\x00\x00".str_repeat("\x00", 6).',')],
+    'a PNG with something after it' => [dataUrl(png(64, 64).'<script>alert(1)</script>')],
 ]);
 
 test('removing the picture deletes the file, also when the file is already gone', function () {
@@ -68,6 +70,29 @@ test('removing the picture deletes the file, also when the file is already gone'
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/servers/survival/files?path=server-icon.png'));
     expect($this->server->refresh()->icon)->toBeNull();
+});
+
+test('removing the picture of a modpack server whose pack picture is gone takes that address out of the container', function () {
+    $pack = Server::factory()->create(['slug' => 'pack', 'server_type' => 'MODRINTH', 'icon' => base64_encode(png(64, 64)),
+        'modpack' => ['project' => 'cobblemon', 'name' => 'Cobblemon', 'icon' => 'https://cdn.modrinth.com/data/x/icon.png']]);
+    Http::swap(new Factory);
+    Http::fake(['cdn.modrinth.com/*' => Http::response('', 404), 'node.test:8080/*' => Http::response(status: 204)]);
+
+    $this->actingAs($this->admin)->delete(route('servers.icon.destroy', $pack));
+
+    // Minecraft would fetch the dead address on its next start and stop; the container is made again without it.
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT' && str_ends_with($request->url(), '/servers/pack') && ! isset($request['icon']));
+});
+
+test('removing the picture of a modpack server whose pack picture is fine leaves the container alone', function () {
+    $pack = Server::factory()->create(['slug' => 'pack', 'server_type' => 'MODRINTH', 'icon' => base64_encode(png(64, 64)),
+        'modpack' => ['project' => 'cobblemon', 'name' => 'Cobblemon', 'icon' => 'https://cdn.modrinth.com/data/x/icon.png']]);
+    Http::swap(new Factory);
+    Http::fake(['cdn.modrinth.com/*' => Http::response(), 'node.test:8080/*' => Http::response(status: 204)]);
+
+    $this->actingAs($this->admin)->delete(route('servers.icon.destroy', $pack));
+
+    Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PUT');
 });
 
 test('a picture needs the configure permission', function () {
@@ -123,3 +148,18 @@ test('the API sets and removes the picture with the configure ability', function
     $this->deleteJson('/api/v1/servers/survival/icon', [], bearer($configure))->assertOk()->assertJsonPath('picture', null);
     expect($this->server->refresh()->icon)->toBeNull();
 });
+
+test('a pack picture is only ever fetched from the catalogues own picture hosts', function (string $address) {
+    $pack = Server::factory()->create(['slug' => 'pack', 'server_type' => 'MODRINTH', 'modpack' => ['project' => 'cobblemon', 'name' => 'Cobblemon', 'icon' => $address]]);
+
+    (new NodeClient($pack->node))->apply($pack);
+
+    // Whoever may configure a server chooses this address; the panel must not be made to call it.
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/servers/pack') && ! isset($request['icon']));
+})->with([
+    'https://169.254.169.254/latest/meta-data',
+    'https://intranet.example/icon.png',
+    'https://cdn.modrinth.com.evil.example/icon.png',
+    'https://user@cdn.modrinth.com:8443/icon.png',
+]);

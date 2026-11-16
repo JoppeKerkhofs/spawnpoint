@@ -40,6 +40,10 @@ defineOptions({
     },
 });
 
+// A pack picture that no longer exists leaves an empty spot, not a broken image.
+const hideBroken = (event: Event) =>
+    ((event.target as HTMLImageElement).style.display = 'none');
+
 useLiveStates();
 // A server was created, changed or deleted, perhaps by someone else.
 useLiveReload((change) => change.what === 'server', ['servers', 'states']);
@@ -328,7 +332,8 @@ const memoryGb = computed(
                         alt=""
                         width="34"
                         height="34"
-                        class="mr-1.5 size-[34px] shrink-0 [image-rendering:pixelated]"
+                        class="mr-1.5 size-[34px] shrink-0 object-cover"
+                        @error="hideBroken"
                     />
                     <BlockCube
                         v-else-if="blocky"

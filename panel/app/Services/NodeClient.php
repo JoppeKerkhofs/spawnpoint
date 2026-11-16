@@ -106,7 +106,7 @@ class NodeClient
     public function apply(Server $server, bool $start = false, ?string $importHost = null): void
     {
         $this->send('PUT', "/servers/{$server->slug}", [
-            ...self::packPicture($server),
+            ...(($picture = self::packPicture($server)) === null ? [] : ['icon' => $picture]),
             'hostname' => $server->hostname,
             'java_version' => $server->java_version,
             'server_type' => $server->server_type,
@@ -319,22 +319,18 @@ class NodeClient
     /**
      * The modpack's picture for the Minecraft image to fetch as the server's own, used while
      * no server-icon.png exists. Only when the address answers: the image stops a server whose
-     * picture it cannot download. No key at all otherwise, which a node from before 1.6.2 needs.
-     *
-     * @return array{icon?: string}
+     * picture it cannot download. Left out of the request otherwise, which a node from before
+     * 1.6.2 needs.
      */
-    private static function packPicture(Server $server): array
+    public static function packPicture(Server $server): ?string
     {
-        $address = (string) ($server->modpack['icon'] ?? '');
-
-        if (! str_starts_with($address, 'https://') || preg_match('/^[\x21-\x7E]{1,300}$/', $address) !== 1) {
-            return [];
-        }
+        $address = $server->packPicture();
 
         try {
-            return Http::connectTimeout(2)->timeout(4)->head($address)->successful() ? ['icon' => $address] : [];
+            // No redirects: the host was checked, where it would send us was not.
+            return $address !== null && Http::connectTimeout(2)->timeout(4)->withoutRedirecting()->head($address)->successful() ? $address : null;
         } catch (ConnectionException) {
-            return [];
+            return null;
         }
     }
 

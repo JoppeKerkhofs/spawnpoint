@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
@@ -52,6 +53,10 @@ class Server extends Model
 
     // Loaders whose mods the Mods page can install; modpacks are built on one of them.
     public const array MOD_LOADERS = ['FABRIC', 'FORGE', 'NEOFORGE'];
+
+    // Where Modrinth, CurseForge and FTB serve pack pictures. A picture address is chosen by
+    // whoever configures a server, so nothing else is fetched or shown. The node has the same list.
+    public const array PICTURE_PREFIXES = ['https://cdn.modrinth.com/', 'https://media.forgecdn.net/', 'https://cdn.feed-the-beast.com/'];
 
     public const array JAVA_VERSIONS = [8, 17, 21, 25];
 
@@ -128,7 +133,17 @@ class Server extends Model
      */
     public function picture(): ?string
     {
-        return $this->icon !== null ? "data:image/png;base64,{$this->icon}" : ($this->modpack['icon'] ?? null);
+        return $this->icon !== null ? "data:image/png;base64,{$this->icon}" : $this->packPicture();
+    }
+
+    /**
+     * The modpack's picture, when it comes from one of the catalogues' own picture hosts.
+     */
+    public function packPicture(): ?string
+    {
+        $address = (string) ($this->modpack['icon'] ?? '');
+
+        return preg_match('/^[!-~]{1,300}$/', $address) === 1 && Str::startsWith($address, self::PICTURE_PREFIXES) ? $address : null;
     }
 
     /**

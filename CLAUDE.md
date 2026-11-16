@@ -81,7 +81,9 @@ two seconds, only while a page is connected) sends `state` and caches what it fe
 `picture`) and the same bytes as `server-icon.png` in its folder, written through the node's
 file API without recreating the container. A modpack server without one gets the pack's picture
 address as `ICON`, which the Minecraft image downloads only while no `server-icon.png` exists.
-The image stops a server whose `ICON` cannot be fetched, so the panel first checks it answers.
+The image stops a server whose `ICON` cannot be fetched, so the panel first checks it answers,
+and only takes addresses on the catalogues' picture hosts (`Server::PICTURE_PREFIXES`, the same
+list as in the node): the address is chosen by whoever configures the server.
 
 **Panel containers.** `app` (web), `queue` (webhooks, mail), `scheduler` (`schedules:run`,
 `servers:watch` and `servers:broadcast` every minute) and `realtime` (`reverb:start`, reached

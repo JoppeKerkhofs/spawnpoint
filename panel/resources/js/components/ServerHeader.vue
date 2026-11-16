@@ -96,7 +96,11 @@ const tabs = computed(() =>
                     alt=""
                     width="44"
                     height="44"
-                    class="size-11 shrink-0 [image-rendering:pixelated]"
+                    class="size-11 shrink-0 object-cover"
+                    @error="
+                        ($event.target as HTMLImageElement).style.display =
+                            'none'
+                    "
                 />
                 <BlockCube
                     v-else-if="blocky"

@@ -188,6 +188,9 @@ fn valid_player_names(names: &[String]) -> bool {
         })
 }
 
+// Where Modrinth, CurseForge and FTB serve pack pictures; the panel has the same list (Server::PICTURE_PREFIXES).
+const PICTURE_PREFIXES: [&str; 3] = ["https://cdn.modrinth.com/", "https://media.forgecdn.net/", "https://cdn.feed-the-beast.com/"];
+
 // PUMPKIN is a server written in Rust; the image runs it as a native program and ignores the version and Java.
 const LOADER_TYPES: [&str; 6] = ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE", "PUMPKIN"];
 
@@ -254,8 +257,8 @@ impl ServerConfig {
             Err("cpu_limit")
         } else if self.seed.as_deref().is_some_and(|seed| seed.chars().count() > 64 || seed.chars().any(char::is_control)) {
             Err("seed")
-        } else if self.icon.as_deref().is_some_and(|icon| !icon.starts_with("https://") || icon.len() > 300 || !icon.bytes().all(|b| b.is_ascii_graphic())) {
-            // It becomes an environment variable the Minecraft image downloads from.
+        } else if self.icon.as_deref().is_some_and(|icon| !PICTURE_PREFIXES.iter().any(|prefix| icon.starts_with(prefix)) || icon.len() > 300 || !icon.bytes().all(|b| b.is_ascii_graphic())) {
+            // The Minecraft image downloads from this address, so only the catalogues' picture hosts.
             Err("icon")
         } else {
             Ok(())
@@ -1321,6 +1324,10 @@ mod tests {
         assert!(!config(|_| {}).unwrap().env().iter().any(|entry| entry.starts_with("ICON=")));
         assert_eq!(with("http://cdn.modrinth.com/icon.png").validate(), Err("icon"));
         assert_eq!(with("/etc/passwd").validate(), Err("icon"));
+        assert_eq!(with(&format!("{picture}{}", "a".repeat(300))).validate(), Err("icon"));
+        assert_eq!(with("https://cdn.modrinth.com/a\nb.png").validate(), Err("icon"));
+        assert_eq!(with("https://169.254.169.254/latest/meta-data").validate(), Err("icon"));
+        assert_eq!(with("https://cdn.modrinth.com.evil.example/icon.png").validate(), Err("icon"));
         assert_eq!(with("https://cdn.modrinth.com/a b.png").validate(), Err("icon"));
     }
 

@@ -57,7 +57,9 @@ const choose = async () => {
     } catch {
         toast.error(t('That file could not be read as an image.'));
     } finally {
-        picker.value!.value = '';
+        if (picker.value) {
+            picker.value.value = '';
+        }
     }
 };
 </script>
@@ -71,7 +73,7 @@ const choose = async () => {
                 alt=""
                 width="64"
                 height="64"
-                class="size-16 shrink-0 border border-border [image-rendering:pixelated]"
+                class="size-16 shrink-0 border border-border object-cover"
             />
             <p class="min-w-0 flex-1 text-sm text-muted-foreground">
                 {{
@@ -89,9 +91,8 @@ const choose = async () => {
                 ref="picker"
                 type="file"
                 accept="image/*"
-                class="sr-only"
+                hidden
                 :aria-label="t('Picture file')"
-                tabindex="-1"
                 @change="choose"
             />
             <Button

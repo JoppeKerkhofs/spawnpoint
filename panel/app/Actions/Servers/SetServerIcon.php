@@ -34,6 +34,13 @@ class SetServerIcon
             }
         }
 
+        // Without a picture of its own a modpack server fetches its pack's at the next start, from
+        // the address its container was given. If that address has died since, Minecraft would
+        // stop there, so the container is made again without it.
+        if ($png === null && $server->packPicture() !== null && NodeClient::packPicture($server) === null) {
+            $client->apply($server);
+        }
+
         $server->update(['icon' => $png === null ? null : base64_encode($png)]);
         ActivityLog::record('server.icon', $server);
     }
