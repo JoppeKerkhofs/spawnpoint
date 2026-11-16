@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Events\Changed;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -40,6 +41,8 @@ class ActivityLog extends Model
         if ($server !== null) {
             Webhook::notify($event, $server, $actor, isset($properties['action']) ? (string) $properties['action'] : null);
         }
+
+        Changed::send($server, explode('.', $event)[0]);
 
         self::create([
             'user_id' => $user?->id,
