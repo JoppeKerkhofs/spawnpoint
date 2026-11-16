@@ -18,6 +18,7 @@ use axum::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha512};
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 
@@ -210,6 +211,101 @@ pub async fn delete(State(state): State<AppState>, Path(slug): Path<String>, Que
     Ok(StatusCode::NO_CONTENT)
 }
 
+// Only a jar from Modrinth's own download host, under a plain file name.
+fn valid_mod(url: &str, name: &str) -> bool {
+    url.starts_with("https://cdn.modrinth.com/")
+        && !url.chars().any(|character| character.is_control() || character.is_whitespace())
+        && valid_component(name)
+        && name.ends_with(".jar")
+}
+
+fn sha512(path: &FsPath) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha512::new();
+    let mut buffer = [0u8; 65536];
+
+    loop {
+        let read = std::io::Read::read(&mut file, &mut buffer)?;
+        if read == 0 {
+            return Ok(hex::encode(hasher.finalize()));
+        }
+        hasher.update(&buffer[..read]);
+    }
+}
+
+// The jars directly in mods/, each with the fingerprint Modrinth knows it by.
+fn jar_list(root: &FsPath) -> Vec<Value> {
+    let mut jars: Vec<(String, u64, String)> = std::fs::read_dir(root.join("mods"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_file() || !name.ends_with(".jar") {
+                return None;
+            }
+
+            Some((name, metadata.len(), sha512(&entry.path()).ok()?))
+        })
+        .collect();
+    jars.sort();
+
+    jars.into_iter().map(|(name, size, sha512)| json!({ "name": name, "size": size, "sha512": sha512 })).collect()
+}
+
+pub async fn list_mods(State(state): State<AppState>, Path(slug): Path<String>) -> Result<Json<Value>, StatusCode> {
+    let root = server_root(&state, &slug)?;
+    // The mods folder must not be a link to somewhere else.
+    resolve_in(&root, "mods")?;
+
+    let jars = tokio::task::spawn_blocking(move || jar_list(&root)).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(Value::Array(jars)))
+}
+
+#[derive(Deserialize)]
+pub struct ModBody {
+    url: String,
+    name: String,
+    sha512: String,
+}
+
+pub async fn install_mod(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<ModBody>) -> Result<StatusCode, StatusCode> {
+    if !valid_mod(&body.url, &body.name) {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let folder = resolve(&state, &slug, "mods")?;
+    if !folder.is_dir() {
+        std::fs::create_dir(&folder).map_err(io_status)?;
+        adopt(&state, &slug, &folder);
+    }
+    let target = resolve(&state, &slug, &format!("mods/{}", body.name))?;
+    let partial = folder.join(format!(".{}.downloading", body.name));
+
+    // No -L: the address was checked, a redirect could lead anywhere.
+    let fetched = tokio::process::Command::new("curl")
+        .args(["-fsS", "--proto", "=https", "--max-time", "300", "--max-filesize", "1073741824", "-o"])
+        .arg(&partial)
+        .arg("--")
+        .arg(&body.url)
+        .status()
+        .await
+        .is_ok_and(|status| status.success());
+    let hashed = partial.clone();
+    let intact = fetched
+        && tokio::task::spawn_blocking(move || sha512(&hashed)).await.is_ok_and(|hash| hash.is_ok_and(|hash| hash.eq_ignore_ascii_case(&body.sha512)));
+
+    if !intact || tokio::fs::rename(&partial, &target).await.is_err() {
+        let _ = tokio::fs::remove_file(&partial).await;
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    adopt(&state, &slug, &target);
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // The browser sends uploads straight here with a files token; any origin may, since the token is the credential.
 fn cross_origin(status: StatusCode) -> Response {
     (
@@ -341,6 +437,39 @@ mod tests {
         assert_eq!(check("dir-out/world.zip"), Err(StatusCode::FORBIDDEN));
         assert_eq!(resolve(&state, "../data/other", ""), Err(StatusCode::NOT_FOUND));
         assert_eq!(resolve(&state, "absent", ""), Err(StatusCode::NOT_FOUND));
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn mod_downloads_are_limited_to_modrinth_jars() {
+        assert!(valid_mod("https://cdn.modrinth.com/data/a/b.jar", "b.jar"));
+        assert!(!valid_mod("http://cdn.modrinth.com/data/a/b.jar", "b.jar"));
+        assert!(!valid_mod("https://cdn.modrinth.com.evil.example/x.jar", "x.jar"));
+        assert!(!valid_mod("https://cdn.modrinth.com/a.jar -o /etc/passwd", "a.jar"));
+        assert!(!valid_mod("https://cdn.modrinth.com/data/a/b.jar", "../b.jar"));
+        assert!(!valid_mod("https://cdn.modrinth.com/data/a/b.jar", "a/b.jar"));
+        assert!(!valid_mod("https://cdn.modrinth.com/data/a/b.jar", "b.zip"));
+    }
+
+    #[test]
+    fn jars_are_listed_with_their_fingerprint() {
+        let base = std::env::temp_dir().join(format!("spawnpoint-mods-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("survival/mods")).unwrap();
+        std::fs::create_dir_all(base.join("empty")).unwrap();
+        std::fs::write(base.join("survival/mods/a.jar"), "abc").unwrap();
+        std::fs::write(base.join("survival/mods/notes.txt"), "no").unwrap();
+
+        assert_eq!(
+            jar_list(&base.join("survival")),
+            vec![json!({
+                "name": "a.jar",
+                "size": 3,
+                "sha512": "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            })]
+        );
+        assert!(jar_list(&base.join("empty")).is_empty());
 
         std::fs::remove_dir_all(&base).unwrap();
     }

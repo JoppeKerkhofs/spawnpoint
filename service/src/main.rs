@@ -826,13 +826,21 @@ async fn players(state: &AppState, slug: &str) -> Value {
 }
 
 fn mods_newer_than(state: &AppState, slug: &str, since: u64) -> usize {
-    ["mods", "plugins"]
+    let server = FsPath::new(&*state.data_dir).join(slug);
+    let newer = |metadata: std::fs::Metadata| metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok().filter(|modified| modified.as_secs() > since);
+    let jars = ["mods", "plugins"]
         .iter()
-        .flat_map(|folder| std::fs::read_dir(FsPath::new(&*state.data_dir).join(slug).join(folder)).into_iter().flatten().flatten())
+        .flat_map(|folder| std::fs::read_dir(server.join(folder)).into_iter().flatten().flatten())
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".jar"))
-        .filter_map(|entry| entry.metadata().ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok())
-        .filter(|modified| modified.as_secs() > since)
-        .count()
+        .filter_map(|entry| newer(entry.metadata().ok()?))
+        .count();
+
+    // A removed mod leaves no newer jar behind, only a folder that changed.
+    if jars == 0 && server.join("mods").metadata().ok().and_then(newer).is_some() {
+        1
+    } else {
+        jars
+    }
 }
 
 async fn folder_bytes(path: PathBuf) -> Option<u64> {
@@ -1189,6 +1197,7 @@ async fn main() {
         .route("/servers/{slug}/files/content", get(files::read_text).put(files::write_text))
         .route("/servers/{slug}/files/mkdir", post(files::mkdir))
         .route("/servers/{slug}/files/rename", post(files::rename))
+        .route("/servers/{slug}/mods", get(files::list_mods).post(files::install_mod))
         .route("/servers/{slug}/backups", get(backups::list).post(backups::create))
         .route("/servers/{slug}/backups/running", axum::routing::delete(backups::cancel))
         .route("/servers/{slug}/backups/{name}", axum::routing::delete(backups::delete))
@@ -1405,5 +1414,21 @@ mod tests {
         assert_eq!(describe(&state(EXITED, 143, false, None)).0, "offline");
         assert_eq!(describe(&state(EXITED, 1, false, None)).0, "error");
         assert_eq!(describe(&state(EXITED, 137, true, None)).0, "error");
+    }
+
+    #[test]
+    fn a_removed_mod_counts_as_one_change() {
+        let base = std::env::temp_dir().join(format!("spawnpoint-removed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("survival/mods")).unwrap();
+        let state = AppState::for_tests(base.to_str().unwrap());
+
+        assert_eq!(mods_newer_than(&state, "survival", 0), 1);
+        assert_eq!(mods_newer_than(&state, "survival", unix_now() + 60), 0);
+        std::fs::write(base.join("survival/mods/a.jar"), "abc").unwrap();
+        std::fs::write(base.join("survival/mods/b.jar"), "abc").unwrap();
+        assert_eq!(mods_newer_than(&state, "survival", 0), 2);
+
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }
