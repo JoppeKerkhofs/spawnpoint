@@ -179,6 +179,14 @@ test('the api documentation covers every api route', function () {
     $this->get(route('api-docs.spec'))->assertOk()->assertJsonPath('openapi', '3.1.0');
 });
 
+test('the production compose files run the version in composer.json', function () {
+    $version = config('app.version');
+
+    foreach (['compose.prod.yaml' => 2, 'compose.node.yaml' => 1] as $file => $images) {
+        expect(substr_count((string) file_get_contents(base_path("../{$file}")), "\${PANEL_VERSION:-{$version}}"))->toBe($images, $file);
+    }
+});
+
 test('the privacy policy is public and names who runs the installation', function () {
     $this->get(route('privacy'))->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('Privacy')

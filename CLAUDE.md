@@ -105,7 +105,9 @@ was looked at in a browser against a real server.
 ## Conventions
 
 - **Version:** `panel/composer.json` `version`. Every merge publishes both images under it and as
-  `latest`, so a pull request must raise it (`scripts/check-version.sh`). Keep nodes on the
+  `latest`, so a pull request must raise it (`scripts/check-version.sh`). `compose.prod.yaml` and
+  `compose.node.yaml` name the same version as their default image tag; a test fails when they
+  differ, so raise all three together. Keep nodes on the
   panel's version.
 - **Settings:** `Setting::value()` reads the database first, then `config('panel.*')`. Secrets are
   stored encrypted and never sent to the browser; pages get a "has a value" flag instead.

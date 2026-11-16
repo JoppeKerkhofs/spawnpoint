@@ -47,8 +47,8 @@ env file, not the repository:
 docker compose -f compose.prod.yaml --env-file .env.compose up -d
 ```
 
-- `PANEL_VERSION` is required (for example `1.3.0`), and both images are pulled, never built.
-  To update, change it, then `pull` and `up -d`.
+- It runs the release the file belongs to, never `latest`, and both images are pulled, never
+  built. To update, get the new `compose.prod.yaml`, then `pull` and `up -d`.
 - The panel's port is bound to `127.0.0.1` only (`APP_BIND`); people reach it through the
   reverse proxy on the `proxy` network.
 - Container logs are rotated (five files of 10 MB each), and the containers other than the
@@ -121,8 +121,9 @@ in Settings, so you can see which release is running. Every merge to `main` publ
 (`spawnpoint` and `spawnpoint-node`) as `latest` and under that version, so every pull request has to raise it; the pipelines check that
 with `scripts/check-version.sh`.
 
-To run a fixed release, set `PANEL_VERSION` in `.env.compose` (for example `1.2.0`); it pins both
-images.
+`compose.prod.yaml` and `compose.node.yaml` name that same version as the release they run, so
+there is no version to fill in; a test keeps them equal to `composer.json`. To run another
+release, set `PANEL_VERSION` in the env file (for example `1.2.0`); it pins both images.
 
 ## Live updates
 
