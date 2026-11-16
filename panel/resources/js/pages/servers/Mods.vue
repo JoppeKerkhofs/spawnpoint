@@ -1,0 +1,403 @@
+<script setup lang="ts">
+import { Head, router } from '@inertiajs/vue3';
+import { Package } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
+import ModsChangedNotice from '@/components/ModsChangedNotice.vue';
+import SectionCard from '@/components/SectionCard.vue';
+import ServerHeader from '@/components/ServerHeader.vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ask } from '@/lib/dialogs';
+import { t } from '@/lib/i18n';
+import type { Server, States } from '@/lib/servers';
+import { destroy, search, store, update } from '@/routes/servers/mods';
+
+type Installed = {
+    file: string;
+    size: number;
+    project: string | null;
+    name: string | null;
+    icon: string | null;
+    version: string | null;
+    update: boolean;
+};
+
+type Mod = {
+    project: string;
+    name: string;
+    description: string;
+    icon: string | null;
+    downloads: number;
+};
+
+const props = defineProps<{
+    server: Server;
+    states?: States;
+    target: { loader: string; version: string } | null;
+    installed: Installed[];
+    error: string | null;
+    missing: { project: string; name: string }[];
+}>();
+
+const slug = computed(() => ({ server: props.server.slug }));
+const have = computed(
+    () => new Set(props.installed.map((mod) => mod.project).filter(Boolean)),
+);
+
+// One change at a time: each is a download on the node.
+const busy = ref('');
+
+const visit = (key: string) => ({
+    preserveScroll: true,
+    onStart: () => (busy.value = key),
+    onFinish: () => (busy.value = ''),
+    onError: (errors: Record<string, string>) =>
+        toast.error(Object.values(errors)[0]),
+});
+
+const install = (project: string) =>
+    router.post(store.url(slug.value), { project }, visit(project));
+
+const updateMod = (mod: Installed) =>
+    router.put(
+        update.url({ ...slug.value, file: mod.file }),
+        {},
+        visit(mod.file),
+    );
+
+const remove = async (mod: Installed) => {
+    const sure = await ask(
+        'Remove :name? Its file is deleted from the server. It stays loaded until the next restart.',
+        { name: mod.name ?? mod.file },
+    );
+
+    if (sure) {
+        router.delete(
+            destroy.url({ ...slug.value, file: mod.file }),
+            visit(mod.file),
+        );
+    }
+};
+
+const query = ref('');
+const mods = ref<Mod[]>([]);
+const more = ref(false);
+const loading = ref(false);
+const message = ref('');
+
+let latestSearch = 0;
+
+const load = async (offset = 0) => {
+    if (!props.target) {
+        return;
+    }
+
+    const current = ++latestSearch;
+    loading.value = true;
+    message.value = '';
+
+    try {
+        const response = await fetch(
+            search.url(slug.value, { query: { q: query.value, offset } }),
+            { headers: { Accept: 'application/json' } },
+        );
+        const body = await response.json();
+
+        // A slower, older search must not overwrite a newer one.
+        if (current !== latestSearch) {
+            return;
+        }
+
+        if (response.ok) {
+            mods.value = offset ? [...mods.value, ...body.mods] : body.mods;
+            more.value = body.more;
+        } else {
+            message.value = body.message;
+        }
+    } catch {
+        if (current === latestSearch) {
+            message.value = t('The mod list could not be loaded.');
+        }
+    } finally {
+        if (current === latestSearch) {
+            loading.value = false;
+        }
+    }
+};
+
+let debounce: ReturnType<typeof setTimeout>;
+
+watch(query, () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(load, 300);
+});
+
+void load();
+
+const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
+</script>
+
+<template>
+    <Head :title="t(':name mods', { name: server.name })" />
+
+    <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
+        <ServerHeader :server="server" :states="states" tab="mods" />
+
+        <ModsChangedNotice :slug="server.slug" :states="states" />
+
+        <p
+            v-if="error"
+            role="alert"
+            class="rounded-md border border-destructive bg-card px-4 py-3 text-sm text-destructive"
+        >
+            {{ error }}
+        </p>
+
+        <SectionCard
+            v-if="missing.length"
+            :title="t('Also needed')"
+            role="status"
+        >
+            <p class="text-sm text-muted-foreground">
+                {{
+                    t(
+                        'The mod you installed needs these. They were not added, because the modpack may already include them under another file. Install one only if it is missing.',
+                    )
+                }}
+            </p>
+            <ul class="mt-3 flex flex-col gap-2">
+                <li
+                    v-for="mod in missing"
+                    :key="mod.project"
+                    class="flex items-center gap-3"
+                >
+                    <span class="min-w-0 flex-1 font-semibold text-primary">{{
+                        mod.name
+                    }}</span>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        class="border-primary"
+                        :disabled="!!busy || have.has(mod.project)"
+                        :aria-label="t('Install :name', { name: mod.name })"
+                        @click="install(mod.project)"
+                    >
+                        {{
+                            have.has(mod.project)
+                                ? t('Installed')
+                                : busy === mod.project
+                                  ? t('Installing…')
+                                  : t('Install')
+                        }}
+                    </Button>
+                </li>
+            </ul>
+        </SectionCard>
+
+        <div class="flex flex-wrap items-start gap-5">
+            <SectionCard
+                :title="t('Installed (:count)', { count: installed.length })"
+                class="min-w-0 flex-[1_1_420px]"
+            >
+                <p
+                    v-if="server.modpack"
+                    class="mb-3 text-[0.8125rem] text-muted-foreground"
+                >
+                    {{
+                        t(
+                            'This list includes the mods of the modpack itself. If you remove or update one of those, the pack may put it back.',
+                        )
+                    }}
+                </p>
+                <p
+                    v-if="!installed.length"
+                    class="text-sm text-muted-foreground"
+                >
+                    {{ t('No mods are installed yet.') }}
+                </p>
+                <ul v-else class="flex flex-col">
+                    <li
+                        v-for="mod in installed"
+                        :key="mod.file"
+                        class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-divider py-2 first:border-t-0"
+                    >
+                        <img
+                            v-if="mod.icon"
+                            :src="mod.icon"
+                            alt=""
+                            width="36"
+                            height="36"
+                            loading="lazy"
+                            class="size-9 rounded-sm"
+                        />
+                        <Package
+                            v-else
+                            class="size-9 shrink-0 p-1.5 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <span class="min-w-0 flex-1">
+                            <span
+                                class="block font-semibold break-all text-primary"
+                                >{{ mod.name ?? mod.file }}</span
+                            >
+                            <span
+                                class="block text-[0.8125rem] break-all text-muted-foreground"
+                            >
+                                {{ mod.name ? mod.file : t('Not on Modrinth') }}
+                                <template v-if="mod.version">
+                                    · {{ mod.version }}</template
+                                >
+                            </span>
+                        </span>
+                        <Button
+                            v-if="mod.update"
+                            type="button"
+                            variant="outline"
+                            class="border-primary"
+                            :disabled="!!busy"
+                            :aria-label="
+                                t('Update :name', {
+                                    name: mod.name ?? mod.file,
+                                })
+                            "
+                            @click="updateMod(mod)"
+                        >
+                            {{
+                                busy === mod.file ? t('Updating…') : t('Update')
+                            }}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            :disabled="!!busy"
+                            :aria-label="
+                                t('Remove :name', {
+                                    name: mod.name ?? mod.file,
+                                })
+                            "
+                            @click="remove(mod)"
+                        >
+                            {{ t('Remove') }}
+                        </Button>
+                    </li>
+                </ul>
+            </SectionCard>
+
+            <SectionCard
+                :title="
+                    target
+                        ? t('Add mods for :loader :version', target)
+                        : t('Add mods')
+                "
+                class="min-w-0 flex-[1_1_420px]"
+            >
+                <p v-if="!target" class="text-sm text-muted-foreground">
+                    {{
+                        t(
+                            'Could not find out which loader and version this server runs, so mods cannot be added right now. Try again in a moment.',
+                        )
+                    }}
+                </p>
+
+                <template v-else>
+                    <div class="grid gap-2">
+                        <Label for="mod_search" class="sr-only">{{
+                            t('Search mods')
+                        }}</Label>
+                        <Input
+                            id="mod_search"
+                            v-model="query"
+                            type="search"
+                            :placeholder="t('Search Modrinth')"
+                        />
+                    </div>
+
+                    <p role="status" class="my-2 text-sm text-muted-foreground">
+                        {{
+                            loading
+                                ? t('Searching…')
+                                : message ||
+                                  (mods.length
+                                      ? ''
+                                      : t('No mods match that search.'))
+                        }}
+                    </p>
+
+                    <ul class="flex flex-col">
+                        <li
+                            v-for="mod in mods"
+                            :key="mod.project"
+                            class="flex items-center gap-3 border-t border-divider py-2 first:border-t-0"
+                        >
+                            <img
+                                v-if="mod.icon"
+                                :src="mod.icon"
+                                alt=""
+                                width="36"
+                                height="36"
+                                loading="lazy"
+                                class="size-9 rounded-sm"
+                            />
+                            <Package
+                                v-else
+                                class="size-9 shrink-0 p-1.5 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                            <span class="min-w-0 flex-1">
+                                <span class="block font-semibold text-primary"
+                                    >{{ mod.name }}
+                                    <span
+                                        class="text-[0.8125rem] font-normal text-muted-foreground tabular-nums"
+                                        >·
+                                        {{
+                                            t(':count downloads', {
+                                                count: compact.format(
+                                                    mod.downloads,
+                                                ),
+                                            })
+                                        }}</span
+                                    ></span
+                                >
+                                <span
+                                    class="line-clamp-2 text-[0.8125rem] text-muted-foreground"
+                                    >{{ mod.description }}</span
+                                >
+                            </span>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                class="border-primary"
+                                :disabled="!!busy || have.has(mod.project)"
+                                :aria-label="
+                                    t('Install :name', { name: mod.name })
+                                "
+                                @click="install(mod.project)"
+                            >
+                                {{
+                                    have.has(mod.project)
+                                        ? t('Installed')
+                                        : busy === mod.project
+                                          ? t('Installing…')
+                                          : t('Install')
+                                }}
+                            </Button>
+                        </li>
+                    </ul>
+
+                    <Button
+                        v-if="more"
+                        type="button"
+                        variant="outline"
+                        class="mt-3 border-primary"
+                        :disabled="loading"
+                        @click="load(mods.length)"
+                    >
+                        {{ t('Load more') }}
+                    </Button>
+                </template>
+            </SectionCard>
+        </div>
+    </div>
+</template>

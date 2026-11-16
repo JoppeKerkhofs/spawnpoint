@@ -9,12 +9,19 @@ import { t } from '@/lib/i18n';
 import type { Server, States } from '@/lib/servers';
 import { cubeTexture, serverState, software, toneOf } from '@/lib/servers';
 import { dashboard } from '@/routes';
-import { backups, configuration, files, logs, show } from '@/routes/servers';
+import {
+    backups,
+    configuration,
+    files,
+    logs,
+    mods,
+    show,
+} from '@/routes/servers';
 
 const props = defineProps<{
     server: Server;
     states?: States;
-    tab: 'console' | 'configuration' | 'files' | 'logs' | 'backups';
+    tab: 'console' | 'configuration' | 'files' | 'mods' | 'logs' | 'backups';
 }>();
 
 usePoll(4000, { only: ['states'] });
@@ -41,6 +48,11 @@ const tabs = computed(() =>
             href: files({ server: props.server.slug }),
         },
         {
+            key: 'mods',
+            title: t('Mods'),
+            href: mods({ server: props.server.slug }),
+        },
+        {
             key: 'logs',
             title: t('Logs'),
             href: logs({ server: props.server.slug }),
@@ -54,9 +66,11 @@ const tabs = computed(() =>
         // Everyone who sees the server gets its console; the other tabs go by permission.
         (item) =>
             item.key === 'console' ||
-            props.server.can.includes(
-                item.key === 'configuration' ? 'configure' : item.key,
-            ),
+            (item.key === 'mods'
+                ? props.server.has_mods && props.server.can.includes('files')
+                : props.server.can.includes(
+                      item.key === 'configuration' ? 'configure' : item.key,
+                  )),
     ),
 );
 </script>

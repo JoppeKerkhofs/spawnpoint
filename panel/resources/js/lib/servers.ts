@@ -22,6 +22,7 @@ export type Server = {
     modpack: Modpack | null;
     bluemap_enabled: boolean;
     is_default: boolean;
+    has_mods: boolean;
     backup_keep: number;
     backup_retention_days: number | null;
     // What the signed-in user may do here; "admin" on top of everything for an admin.

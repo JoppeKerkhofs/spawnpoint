@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\ModrinthUnavailable;
 use App\Models\Server;
 use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
@@ -38,7 +39,7 @@ class Mods
         if (($target = Cache::get($key)) === null) {
             try {
                 $target = self::packTarget($server);
-            } catch (ConnectionException|RequestException) {
+            } catch (ConnectionException|RequestException|ModrinthUnavailable) {
                 return null;
             }
 
@@ -56,18 +57,17 @@ class Mods
      * @param  array{loader: string, version: string}  $target
      * @return array{mods: list<array{project: string, name: string, description: string, icon: string|null, downloads: int}>, more: bool}
      *
-     * @throws ConnectionException
-     * @throws RequestException
+     * @throws ModrinthUnavailable
      */
     public static function search(array $target, string $query, int $offset): array
     {
-        $found = Modpacks::http()->get(self::MODRINTH.'/search', [
+        $found = self::modrinth('get', '/search', [
             'query' => $query,
             'facets' => json_encode([['project_type:mod'], ["categories:{$target['loader']}"], ["versions:{$target['version']}"], ['server_side:required', 'server_side:optional']]),
             'index' => $query === '' ? 'downloads' : 'relevance',
             'offset' => $offset,
             'limit' => 20,
-        ])->throw()->json();
+        ]);
 
         return [
             'mods' => array_map(fn (array $hit): array => [
@@ -99,15 +99,13 @@ class Mods
 
         try {
             if ($jars !== []) {
-                $known = Modpacks::http()->post(self::MODRINTH.'/version_files', $hashes)->throw()->json();
+                $known = self::modrinth('post', '/version_files', $hashes);
             }
             if ($known !== []) {
                 $projects = self::projects(array_column($known, 'project_id'));
-                $newer = $target === null ? [] : Modpacks::http()
-                    ->post(self::MODRINTH.'/version_files/update', [...$hashes, 'loaders' => [$target['loader']], 'game_versions' => [$target['version']]])
-                    ->throw()->json();
+                $newer = $target === null ? [] : self::modrinth('post', '/version_files/update', [...$hashes, 'loaders' => [$target['loader']], 'game_versions' => [$target['version']]]);
             }
-        } catch (ConnectionException|RequestException) {
+        } catch (ModrinthUnavailable) {
             // The folder is still worth showing.
         }
 
@@ -138,6 +136,7 @@ class Mods
      *
      * @throws ConnectionException
      * @throws RequestException
+     * @throws ModrinthUnavailable
      * @throws ValidationException When the mod has no build for the target.
      */
     public static function install(Server $server, array $target, string $project): array
@@ -150,9 +149,7 @@ class Mods
 
         while ($queue !== []) {
             $next = array_shift($queue);
-            $version = Modpacks::http()
-                ->get(self::MODRINTH."/project/{$next}/version", ['loaders' => json_encode([$target['loader']]), 'game_versions' => json_encode([$target['version']])])
-                ->throw()->json(0);
+            $version = self::modrinth('get', "/project/{$next}/version", ['loaders' => json_encode([$target['loader']]), 'game_versions' => json_encode([$target['version']])])[0] ?? null;
 
             if ($version === null) {
                 if ($next === $project) {
@@ -196,12 +193,27 @@ class Mods
      * @param  list<string>  $ids
      * @return array<string, array<string, mixed>>
      *
-     * @throws ConnectionException
-     * @throws RequestException
+     * @throws ModrinthUnavailable
      */
     private static function projects(array $ids): array
     {
-        return array_column(Modpacks::http()->get(self::MODRINTH.'/projects', ['ids' => json_encode(array_values(array_unique($ids)))])->throw()->json(), null, 'id');
+        return array_column(self::modrinth('get', '/projects', ['ids' => json_encode(array_values(array_unique($ids)))]), null, 'id');
+    }
+
+    /**
+     * Ask Modrinth, so that its failures can be told apart from the node's.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ModrinthUnavailable
+     */
+    private static function modrinth(string $method, string $path, array $data = []): mixed
+    {
+        try {
+            return Modpacks::http()->{$method}(self::MODRINTH.$path, $data)->throw()->json();
+        } catch (ConnectionException|RequestException $exception) {
+            throw new ModrinthUnavailable(previous: $exception);
+        }
     }
 
     /**
@@ -211,6 +223,7 @@ class Mods
      *
      * @throws ConnectionException
      * @throws RequestException
+     * @throws ModrinthUnavailable
      */
     private static function packTarget(Server $server): ?array
     {
@@ -240,7 +253,7 @@ class Mods
             [$project, $version] = [$link[1], $link[2] ?? ''];
         }
 
-        $found = Modpacks::http()->get(self::MODRINTH."/project/{$project}/version".($version !== '' ? "/{$version}" : ''))->throw()->json();
+        $found = self::modrinth('get', "/project/{$project}/version".($version !== '' ? "/{$version}" : ''));
         $found = $version !== '' ? $found : ($found[0] ?? []);
 
         return self::pair($found['loaders'][0] ?? null, $found['game_versions'][0] ?? null);

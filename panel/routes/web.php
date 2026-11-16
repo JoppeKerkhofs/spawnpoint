@@ -6,6 +6,7 @@ use App\Http\Controllers\ApiDocsController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\ModController;
 use App\Http\Controllers\ModpackSearchController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PanelSettingsController;
@@ -59,6 +60,15 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
         Route::post('servers/{server}/files/rename', [FileController::class, 'rename'])->name('servers.files.rename');
         Route::delete('servers/{server}/files', [FileController::class, 'destroy'])->name('servers.files.destroy');
         Route::get('servers/{server}/files/download', [FileController::class, 'download'])->name('servers.files.download');
+
+        Route::get('servers/{server}/mods', [ModController::class, 'index'])->name('servers.mods');
+        Route::get('servers/{server}/mods/search', [ModController::class, 'search'])->name('servers.mods.search');
+        Route::post('servers/{server}/mods', [ModController::class, 'store'])->name('servers.mods.store');
+        // The name becomes part of a path on the node.
+        Route::where(['file' => '[^/]+\.jar'])->group(function () {
+            Route::put('servers/{server}/mods/{file}', [ModController::class, 'update'])->name('servers.mods.update');
+            Route::delete('servers/{server}/mods/{file}', [ModController::class, 'destroy'])->name('servers.mods.destroy');
+        });
     });
 
     Route::middleware('can:act,server,"backups"')->group(function () {

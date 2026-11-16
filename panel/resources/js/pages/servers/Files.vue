@@ -4,6 +4,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { Folder, FileText, Upload } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import ModsChangedNotice from '@/components/ModsChangedNotice.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/lib/i18n';
 import type { Server, States } from '@/lib/servers';
-import { files, power } from '@/routes/servers';
+import { files } from '@/routes/servers';
 import {
     destroy,
     download,
@@ -36,10 +37,6 @@ const props = defineProps<{
 }>();
 
 const slug = computed(() => ({ server: props.server.slug }));
-
-const modsChanged = computed(
-    () => props.states?.servers[props.server.slug]?.mods_changed ?? 0,
-);
 
 // Lines the Configuration form owns: the image rewrites them on every start.
 const managedKeys = [
@@ -235,39 +232,7 @@ const size = (entry: Entry) => {
     <div class="flex flex-col gap-5 px-6 pt-7 pb-12">
         <ServerHeader :server="server" :states="states" tab="files" />
 
-        <div
-            v-if="modsChanged"
-            role="status"
-            class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-card px-4 py-3 text-sm"
-        >
-            <span class="min-w-0 flex-1">
-                {{
-                    modsChanged === 1
-                        ? t(
-                              ':count mod or plugin file was added or replaced since the last start. It loads on the next restart.',
-                              { count: modsChanged },
-                          )
-                        : t(
-                              ':count mod or plugin files were added or replaced since the last start. They load on the next restart.',
-                              { count: modsChanged },
-                          )
-                }}
-            </span>
-            <Button
-                type="button"
-                variant="outline"
-                class="border-primary"
-                @click="
-                    router.post(
-                        power.url({ ...slug, action: 'restart' }),
-                        {},
-                        { preserveScroll: true, only: ['states'] },
-                    )
-                "
-            >
-                {{ t('Restart now') }}
-            </Button>
-        </div>
+        <ModsChangedNotice :slug="server.slug" :states="states" />
 
         <p
             v-if="error"

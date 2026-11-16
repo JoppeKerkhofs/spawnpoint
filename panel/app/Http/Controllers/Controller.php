@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ModrinthUnavailable;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -19,6 +20,8 @@ abstract class Controller
     {
         try {
             $result = $action();
+        } catch (ModrinthUnavailable) {
+            return $this->fail(__('Modrinth could not be reached.'));
         } catch (ConnectionException) {
             return $this->fail(__('The Rust service did not answer.'));
         } catch (RequestException $exception) {

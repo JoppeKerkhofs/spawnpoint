@@ -1,10 +1,13 @@
 <?php
 
+use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\Mods;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 
 function modServer(string $type = 'FABRIC', array $attributes = []): Server
 {
@@ -208,4 +211,141 @@ test('installing a mod that is already there replaces its jar', function () {
 
     expect(nodeDownloads())->toHaveCount(1);
     Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/servers/survival/files?path=mods%2Fsodium-old.jar'));
+});
+
+// One installed, recognised mod with an update waiting, and Modrinth answering for an install.
+function fakeSodium(): void
+{
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => fn (Request $request) => $request->method() === 'GET'
+            ? Http::response([['name' => 'sodium.jar', 'size' => 9, 'sha512' => 'h-sodium']])
+            : Http::response(status: 204),
+        'node.test:8080/servers/survival/files*' => Http::response(status: 204),
+        'api.modrinth.com/v2/version_files/update' => Http::response(['h-sodium' => ['id' => 'v2']]),
+        'api.modrinth.com/v2/version_files' => Http::response(['h-sodium' => ['id' => 'v1', 'project_id' => 'SODIUM', 'version_number' => '0.6.13']]),
+        'api.modrinth.com/v2/project/*/version*' => Http::response([modVersion('SODIUM', 'sodium-2.jar')]),
+        'api.modrinth.com/v2/projects*' => Http::response([['id' => 'SODIUM', 'title' => 'Sodium', 'icon_url' => null]]),
+        'api.modrinth.com/v2/search*' => Http::response(['total_hits' => 0, 'hits' => []]),
+    ]);
+}
+
+test('the mods page shows what is installed and what the server runs on', function () {
+    fakeSodium();
+
+    $this->actingAs(User::factory()->admin()->create())->get(route('servers.mods', modServer()))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('servers/Mods')
+            ->where('server.has_mods', true)
+            ->where('target', FABRIC)
+            ->where('installed.0.name', 'Sodium')
+            ->where('installed.0.update', true)
+            ->where('missing', [])
+            ->where('error', null));
+});
+
+test('the mods page says so when the node does not answer', function () {
+    Http::fake(['node.test:8080/*' => Http::response(status: 500)]);
+
+    $this->actingAs(User::factory()->admin()->create())->get(route('servers.mods', modServer()))
+        ->assertInertia(fn (Assert $page) => $page->where('installed', [])->where('error', 'The Rust service refused the request.'));
+});
+
+test('servers without mods have no mods page', function () {
+    $server = modServer('PAPER');
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->get(route('servers.mods', $server))->assertNotFound();
+    $this->get(route('servers.mods.search', $server))->assertNotFound();
+    $this->post(route('servers.mods.store', $server), ['project' => 'sodium'])->assertNotFound();
+    $this->put(route('servers.mods.update', [$server, 'sodium.jar']))->assertNotFound();
+    $this->delete(route('servers.mods.destroy', [$server, 'sodium.jar']))->assertNotFound();
+});
+
+test('mods need the files permission', function () {
+    $server = modServer();
+    $viewer = User::factory()->create();
+    $viewer->servers()->attach($server, ['permissions' => '["logs"]']);
+    Http::fake();
+
+    $this->actingAs($viewer)->get(route('servers.mods', $server))->assertForbidden();
+    $this->post(route('servers.mods.store', $server), ['project' => 'sodium'])->assertForbidden();
+    $this->delete(route('servers.mods.destroy', [$server, 'sodium.jar']))->assertForbidden();
+    Http::assertNothingSent();
+});
+
+test('the catalogue is searched for the page, and says when Modrinth is down', function () {
+    $server = modServer();
+    $this->actingAs(User::factory()->admin()->create());
+    Http::fake(['api.modrinth.com/*' => Http::sequence()->push(['total_hits' => 0, 'hits' => []])->push(status: 500)]);
+
+    $this->getJson(route('servers.mods.search', [$server, 'q' => 'sod']))->assertOk()->assertExactJson(['mods' => [], 'more' => false]);
+    $this->getJson(route('servers.mods.search', $server))->assertStatus(502)->assertJsonPath('message', 'The mod list could not be loaded.');
+});
+
+test('installing from the page says what was added and records it', function () {
+    fakeSodium();
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.mods.store', modServer()), ['project' => 'SODIUM'])
+        ->assertRedirect()
+        ->assertInertiaFlash('toast.type', 'success')
+        ->assertInertiaFlash('toast.message', 'Installed Sodium. It loads on the next restart.');
+
+    expect(nodeDownloads())->toHaveCount(1)
+        ->and(ActivityLog::query()->sole()->only('event', 'subject', 'properties'))
+        ->toBe(['event' => 'mod.install', 'subject' => 'survival', 'properties' => ['mods' => ['Sodium']]]);
+});
+
+test('a project name that could change the address asked is refused', function () {
+    Http::fake();
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.mods.store', modServer()), ['project' => '../version_files'])->assertSessionHasErrors('project');
+    Http::assertNothingSent();
+});
+
+test('nothing is installed while the loader of a pack is unknown', function () {
+    $server = modServer('MODRINTH', ['modpack' => ['project' => 'cobblemon-fabric', 'name' => 'Cobblemon', 'icon' => null]]);
+    Http::fake(['api.modrinth.com/*' => Http::response(status: 500)]);
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.mods.store', $server), ['project' => 'sodium'])
+        ->assertInertiaFlash('toast.type', 'error')
+        ->assertInertiaFlash('toast.message', 'Could not find out which loader and version this server runs.');
+    expect(nodeDownloads())->toBe([]);
+});
+
+test('an install that fails at Modrinth is an error message, not a crash', function () {
+    Http::fake([
+        'node.test:8080/servers/survival/mods' => Http::response([]),
+        'api.modrinth.com/*' => Http::response(status: 500),
+    ]);
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->post(route('servers.mods.store', modServer()), ['project' => 'sodium'])
+        ->assertRedirect()
+        ->assertInertiaFlash('toast.message', 'Modrinth could not be reached.');
+});
+
+test('a mod is updated by its file, and one Modrinth does not know cannot be', function () {
+    fakeSodium();
+    $server = modServer();
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->put(route('servers.mods.update', [$server, 'sodium.jar']))->assertInertiaFlash('toast.type', 'success');
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), 'path=mods%2Fsodium.jar'));
+    expect(ActivityLog::query()->sole()->event)->toBe('mod.update');
+
+    $this->put(route('servers.mods.update', [$server, 'private.jar']))->assertInertiaFlash('toast.type', 'error');
+    expect(nodeDownloads())->toHaveCount(1);
+});
+
+test('a mod is removed by deleting its jar', function () {
+    fakeSodium();
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->delete(route('servers.mods.destroy', [modServer(), 'sodium.jar']))->assertInertiaFlash('toast.type', 'success');
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/servers/survival/files?path=mods%2Fsodium.jar'));
+    expect(ActivityLog::query()->sole()->only('event', 'properties'))->toBe(['event' => 'mod.remove', 'properties' => ['file' => 'sodium.jar']]);
 });
