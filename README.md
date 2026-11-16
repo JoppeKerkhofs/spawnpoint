@@ -125,6 +125,15 @@ with `scripts/check-version.sh`.
 there is no version to fill in; a test keeps them equal to `composer.json`. To run another
 release, set `PANEL_VERSION` in the env file (for example `1.2.0`); it pins both images.
 
+## Web maps behind your proxy
+
+The `maps` container serves every server's BlueMap over plain http on port 8100, open to
+anyone. To give the maps https and a name of their own, let your reverse proxy serve them: the
+container is on the `proxy` network as `spawnpoint-maps`, so forward a host name (for example
+`maps.example.com`) to `http://spawnpoint-maps:8100`, with the path unchanged. Then set
+`PANEL_BLUEMAP_URL=https://maps.example.com` and `BLUEMAP_BIND=127.0.0.1` in `.env.compose`, so
+the port is no longer open beside the proxy. `APP_BIND=127.0.0.1` does the same for the panel.
+
 ## Live updates
 
 Pages update by themselves: the panel tells open pages over a WebSocket that something changed,

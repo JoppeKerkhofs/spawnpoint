@@ -84,7 +84,8 @@ services:
       - --providers.docker.exposedbydefault=false
       - --entrypoints.bluemap.address=:8100
     ports:
-      - "${BLUEMAP_PORT:-8100}:8100"
+      # BLUEMAP_BIND limits who reaches the maps, as NODE_BIND does for the node.
+      - "${BLUEMAP_BIND:-0.0.0.0}:${BLUEMAP_PORT:-8100}:8100"
     networks:
       - minecraft
       - socket

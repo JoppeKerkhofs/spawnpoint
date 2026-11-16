@@ -216,10 +216,13 @@ services:
       - --providers.docker.exposedbydefault=false
       - --entrypoints.bluemap.address=:8100
     ports:
-      - "${BLUEMAP_PORT:-8100}:8100"
+      # BLUEMAP_BIND=127.0.0.1 closes it to the outside, for when the reverse proxy serves the
+      # maps: it reaches them on the `proxy` network, as spawnpoint-maps:8100.
+      - "${BLUEMAP_BIND:-0.0.0.0}:${BLUEMAP_PORT:-8100}:8100"
     networks:
       - minecraft
       - socket
+      - proxy
 
   # Gives the router and the map proxy read-only container discovery instead of the full Docker socket.
   socket-proxy:
