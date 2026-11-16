@@ -64,6 +64,11 @@ Abilities live in `App\Api\Abilities` and are checked by the `ability:` middlewa
 `can:`; `backups:manage` is a retired name kept for tokens issued before 1.5.0. A device is
 paired by code (`device_pairings`), never by handing over a password.
 
+**Mods.** The Mods page (Fabric, Forge, NeoForge and modpack servers) keeps no record: the
+node lists the jars in `mods/` with their SHA-512, and Modrinth names them by that fingerprint
+(`App\Services\Mods`). To install, the panel picks the build and the node downloads it; the node
+only fetches from `https://cdn.modrinth.com/`, without redirects, and checks the hash.
+
 **Panel containers.** `app` (web), `queue` (webhooks, mail) and `scheduler` (`schedules:run`,
 `servers:watch` every minute) are the same image. Only `app` runs migrations.
 
@@ -137,6 +142,8 @@ was looked at in a browser against a real server.
 - **Console commands** go to the server's own console through `mc-send-to-console` as user 1000;
   RCON is only the fallback and is used for the tick time, once a minute, because every RCON
   connection leaves two lines in the server log.
+- **Modrinth and the node fail alike**: both raise the HTTP client's exceptions. `Mods` wraps
+  Modrinth's in `ModrinthUnavailable` so a message can say which of the two it was.
 - **Player lists** come from `mc-monitor status`, which reports at most about a dozen names.
 - **Images are pulled only when missing.** A new server type may need a manual `docker pull`.
 - **A node on the same Docker daemon as another sees its containers too**; only use that for tests.

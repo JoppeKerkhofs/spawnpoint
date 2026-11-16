@@ -1,6 +1,6 @@
 # Mod manager (1.6.0)
 
-Status: design, not built.
+Status: built in 1.6.0.
 
 ## Intent
 

@@ -288,7 +288,12 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
             <SectionCard
                 :title="
                     target
-                        ? t('Add mods for :loader :version', target)
+                        ? t('Add mods for :loader :version', {
+                              loader:
+                                  target.loader[0].toUpperCase() +
+                                  target.loader.slice(1),
+                              version: target.version,
+                          })
                         : t('Add mods')
                 "
                 class="min-w-0 flex-[1_1_420px]"

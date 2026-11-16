@@ -124,6 +124,18 @@ with `scripts/check-version.sh`.
 To run a fixed release, set `PANEL_VERSION` in `.env.compose` (for example `1.2.0`); it pins both
 images.
 
+## Mods
+
+Servers that run Fabric, Forge, NeoForge or a modpack have a **Mods** page. It lists the mods
+from [Modrinth](https://modrinth.com) that have a build for the server's loader and Minecraft
+version; one click downloads a mod into the server's `mods` folder, together with the mods it
+requires. The same page lists what is in that folder, also the jars you uploaded yourself, marks
+the ones with a newer build and removes them. A change loads on the next restart.
+
+On CurseForge and FTB packs required mods are named but not added by themselves: such a pack
+often ships them under a file Modrinth does not know, and a mod that is there twice keeps the
+server from starting. The node needs to reach `cdn.modrinth.com`, the panel `api.modrinth.com`.
+
 ## Languages
 
 The panel is written in English, and every text goes through a translation lookup with the
