@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { Package } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import ModSkeleton from '@/components/ModSkeleton.vue';
 import ModsChangedNotice from '@/components/ModsChangedNotice.vue';
 import SectionCard from '@/components/SectionCard.vue';
 import ServerHeader from '@/components/ServerHeader.vue';
@@ -36,13 +37,29 @@ type Mod = {
 const props = defineProps<{
     server: Server;
     states?: States;
-    target: { loader: string; version: string } | null;
-    installed: Installed[];
-    error: string | null;
+    // Both arrive after the page; a target of null means it could not be found out.
+    target?: { loader: string; version: string } | null;
+    list?: { installed: Installed[]; error: string | null };
     missing: { project: string; name: string }[];
 }>();
 
 const slug = computed(() => ({ server: props.server.slug }));
+
+// An install answers with this page again, without its late parts: what is shown stays until they come.
+const keep = <T>(read: () => T | undefined) => {
+    const kept = shallowRef(read());
+    watch(read, (now) => {
+        if (now !== undefined) {
+            kept.value = now;
+        }
+    });
+
+    return kept;
+};
+
+const target = keep(() => props.target);
+const list = keep(() => props.list);
+const installed = computed(() => list.value?.installed ?? []);
 
 // Each install names what it still needs; the list is kept here so the next visit does not drop it.
 const needed = ref(props.missing);
@@ -60,7 +77,7 @@ watch(
 
 const loaderNames: Record<string, string> = { neoforge: 'NeoForge' };
 const have = computed(
-    () => new Set(props.installed.map((mod) => mod.project).filter(Boolean)),
+    () => new Set(installed.value.map((mod) => mod.project).filter(Boolean)),
 );
 
 // One change at a time: each is a download on the node.
@@ -107,7 +124,7 @@ const message = ref('');
 let latestSearch = 0;
 
 const load = async (offset = 0) => {
-    if (!props.target) {
+    if (!target.value) {
         return;
     }
 
@@ -151,14 +168,23 @@ watch(query, () => {
     debounce = setTimeout(load, 300);
 });
 
-void load();
+// The first search waits for the target; a later copy of the same target must not empty the list.
+watch(
+    target,
+    (now, before) => {
+        if (now && !before) {
+            void load();
+        }
+    },
+    { immediate: true },
+);
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact' });
 
 // Only for mods: this list is costly, every jar is fingerprinted to make it.
 useLiveReload(
     (change) => change.server === props.server.slug && change.what === 'mod',
-    ['installed', 'error'],
+    ['list'],
 );
 </script>
 
@@ -171,11 +197,11 @@ useLiveReload(
         <ModsChangedNotice :slug="server.slug" :states="states" />
 
         <p
-            v-if="error"
+            v-if="list?.error"
             role="alert"
             class="rounded-md border border-destructive bg-card px-4 py-3 text-sm text-destructive"
         >
-            {{ error }}
+            {{ list.error }}
         </p>
 
         <SectionCard
@@ -225,7 +251,11 @@ useLiveReload(
 
         <div class="flex flex-wrap items-start gap-5">
             <SectionCard
-                :title="t('Installed (:count)', { count: installed.length })"
+                :title="
+                    list
+                        ? t('Installed (:count)', { count: installed.length })
+                        : t('Installed')
+                "
                 class="min-w-0 flex-[1_1_420px]"
             >
                 <p
@@ -238,8 +268,9 @@ useLiveReload(
                         )
                     }}
                 </p>
+                <ModSkeleton v-if="!list" />
                 <p
-                    v-if="!installed.length"
+                    v-else-if="!installed.length"
                     class="text-sm text-muted-foreground"
                 >
                     {{ t('No mods are installed yet.') }}
@@ -326,7 +357,8 @@ useLiveReload(
                 "
                 class="min-w-0 flex-[1_1_420px]"
             >
-                <p v-if="!target" class="text-sm text-muted-foreground">
+                <ModSkeleton v-if="target === undefined" />
+                <p v-else-if="!target" class="text-sm text-muted-foreground">
                     {{
                         t(
                             'Could not find out which loader and version this server runs, so mods cannot be added right now. Try again in a moment.',
@@ -358,7 +390,8 @@ useLiveReload(
                         }}
                     </p>
 
-                    <ul class="flex flex-col">
+                    <ModSkeleton v-if="loading && !mods.length" />
+                    <ul v-else class="flex flex-col">
                         <li
                             v-for="mod in mods"
                             :key="mod.project"

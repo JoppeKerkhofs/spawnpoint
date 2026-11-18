@@ -293,18 +293,23 @@ test('the mods page shows what is installed and what the server runs on', functi
         ->assertInertia(fn (Assert $page) => $page
             ->component('servers/Mods')
             ->where('server.has_mods', true)
-            ->where('target', FABRIC)
-            ->where('installed.0.name', 'Sodium')
-            ->where('installed.0.update', true)
             ->where('missing', [])
-            ->where('error', null));
+            // The page opens without them.
+            ->missing('target')
+            ->missing('list')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('target', FABRIC)
+                ->where('list.installed.0.name', 'Sodium')
+                ->where('list.installed.0.update', true)
+                ->where('list.error', null)));
 });
 
 test('the mods page says so when the node does not answer', function () {
     Http::fake(['node.test:8080/*' => Http::response(status: 500)]);
 
     $this->actingAs(User::factory()->admin()->create())->get(route('servers.mods', modServer()))
-        ->assertInertia(fn (Assert $page) => $page->where('installed', [])->where('error', 'The Rust service refused the request.'));
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('list', ['installed' => [], 'error' => 'The Rust service refused the request.'])));
 });
 
 test('servers without mods have no mods page', function () {

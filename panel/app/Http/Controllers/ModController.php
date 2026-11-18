@@ -41,22 +41,22 @@ class ModController extends Controller implements HasMiddleware
      */
     public function index(Request $request, Server $server): Response
     {
-        $target = Mods::target($server);
-
-        try {
-            $installed = Mods::installed($server, $target);
-        } catch (ConnectionException) {
-            $error = __('The Rust service did not answer.');
-        } catch (RequestException) {
-            $error = __('The Rust service refused the request.');
-        }
-
+        // Both are slow, so the page opens without them; each in its own group, so neither waits.
         return Inertia::render('servers/Mods', [
             'server' => $server->forUser($request->user()),
             'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
-            'target' => $target,
-            'installed' => $installed ?? [],
-            'error' => $error ?? null,
+            'target' => Inertia::defer(fn () => Mods::target($server), 'target'),
+            'list' => Inertia::defer(function () use ($server): array {
+                try {
+                    $installed = Mods::installed($server, Mods::target($server));
+                } catch (ConnectionException) {
+                    $error = __('The Rust service did not answer.');
+                } catch (RequestException) {
+                    $error = __('The Rust service refused the request.');
+                }
+
+                return ['installed' => $installed ?? [], 'error' => $error ?? null];
+            }, 'list'),
             // Dependencies the last install named but did not add, on CurseForge and FTB packs.
             'missing' => session('missing', []),
         ]);
