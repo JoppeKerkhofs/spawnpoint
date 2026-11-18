@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Proxy;
 use Database\Factories\NodeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -48,6 +49,18 @@ class Node extends Model
         $https = ($parts['scheme'] ?? 'http') === 'https';
 
         return ($https ? 'https://' : '').($parts['host'] ?? '').':'.($parts['port'] ?? ($https ? 443 : 80));
+    }
+
+    /**
+     * Both proxies on the panel's host follow where a node is and whether it has addresses of its own.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (self $node): void {
+            if ($node->wasChanged(['base_url', 'dns_target', 'bluemap_url'])) {
+                Proxy::sync();
+            }
+        });
     }
 
     /**

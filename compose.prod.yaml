@@ -25,7 +25,7 @@ x-logging: &logging
 
 # The web server, the queue worker and the scheduler are the same image with the same settings.
 x-panel: &panel
-  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.6.4}
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.6.5}
   restart: unless-stopped
   logging: *logging
   security_opt:
@@ -55,6 +55,8 @@ x-panel: &panel
     CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
     CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     PANEL_DNS_TARGET: ${PANEL_DNS_TARGET:-}
+    # Where the routes to servers on other nodes are written, for the router and the map proxy.
+    PANEL_PROXY_DIR: /proxy
     # Only used on the first start, to create the first admin.
     PANEL_ADMIN_EMAIL: ${PANEL_ADMIN_EMAIL:-}
     PANEL_ADMIN_PASSWORD: ${PANEL_ADMIN_PASSWORD:-}
@@ -66,6 +68,8 @@ x-panel: &panel
     MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-panel@example.com}
     MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Spawnpoint}
+  volumes:
+    - routes:/proxy
 
 services:
   db:
@@ -160,7 +164,7 @@ services:
   # The only container with the Docker socket and the server folders. It has no published
   # port: the panel reaches it over the `panel` network, and every request must be signed.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.4}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.5}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
@@ -190,11 +194,20 @@ services:
     security_opt:
       - no-new-privileges:true
     depends_on:
-      - socket-proxy
+      socket-proxy:
+        condition: service_started
+      # It writes the routes file, without which the router does not start.
+      app:
+        condition: service_healthy
     environment:
       IN_DOCKER: "true"
       DOCKER_SOCKET: tcp://socket-proxy:2375
       DOCKER_NETWORK: minecraft
+      # Servers on a node without a public address of its own: the panel lists them here.
+      ROUTES_CONFIG: /proxy/minecraft.json
+      ROUTES_CONFIG_WATCH: "true"
+    volumes:
+      - routes:/proxy:ro
     ports:
       - "${MINECRAFT_PORT:-25565}:25565"
     networks:
@@ -210,11 +223,20 @@ services:
     security_opt:
       - no-new-privileges:true
     depends_on:
-      - socket-proxy
+      socket-proxy:
+        condition: service_started
+      # The app container makes the folder below, as a user that can write to it.
+      app:
+        condition: service_healthy
     command:
       - --providers.docker.endpoint=tcp://socket-proxy:2375
       - --providers.docker.exposedbydefault=false
+      # The maps of servers on a node without a maps address of its own.
+      - --providers.file.directory=/proxy/maps
+      - --providers.file.watch=true
       - --entrypoints.bluemap.address=:8100
+    volumes:
+      - routes:/proxy:ro
     ports:
       # BLUEMAP_BIND=127.0.0.1 closes it to the outside, for when the reverse proxy serves the
       # maps: it reaches them on the `proxy` network, as spawnpoint-maps:8100.
@@ -242,6 +264,8 @@ services:
 
 volumes:
   database:
+  # Written by the panel, read by the router and the map proxy.
+  routes:
 
 networks:
   # The panel, its database and the node. Minecraft containers are never on it.

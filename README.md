@@ -73,9 +73,11 @@ tells it what to do:
   downloads that archive and unpacks it, and only then is the old container given up. The data
   folder on the old host stays behind, as it does when a server is deleted. A big world takes a
   while; the activity log says when the move is done or why it was not.
-- Players connect to the node's own host on port 25565, so each node needs its own public
-  address. Set it per node as "Point DNS records at" for Cloudflare, or point DNS there yourself.
-  The address of the web maps and the memory limit are per node too.
+- A node needs no public address. While "Point DNS records at" is empty for a node, its servers
+  keep the panel's address: players connect to the panel's host, whose router passes them on to
+  the node on port 25565. Fill it in, and players connect to the node's own host. The address
+  of the web maps works the same way, on port 8100. Both ports of the node must be reachable
+  from the panel's host. The memory limit is per node too.
 - The panel signs every request to a node. Over plain http it does not encrypt it, so put the
   panel and its nodes on a private network or a VPN, and never open the node's port to the
   internet. See "Encrypted panel traffic" below to use https instead.

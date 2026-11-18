@@ -33,6 +33,10 @@ return [
     // "through this panel's own web server"; empty means the node's own address.
     'node_public_url' => env('PANEL_NODE_PUBLIC_URL'),
 
+    // A folder shared with the router and the map proxy of compose.yaml, for the routes to servers
+    // on other nodes. Empty: nothing is written, and each node needs a public address of its own.
+    'proxy_dir' => env('PANEL_PROXY_DIR'),
+
     // Where the map proxy from compose.yaml is reachable; each server's map is at /<server>/ under it.
     'bluemap_url' => env('PANEL_BLUEMAP_URL', 'http://localhost:8100'),
 

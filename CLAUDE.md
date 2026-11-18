@@ -56,6 +56,15 @@ Only then does `node_id` change and the old container go. The old data folder st
 **Players.** `mc-router` listens on 25565 on each node's host and forwards by hostname, using
 the `mc-router.host` label. Web maps go through Traefik on 8100 at `/<slug>/`.
 
+**Nodes without an address.** While a node's `dns_target` is empty its servers are reached
+through the panel's host: `App\Services\Proxy` writes `minecraft.json` (for `mc-router`) and
+`maps/maps.yml` (for Traefik) into `PANEL_PROXY_DIR`, a volume both proxies watch, and they
+forward to the node's host on 25565 and 8100. An empty `bluemap_url` does the same for maps
+alone. The files are written again whenever a server or node changes in a way that matters
+(the models' `booted()`), and at every start. `mc-router` never drops a route it read from the
+file until it restarts, drops any route when a container with that hostname goes, and forgets
+the labelled default server each time it reads the file, which is why the file names it.
+
 **Access.** Roles are `admin` and `viewer`. A viewer sees only shared servers; the share lists
 what they may do there (`Server::PERMISSIONS`). Routes check it with
 `can:act,server,"files"`, and the quotes matter: without them Laravel takes the word for a route

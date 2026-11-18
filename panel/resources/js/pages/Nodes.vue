@@ -208,7 +208,7 @@ const remove = async (node: Node) => {
                             >
                                 {{
                                     t(
-                                        "The public address of this host, for the Cloudflare records of its servers. Empty uses the panel's setting.",
+                                        "The public address of this host, for the Cloudflare records of its servers. Empty: players come in through the panel's host, which passes them on.",
                                     )
                                 }}
                             </span>
@@ -231,7 +231,7 @@ const remove = async (node: Node) => {
                             >
                                 {{
                                     t(
-                                        "Where this host's maps port is reachable from outside. Empty uses the panel's setting.",
+                                        "Where this host's maps port is reachable from outside. Empty: the maps are served through the panel's maps address.",
                                     )
                                 }}
                             </span>
