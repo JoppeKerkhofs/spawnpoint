@@ -239,7 +239,7 @@ impl ServerConfig {
             Err("memory_mb")
         } else if !self.eula {
             Err("eula")
-        } else if self.motd.chars().count() > 100 || self.motd.chars().any(char::is_control) {
+        } else if self.motd.chars().count() > 256 || self.motd.chars().any(char::is_control) {
             Err("motd")
         } else if !["peaceful", "easy", "normal", "hard"].contains(&self.difficulty.as_str()) {
             Err("difficulty")
