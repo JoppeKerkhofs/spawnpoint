@@ -40,9 +40,11 @@ RUN composer dump-autoload --no-dev --optimize \
 
 FROM dunglas/frankenphp:1-php${PHP_VERSION}-alpine AS assembled
 
-# pcntl lets the queue worker finish its job before it stops.
+# pcntl lets the queue worker finish its job before it stops. The debugger and the CGI build of
+# PHP are 29 MB each and nothing here runs them.
 RUN install-php-extensions pdo_mysql pcntl \
-    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && rm /usr/local/bin/phpdbg /usr/local/bin/php-cgi
 
 WORKDIR /app
 COPY --from=build /app /app
