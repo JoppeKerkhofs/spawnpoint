@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Users\CreateUser;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Server;
@@ -10,8 +11,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Password as PasswordBroker;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
@@ -36,7 +35,7 @@ class UserController extends Controller
     /**
      * Create a user. Without a password they are invited by e-mail.
      */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, CreateUser $createUser): JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -45,15 +44,8 @@ class UserController extends Controller
             ...$this->accessRules(),
         ]);
 
-        $invited = blank($data['password'] ?? null);
-        $user = User::create(['name' => $data['name'], 'email' => $data['email'], 'password' => $invited ? Str::password(40) : $data['password']]);
-        $user->forceFill(['email_verified_at' => now()])->save();
+        [$user, $invited] = $createUser($data);
         $this->grant($user, $data);
-        ActivityLog::record('user.create', properties: ['email' => $user->email, 'role' => $data['role'], 'invited' => $invited]);
-
-        if ($invited) {
-            PasswordBroker::sendResetLink(['email' => $user->email]);
-        }
 
         return response()->json(['data' => [...$user->only('id', 'name', 'email', 'role'), 'invited' => $invited]], 201);
     }

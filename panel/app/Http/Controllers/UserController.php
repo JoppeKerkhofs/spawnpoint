@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Users\CreateUser;
 use App\Models\ActivityLog;
 use App\Models\Server;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Password as PasswordBroker;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -42,7 +41,7 @@ class UserController extends Controller
     /**
      * Create a user. There is no public sign-up, so this is the only way in.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, CreateUser $createUser): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -51,16 +50,8 @@ class UserController extends Controller
             ...$this->accessRules(),
         ]);
 
-        // Without a password the user is invited: they get an email with a link to choose their own.
-        $invited = blank($data['password'] ?? null);
-        $user = User::create(['name' => $data['name'], 'email' => $data['email'], 'password' => $invited ? Str::password(40) : $data['password']]);
-        $user->forceFill(['email_verified_at' => now()])->save();
+        [$user, $invited] = $createUser($data);
         $this->grant($user, $data);
-        ActivityLog::record('user.create', properties: ['email' => $user->email, 'role' => $data['role'], 'invited' => $invited]);
-
-        if ($invited) {
-            PasswordBroker::sendResetLink(['email' => $user->email]);
-        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $invited
             ? __('User created. They get an email with a link to set their password.')
