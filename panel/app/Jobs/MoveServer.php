@@ -8,6 +8,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Services\CloudflareDns;
 use App\Services\NodeClient;
+use App\Services\Proxy;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
@@ -77,6 +78,8 @@ class MoveServer implements ShouldQueue
             $server->forceFill(['node_id' => $target->id])->save();
             // Nothing is left running on the old node; its data folder stays, like a deleted server's.
             rescue(fn () => $from->delete($server));
+            // Again: a container that goes takes its route along, also the one just written for it.
+            Proxy::sync();
             $this->moveDns($server, $source, $target);
 
             if ($running) {

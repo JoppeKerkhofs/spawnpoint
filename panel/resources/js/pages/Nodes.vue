@@ -16,6 +16,8 @@ type Node = {
     base_url: string;
     dns_target: string | null;
     bluemap_url: string | null;
+    minecraft_port: number | null;
+    maps_port: number | null;
     memory_limit_mb: number | null;
     online: boolean;
     last_seen_at: string | null;
@@ -208,7 +210,7 @@ const remove = async (node: Node) => {
                             >
                                 {{
                                     t(
-                                        "The public address of this host, for the Cloudflare records of its servers. Empty uses the panel's setting.",
+                                        "The public address of this host, for the Cloudflare records of its servers. Empty: players come in through the panel's host, which passes them on.",
                                     )
                                 }}
                             </span>
@@ -231,12 +233,70 @@ const remove = async (node: Node) => {
                             >
                                 {{
                                     t(
-                                        "Where this host's maps port is reachable from outside. Empty uses the panel's setting.",
+                                        "Where this host's maps port is reachable from outside. Empty: the maps are served through the panel's maps address.",
                                     )
                                 }}
                             </span>
                             <InputError :message="errors.bluemap_url" />
                         </div>
+                        <template v-if="!node.local">
+                            <div class="grid content-start gap-2">
+                                <Label :for="`minecraft_port-${node.id}`">{{
+                                    t('Minecraft port')
+                                }}</Label>
+                                <Input
+                                    :id="`minecraft_port-${node.id}`"
+                                    name="minecraft_port"
+                                    type="number"
+                                    min="1"
+                                    max="65535"
+                                    step="1"
+                                    class="max-w-48"
+                                    placeholder="25565"
+                                    :default-value="node.minecraft_port ?? ''"
+                                    :aria-describedby="`minecraft_port_hint-${node.id}`"
+                                />
+                                <span
+                                    :id="`minecraft_port_hint-${node.id}`"
+                                    :class="hint"
+                                >
+                                    {{
+                                        t(
+                                            'MINECRAFT_PORT on the host of this node, where players join.',
+                                        )
+                                    }}
+                                </span>
+                                <InputError :message="errors.minecraft_port" />
+                            </div>
+                            <div class="grid content-start gap-2">
+                                <Label :for="`maps_port-${node.id}`">{{
+                                    t('Web maps port')
+                                }}</Label>
+                                <Input
+                                    :id="`maps_port-${node.id}`"
+                                    name="maps_port"
+                                    type="number"
+                                    min="1"
+                                    max="65535"
+                                    step="1"
+                                    class="max-w-48"
+                                    placeholder="8100"
+                                    :default-value="node.maps_port ?? ''"
+                                    :aria-describedby="`maps_port_hint-${node.id}`"
+                                />
+                                <span
+                                    :id="`maps_port_hint-${node.id}`"
+                                    :class="hint"
+                                >
+                                    {{
+                                        t(
+                                            'BLUEMAP_PORT on the host of this node, where its web maps are.',
+                                        )
+                                    }}
+                                </span>
+                                <InputError :message="errors.maps_port" />
+                            </div>
+                        </template>
                         <div class="grid content-start gap-2">
                             <Label :for="`memory_limit_mb-${node.id}`">{{
                                 t('Memory for its servers together (MB)')
@@ -322,6 +382,54 @@ const remove = async (node: Node) => {
                                 }}
                             </span>
                             <InputError :message="errors.base_url" />
+                        </div>
+                        <div class="grid content-start gap-2">
+                            <Label for="minecraft_port">{{
+                                t('Minecraft port')
+                            }}</Label>
+                            <Input
+                                id="minecraft_port"
+                                name="minecraft_port"
+                                type="number"
+                                min="1"
+                                max="65535"
+                                step="1"
+                                class="max-w-48"
+                                placeholder="25565"
+                                aria-describedby="minecraft_port_hint"
+                            />
+                            <span id="minecraft_port_hint" :class="hint">
+                                {{
+                                    t(
+                                        'MINECRAFT_PORT on the host of this node, where players join.',
+                                    )
+                                }}
+                            </span>
+                            <InputError :message="errors.minecraft_port" />
+                        </div>
+                        <div class="grid content-start gap-2">
+                            <Label for="maps_port">{{
+                                t('Web maps port')
+                            }}</Label>
+                            <Input
+                                id="maps_port"
+                                name="maps_port"
+                                type="number"
+                                min="1"
+                                max="65535"
+                                step="1"
+                                class="max-w-48"
+                                placeholder="8100"
+                                aria-describedby="maps_port_hint"
+                            />
+                            <span id="maps_port_hint" :class="hint">
+                                {{
+                                    t(
+                                        'BLUEMAP_PORT on the host of this node, where its web maps are.',
+                                    )
+                                }}
+                            </span>
+                            <InputError :message="errors.maps_port" />
                         </div>
                         <Button :disabled="processing" class="self-start">{{
                             t('Add node')

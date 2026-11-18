@@ -33,7 +33,7 @@ class NodeController extends Controller
             }
 
             return [
-                ...$node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'memory_limit_mb'),
+                ...$node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port', 'memory_limit_mb'),
                 'online' => $online,
                 'servers' => $node->servers_count,
                 'allocated_mb' => (int) $node->servers()->sum('memory_mb'),
@@ -54,7 +54,7 @@ class NodeController extends Controller
         ActivityLog::record('node.create', properties: ['name' => $node->name]);
 
         return response()->json([
-            'data' => $node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'memory_limit_mb'),
+            'data' => $node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port', 'memory_limit_mb'),
             // Stored encrypted, so this is the one time it can be read.
             'token' => $token,
         ], 201);
@@ -77,7 +77,7 @@ class NodeController extends Controller
         $node->update($data);
         ActivityLog::record('node.update', properties: ['name' => $node->name]);
 
-        return response()->json(['data' => $node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'memory_limit_mb')]);
+        return response()->json(['data' => $node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port', 'memory_limit_mb')]);
     }
 
     /**

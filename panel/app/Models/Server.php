@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Proxy;
 use Database\Factories\ServerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -165,6 +166,19 @@ class Server extends Model
         if (! $user->isAdmin()) {
             $query->whereHas('viewers', fn (Builder $viewers) => $viewers->whereKey($user->id));
         }
+    }
+
+    /**
+     * Both proxies on the panel's host follow where a server is and what it is called.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (self $server): void {
+            if ($server->wasRecentlyCreated || $server->wasChanged(['node_id', 'hostname', 'bluemap_enabled', 'is_default'])) {
+                Proxy::sync();
+            }
+        });
+        static::deleted(fn () => Proxy::sync());
     }
 
     /**

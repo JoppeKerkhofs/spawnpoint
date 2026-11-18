@@ -36,7 +36,7 @@ class NodeController extends Controller
                 }
 
                 return [
-                    ...$node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'memory_limit_mb'),
+                    ...$node->only('id', 'name', 'base_url', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port', 'memory_limit_mb'),
                     'online' => $online,
                     'last_seen_at' => $node->last_seen_at?->toIso8601String(),
                     'servers' => $node->servers_count,

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Node;
 use App\Models\User;
+use App\Services\Proxy;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -30,6 +31,9 @@ class SetupPanel extends Command
 
         // The token can be rotated by changing the environment and restarting.
         Node::updateOrCreate(['name' => Node::LOCAL], ['base_url' => config('panel.node_url'), 'token' => $token]);
+
+        // The router does not start without its routes file.
+        Proxy::sync();
 
         if (User::query()->exists()) {
             return self::SUCCESS;

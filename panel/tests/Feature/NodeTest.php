@@ -38,6 +38,15 @@ test('an admin registers a node and sees its token once', function () {
     $this->actingAs(User::factory()->create())->get(route('nodes.index'))->assertForbidden();
 });
 
+test('a node is registered with the ports its host uses', function () {
+    $this->actingAs($this->admin);
+
+    $this->post(route('nodes.store'), ['name' => 'cellar', 'base_url' => 'http://10.0.0.7:8080', 'minecraft_port' => '25570', 'maps_port' => ''])->assertSessionHasNoErrors();
+    expect(Node::firstWhere('name', 'cellar')->only('minecraft_port', 'maps_port'))->toBe(['minecraft_port' => 25570, 'maps_port' => null]);
+
+    $this->put(route('nodes.update', $this->attic), ['name' => 'attic', 'base_url' => 'http://attic.test:8080', 'maps_port' => '70000'])->assertSessionHasErrors('maps_port');
+});
+
 test('a server is created on the chosen node, with that node\'s dns target', function () {
     config(['panel.cloudflare_token' => 'cf-token', 'panel.dns_target' => '203.0.113.5']);
     $this->attic->update(['dns_target' => '198.51.100.9']);
