@@ -42,7 +42,7 @@ trait ServerValidationRules
                     }
                 },
             ],
-            'motd' => ['nullable', 'string', 'max:100', 'regex:/^[^\x00-\x1F\x7F]*$/'],
+            'motd' => ['nullable', 'string', 'max:256', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             'difficulty' => ['required', Rule::in(Server::DIFFICULTIES)],
             'mode' => ['required', Rule::in(Server::MODES)],
             'max_players' => ['required', 'integer', 'between:1,1000'],

@@ -165,6 +165,18 @@ test('a new server can start from a seed or from a world in the import folder', 
     Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request['motd'] === 'Changed' && $request['seed'] === '12345' && $request['import_host'] === null);
 });
 
+test('a motd keeps its colors, symbols and the written line break', function () {
+    Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
+    $motd = '§6§lSpawnpoint §r★\n§aꜱᴜʀᴠɪᴠᴀʟ';
+
+    $this->post(route('servers.store'), [
+        'name' => 'Styled', 'slug' => 'styled', 'server_type' => 'PAPER', 'mc_version' => 'LATEST', 'java_version' => '25',
+        'memory_mb' => '2048', 'motd' => $motd, 'difficulty' => 'normal', 'mode' => 'survival', 'max_players' => '20', 'eula' => '1',
+    ])->assertSessionHasNoErrors();
+
+    Http::assertSent(fn (Request $request) => $request['motd'] === $motd);
+});
+
 test('a world import is passed to the node and paths cannot step out', function () {
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
 

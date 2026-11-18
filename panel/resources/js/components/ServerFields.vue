@@ -5,6 +5,7 @@ import SectionCard from '@/components/SectionCard.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ModpackPicker from '@/components/ModpackPicker.vue';
+import MotdEditor from '@/components/MotdEditor.vue';
 import { t } from '@/lib/i18n';
 import type {
     MemoryBudget,
@@ -346,13 +347,8 @@ const selectClass =
         <div class="grid gap-4 sm:grid-cols-3">
             <div class="grid content-start gap-2 sm:col-span-3">
                 <Label for="motd">{{ t('MOTD') }}</Label>
-                <Input
-                    id="motd"
-                    name="motd"
-                    maxlength="100"
-                    :default-value="
-                        server?.settings.motd ?? 'A Minecraft server'
-                    "
+                <MotdEditor
+                    :value="server?.settings.motd ?? 'A Minecraft server'"
                 />
                 <InputError :message="errors.motd" />
             </div>
