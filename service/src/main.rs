@@ -302,7 +302,9 @@ impl ServerConfig {
         // The image fetches the BlueMap build that fits this server from Modrinth. The question mark
         // makes it optional: without a fitting build the server still starts, just without a map.
         if self.bluemap && self.takes_mods() {
-            env.push("MODRINTH_PROJECTS=bluemap?".into());
+            // BlueMap's Fabric build needs Fabric API, which only a modpack brings along itself.
+            let api = if self.server_type == "FABRIC" { ",fabric-api?" } else { "" };
+            env.push(format!("MODRINTH_PROJECTS=bluemap?{api}"));
         }
 
         env
@@ -1371,6 +1373,8 @@ mod tests {
         assert_eq!(config(|value| value["server_type"] = json!("PUMPKIN")).unwrap().image(), "itzg/minecraft-server:latest");
         assert!(!valid.env().iter().any(|entry| entry.starts_with("MODRINTH_PROJECTS=")));
         assert!(config(|value| value["bluemap"] = json!(true)).unwrap().env().contains(&"MODRINTH_PROJECTS=bluemap?".to_owned()));
+        let fabric_with_map = config(|value| { value["bluemap"] = json!(true); value["server_type"] = json!("FABRIC"); }).unwrap();
+        assert!(fabric_with_map.env().contains(&"MODRINTH_PROJECTS=bluemap?,fabric-api?".to_owned()));
         let vanilla_with_map = config(|value| { value["bluemap"] = json!(true); value["server_type"] = json!("VANILLA"); }).unwrap();
         assert!(!vanilla_with_map.env().iter().any(|entry| entry.starts_with("MODRINTH_PROJECTS=")));
         assert!(config(|value| value["seed"] = json!("-4172144997902289642")).unwrap().env().contains(&"SEED=-4172144997902289642".to_owned()));
