@@ -61,6 +61,15 @@ const target = keep(() => props.target);
 const list = keep(() => props.list);
 const installed = computed(() => list.value?.installed ?? []);
 
+const filter = ref('');
+const shown = computed(() => {
+    const words = filter.value.trim().toLowerCase();
+
+    return installed.value.filter((mod) =>
+        `${mod.name ?? ''} ${mod.file}`.toLowerCase().includes(words),
+    );
+});
+
 // Each install names what it still needs; the list is kept here so the next visit does not drop it.
 const needed = ref(props.missing);
 watch(
@@ -275,9 +284,27 @@ useLiveReload(
                 >
                     {{ t('No mods are installed yet.') }}
                 </p>
-                <ul v-else class="flex flex-col">
+                <div v-else class="mb-2 grid gap-2">
+                    <Label for="installed_search" class="sr-only">{{
+                        t('Search installed mods')
+                    }}</Label>
+                    <Input
+                        id="installed_search"
+                        v-model="filter"
+                        type="search"
+                        :placeholder="t('Search installed mods')"
+                    />
+                    <p
+                        v-if="!shown.length"
+                        role="status"
+                        class="text-sm text-muted-foreground"
+                    >
+                        {{ t('No mods match that search.') }}
+                    </p>
+                </div>
+                <ul v-if="list" class="flex flex-col">
                     <li
-                        v-for="mod in installed"
+                        v-for="mod in shown"
                         :key="mod.file"
                         class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-divider py-2 first:border-t-0"
                     >
