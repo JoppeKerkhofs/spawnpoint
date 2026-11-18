@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\NodeValidationRules;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Node;
@@ -13,10 +14,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class NodeController extends Controller
 {
+    use NodeValidationRules;
+
     /**
      * The hosts that run servers, with whether they answered just now.
      */
@@ -46,7 +48,7 @@ class NodeController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->nodeRules());
         $token = Str::random(64);
         $node = Node::create([...$data, 'base_url' => rtrim($data['base_url'], '/'), 'token' => $token]);
         ActivityLog::record('node.create', properties: ['name' => $node->name]);
@@ -63,7 +65,7 @@ class NodeController extends Controller
      */
     public function update(Request $request, Node $node): JsonResponse
     {
-        $data = $request->validate($this->rules($node));
+        $data = $request->validate($this->nodeRules($node));
 
         // The local node's address comes from the panel's environment and would be put back on the next start.
         if ($node->name === Node::LOCAL) {
@@ -95,22 +97,5 @@ class NodeController extends Controller
         ActivityLog::record('node.delete', properties: ['name' => $node->name]);
 
         return response()->noContent();
-    }
-
-    /**
-     * @return array<string, array<int, mixed>>
-     */
-    private function rules(?Node $node = null): array
-    {
-        $local = $node?->name === Node::LOCAL;
-
-        return [
-            'name' => [$local ? 'nullable' : 'required', 'string', 'max:40', 'regex:/^[A-Za-z0-9][A-Za-z0-9 _-]*$/', Rule::unique('nodes', 'name')->ignore($node)],
-            // https is a node that was given a certificate (SPAWNPOINT_TLS_CERT).
-            'base_url' => [$local ? 'nullable' : 'required', 'string', 'max:255', 'regex:/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?\/?$/'],
-            'dns_target' => ['nullable', 'string', 'max:253', 'regex:/^([0-9a-fA-F:.]+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$/'],
-            'bluemap_url' => ['nullable', 'url:http,https', 'max:255'],
-            'memory_limit_mb' => ['nullable', 'integer', 'between:1024,4194304'],
-        ];
     }
 }

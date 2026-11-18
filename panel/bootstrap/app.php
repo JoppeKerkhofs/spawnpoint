@@ -28,7 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // Signing a channel asks what opening a page asks.
     ->withBroadcasting(__DIR__.'/../routes/channels.php', ['middleware' => ['web', 'auth', 'verified', RequireTwoFactor::class]])
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+        $middleware->encryptCookies(except: ['appearance']);
 
         // Which proxies are trusted is set in config/trustedproxy.php. From them only the scheme,
         // port and client address are taken; the host comes from the Host header.

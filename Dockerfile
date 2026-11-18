@@ -30,19 +30,25 @@ COPY panel/package.json panel/package-lock.json panel/.npmrc ./
 RUN npm ci
 
 COPY panel .
-# The application name is compiled into the frontend (page titles).
+# The application name is compiled into the frontend (page titles). After the build only
+# public/build is served, so the frontend's sources and settings stay out of the image.
 ARG APP_NAME="Spawnpoint"
 RUN composer dump-autoload --no-dev --optimize \
     && php artisan wayfinder:generate --with-form \
     && VITE_APP_NAME="${APP_NAME}" npm run build \
-    && rm -rf node_modules
+    && rm -rf node_modules resources/js resources/css package.json package-lock.json .npmrc \
+        pnpm-workspace.yaml tsconfig.json vite.config.ts components.json AGENTS.md
 
 
 FROM dunglas/frankenphp:1-php${PHP_VERSION}-alpine AS assembled
 
-# pcntl lets the queue worker finish its job before it stops.
+# pcntl lets the queue worker finish its job before it stops. The debugger and the CGI build of
+# PHP are 29 MB each and nothing here runs them; PHP's source and headers only serve to
+# compile extensions, which is done by then.
 RUN install-php-extensions pdo_mysql pcntl \
-    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && rm -r /usr/local/bin/phpdbg /usr/local/bin/php-cgi /usr/local/bin/phpize \
+        /usr/local/bin/php-config /usr/src/php.tar.xz* /usr/local/include/php
 
 WORKDIR /app
 COPY --from=build /app /app

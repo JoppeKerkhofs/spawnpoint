@@ -29,7 +29,6 @@ declare module '@inertiajs/core' {
                 host: string | null;
                 port: string | number | null;
             } | null;
-            sidebarOpen: boolean;
             [key: string]: unknown;
         };
     }
