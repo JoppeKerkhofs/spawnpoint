@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useIntervalFn, usePreferredReducedMotion } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { t } from '@/lib/i18n';
 
@@ -36,7 +37,7 @@ const styles = [
     ['o', 'I', t('Italic'), 'italic'],
     ['n', 'U', t('Underlined'), 'underline'],
     ['m', 'S', t('Struck through'), 'line-through'],
-    ['k', '▒', t('Scrambled'), ''],
+    ['k', '▒', t('Obfuscated'), ''],
     ['r', '↺', t('Back to plain text'), ''],
 ];
 const symbols = [...'★☆❤☠⚔⛏☀☁⚡❄✔✖➜♪♦●▶◀«»✦☘⚑'];
@@ -69,6 +70,21 @@ function smallCaps() {
     );
 }
 
+// The game keeps redrawing obfuscated text with other characters; the tick makes the preview do so.
+const tick = ref(0);
+const motion = usePreferredReducedMotion();
+useIntervalFn(() => motion.value !== 'reduce' && tick.value++, 80);
+const noise = 'abcdefghkmnopqrsuvwxyz0123456789#%&?';
+const obfuscate = (piece: string) =>
+    piece.replace(
+        /\S/g,
+        () =>
+            noise[
+                (Math.floor(Math.random() * noise.length) + tick.value) %
+                    noise.length
+            ],
+    );
+
 // As the game reads it: a colour or §r ends the styles before it, and each line starts plain.
 const preview = computed(() =>
     text.value.split('\n').map((line) => {
@@ -87,7 +103,7 @@ const preview = computed(() =>
             } else if (part) {
                 return [
                     {
-                        text: part,
+                        text: on.includes('k') ? obfuscate(part) : part,
                         style: {
                             color,
                             fontWeight: on.includes('l') ? 'bold' : 'normal',
@@ -99,7 +115,6 @@ const preview = computed(() =>
                                 ]
                                     .join(' ')
                                     .trim() || 'none',
-                            filter: on.includes('k') ? 'blur(3px)' : 'none',
                         },
                     },
                 ];
