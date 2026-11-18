@@ -77,7 +77,8 @@ tells it what to do:
   keep the panel's address: players connect to the panel's host, whose router passes them on to
   the node on port 25565. Fill it in, and players connect to the node's own host. The address
   of the web maps works the same way, on port 8100. Both ports of the node must be reachable
-  from the panel's host. The memory limit is per node too.
+  from the panel's host. A node whose `MINECRAFT_PORT` or `BLUEMAP_PORT` differs gets those
+  ports filled in on the Nodes page. The memory limit is per node too.
 - The panel signs every request to a node. Over plain http it does not encrypt it, so put the
   panel and its nodes on a private network or a VPN, and never open the node's port to the
   internet. See "Encrypted panel traffic" below to use https instead.

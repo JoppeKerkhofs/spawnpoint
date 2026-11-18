@@ -59,7 +59,8 @@ the `mc-router.host` label. Web maps go through Traefik on 8100 at `/<slug>/`.
 **Nodes without an address.** While a node's `dns_target` is empty its servers are reached
 through the panel's host: `App\Services\Proxy` writes `minecraft.json` (for `mc-router`) and
 `maps/maps.yml` (for Traefik) into `PANEL_PROXY_DIR`, a volume both proxies watch, and they
-forward to the node's host on 25565 and 8100. An empty `bluemap_url` does the same for maps
+forward to the node's host on its `minecraft_port` and `maps_port` (25565 and 8100 when
+empty). An empty `bluemap_url` does the same for maps
 alone. The files are written again whenever a server or node changes in a way that matters
 (the models' `booted()`), and at every start. `mc-router` never drops a route it read from the
 file until it restarts, drops any route when a container with that hostname goes, and forgets

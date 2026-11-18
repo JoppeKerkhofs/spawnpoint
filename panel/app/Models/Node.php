@@ -18,10 +18,12 @@ use Illuminate\Support\Carbon;
  * @property string $token
  * @property string|null $dns_target
  * @property string|null $bluemap_url
+ * @property int|null $minecraft_port
+ * @property int|null $maps_port
  * @property int|null $memory_limit_mb
  * @property Carbon|null $last_seen_at
  */
-#[Fillable(['name', 'base_url', 'token', 'dns_target', 'bluemap_url', 'memory_limit_mb'])]
+#[Fillable(['name', 'base_url', 'token', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port', 'memory_limit_mb'])]
 #[Hidden(['token'])]
 class Node extends Model
 {
@@ -57,7 +59,7 @@ class Node extends Model
     protected static function booted(): void
     {
         static::saved(function (self $node): void {
-            if ($node->wasChanged(['base_url', 'dns_target', 'bluemap_url'])) {
+            if ($node->wasChanged(['base_url', 'dns_target', 'bluemap_url', 'minecraft_port', 'maps_port'])) {
                 Proxy::sync();
             }
         });
@@ -74,6 +76,8 @@ class Node extends Model
             'token' => 'encrypted',
             'last_seen_at' => 'datetime',
             'memory_limit_mb' => 'integer',
+            'minecraft_port' => 'integer',
+            'maps_port' => 'integer',
         ];
     }
 }

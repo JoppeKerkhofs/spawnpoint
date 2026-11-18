@@ -40,6 +40,12 @@ test('servers on a node without addresses of its own are routed through the pane
     Server::firstWhere('slug', 'far')->delete();
     expect(array_keys(($this->routes)()['mappings']))->toBe(['plain.mc.example.com']);
 
+    // A node says which ports its host uses.
+    $attic->update(['minecraft_port' => '25570', 'maps_port' => '8200', 'bluemap_url' => null]);
+    Server::firstWhere('slug', 'plain')->update(['bluemap_enabled' => true]);
+    expect(($this->routes)()['mappings'])->toBe(['plain.mc.example.com' => '10.0.0.7:25570'])
+        ->and(($this->maps)()['http']['services']["node-{$attic->id}"]['loadBalancer']['servers'][0]['url'])->toBe('http://10.0.0.7:8200');
+
     // The router would forget a default server on its own host, so that one is named too.
     Server::firstWhere('slug', 'home')->update(['is_default' => true]);
     expect(($this->routes)()['default-server'])->toBe('mc-home:25565');

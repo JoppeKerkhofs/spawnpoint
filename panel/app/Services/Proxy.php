@@ -13,7 +13,7 @@ use stdClass;
  */
 class Proxy
 {
-    // ponytail: the ports compose.node.yaml publishes by default; make them node fields when a node differs.
+    // What compose.node.yaml publishes unless a node says otherwise.
     private const int MINECRAFT_PORT = 25565;
 
     private const int MAPS_PORT = 8100;
@@ -47,17 +47,17 @@ class Proxy
             }
 
             if (blank($node->dns_target)) {
-                $routes['mappings'][$server->hostname] = $host.':'.self::MINECRAFT_PORT;
+                $routes['mappings'][$server->hostname] = $backend = $host.':'.($node->minecraft_port ?? self::MINECRAFT_PORT);
 
                 if ($server->is_default) {
-                    $routes['default-server'] = $host.':'.self::MINECRAFT_PORT;
+                    $routes['default-server'] = $backend;
                 }
             }
 
             if ($server->bluemap_enabled && blank($node->bluemap_url)) {
                 // The node's own map proxy takes the server's name off the path.
                 $routers["map-{$server->slug}"] = ['rule' => "PathPrefix(`/{$server->slug}/`)", 'entryPoints' => ['bluemap'], 'service' => "node-{$node->id}"];
-                $services["node-{$node->id}"] = ['loadBalancer' => ['servers' => [['url' => "http://{$host}:".self::MAPS_PORT]]]];
+                $services["node-{$node->id}"] = ['loadBalancer' => ['servers' => [['url' => "http://{$host}:".($node->maps_port ?? self::MAPS_PORT)]]]];
             }
         }
 

@@ -23,6 +23,9 @@ trait NodeValidationRules
             'base_url' => [$local ? 'nullable' : 'required', 'string', 'max:255', 'regex:/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?\/?$/'],
             'dns_target' => ['nullable', 'string', 'max:253', 'regex:/^([0-9a-fA-F:.]+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$/'],
             'bluemap_url' => ['nullable', 'url:http,https', 'max:255'],
+            // MINECRAFT_PORT and BLUEMAP_PORT on the node's host, where the panel's proxies pass traffic on to.
+            'minecraft_port' => ['nullable', 'integer', 'between:1,65535'],
+            'maps_port' => ['nullable', 'integer', 'between:1,65535'],
             'memory_limit_mb' => ['nullable', 'integer', 'between:1024,4194304'],
         ];
     }
