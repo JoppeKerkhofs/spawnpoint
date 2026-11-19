@@ -44,6 +44,7 @@ class CreateServer
                 'modpack' => UpdateServer::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
                 'is_default' => (bool) ($data['is_default'] ?? false),
+                ...UpdateServer::packUpdates($data),
                 'eula_accepted_at' => now(),
             ]);
 

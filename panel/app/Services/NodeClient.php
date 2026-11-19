@@ -12,9 +12,13 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 
 class NodeClient
 {
+    // States a node reports while it is busy with a backup or a restore.
+    private const array BUSY = ['backing up', 'restoring'];
+
     public function __construct(private Node $node) {}
 
     /**
@@ -257,6 +261,22 @@ class NodeClient
     }
 
     /**
+     * Fetch a file of any size from the server's folder, for the panel itself. Streamed, the
+     * body is read piece by piece instead of held in memory.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function download(Server $server, string $path, bool $stream = false): Response
+    {
+        $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 60, false);
+
+        return Http::connectTimeout(2)->timeout($stream ? 600 : 10)->withOptions(['stream' => $stream])
+            ->get("{$this->node->base_url}/servers/{$server->slug}/download".self::query(['token' => $token, 'path' => $path]))
+            ->throw();
+    }
+
+    /**
      * The jars in the server's mods folder, each with the fingerprint Modrinth knows it by.
      *
      * @return list<array{name: string, size: int, sha512: string}>
@@ -423,6 +443,32 @@ class NodeClient
         // Recorded here, where every way to start a backup comes through.
         if ($response->json('fallback')) {
             ActivityLog::record('backup.fallback', $server, ['node' => $this->node->name]);
+        }
+    }
+
+    /**
+     * Wait until the node has finished the backup or the restore it was asked for.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     * @throws RuntimeException
+     */
+    public function await(Server $server, int $timeout, int $poll = 5): void
+    {
+        $deadline = now()->addSeconds($timeout);
+
+        do {
+            sleep($poll);
+            $live = $this->servers()[$server->slug] ?? [];
+            $state = $live['state'] ?? 'offline';
+
+            if ($state === 'error') {
+                throw new RuntimeException($live['detail'] ?? (string) __('The node reported an error.'));
+            }
+        } while (in_array($state, self::BUSY, true) && now()->lt($deadline));
+
+        if (in_array($state, self::BUSY, true)) {
+            throw new RuntimeException((string) __('The node did not finish in time.'));
         }
     }
 

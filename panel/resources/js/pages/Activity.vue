@@ -68,6 +68,9 @@ const labels: Record<string, string> = {
     'schedule.create': t('Added a schedule'),
     'schedule.delete': t('Removed a schedule'),
     'schedule.run': t('A schedule ran'),
+    'modpack.outdated': t('A new version of the modpack is out'),
+    'modpack.update': t('Updated the modpack'),
+    'modpack.update.failed': t('Could not update the modpack'),
 };
 
 // Red for what failed or was removed, amber for what interrupts play, green for what was added or started.
@@ -86,6 +89,9 @@ const tones: Record<string, 'bad' | 'warn' | 'good'> = {
     'backup.cancel': 'warn',
     'backup.fallback': 'bad',
     'world.import': 'warn',
+    'modpack.outdated': 'warn',
+    'modpack.update': 'good',
+    'modpack.update.failed': 'bad',
     'server.create': 'good',
     'server.start': 'good',
     'dns.create': 'good',

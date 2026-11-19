@@ -19,6 +19,8 @@ use App\Models\Node;
 use App\Models\Server;
 use App\Services\CloudflareDns;
 use App\Services\MemoryLimit;
+use App\Services\MinecraftVersions;
+use App\Services\Mods;
 use App\Services\NodeClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -131,6 +133,7 @@ class ServerController extends Controller
     private static function describe(Server $server, array $states): array
     {
         $live = $states['servers'][$server->slug] ?? [];
+        $runs = $server->hasMods() ? Mods::runs($server) : null;
 
         return [
             'slug' => $server->slug,
@@ -138,6 +141,16 @@ class ServerController extends Controller
             'hostname' => $server->hostname,
             'server_type' => $server->server_type,
             'mc_version' => $server->mc_version,
+            // The Minecraft version itself, where mc_version says LATEST or the pack decides it.
+            'game_version' => $runs['game'] ?? ($server->mc_version === 'LATEST' ? (MinecraftVersions::releases()[0] ?? null) : $server->mc_version),
+            // What is installed, not what was asked for; the version is null until the pack is.
+            'modpack' => $server->modpack === null ? null : [
+                'catalogue' => ['MODRINTH' => 'modrinth', 'AUTO_CURSEFORGE' => 'curseforge', 'FTBA' => 'ftb'][$server->server_type] ?? null,
+                'project' => $server->modpack['project'],
+                'version' => $runs['version'] ?? null,
+                'version_name' => $runs['version_name'] ?? null,
+            ],
+            'loader' => ($runs['loader'] ?? null) === null ? null : ['name' => $runs['loader'], 'version' => $runs['loader_version']],
             'picture' => $server->picture(),
             'state' => $live['state'] ?? ($states['online'] ? 'offline' : 'unknown'),
             'detail' => $live['detail'] ?? null,

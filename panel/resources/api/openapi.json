@@ -62,6 +62,47 @@
                                                         "type": "string",
                                                         "example": "1.21.10"
                                                     },
+                                                    "game_version": {
+                                                        "type": "string",
+                                                        "description": "The Minecraft version itself, also where mc_version says LATEST or a modpack decides it. Null when unknown."
+                                                    },
+                                                    "modpack": {
+                                                        "type": "object",
+                                                        "description": "Null for a server without a modpack. The version is the one that is installed, read from the server's folder, and null until the pack is installed.",
+                                                        "properties": {
+                                                            "catalogue": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "modrinth",
+                                                                    "curseforge",
+                                                                    "ftb"
+                                                                ]
+                                                            },
+                                                            "project": {
+                                                                "type": "string"
+                                                            },
+                                                            "version": {
+                                                                "type": "string"
+                                                            },
+                                                            "version_name": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    },
+                                                    "loader": {
+                                                        "type": "object",
+                                                        "description": "Null for a server that loads no mods. The version is null until the loader is installed.",
+                                                        "properties": {
+                                                            "name": {
+                                                                "type": "string",
+                                                                "example": "neoforge"
+                                                            },
+                                                            "version": {
+                                                                "type": "string",
+                                                                "example": "21.1.90"
+                                                            }
+                                                        }
+                                                    },
                                                     "state": {
                                                         "type": "string",
                                                         "enum": [
@@ -222,6 +263,17 @@
                                                 "mc_version": {
                                                     "type": "string",
                                                     "example": "1.21.10"
+                                                },
+                                                "game_version": {
+                                                    "type": "string"
+                                                },
+                                                "modpack": {
+                                                    "type": "object",
+                                                    "description": "As in the list of servers: catalogue, project, version and version_name, or null."
+                                                },
+                                                "loader": {
+                                                    "type": "object",
+                                                    "description": "As in the list of servers: name and version, or null."
                                                 },
                                                 "state": {
                                                     "type": "string",
@@ -1204,6 +1256,102 @@
                     },
                     "502": {
                         "description": "Modrinth or the node could not be reached"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/client-mods": {
+            "get": {
+                "summary": "List the mods a player's game needs",
+                "x-ability": "servers:join",
+                "description": "Needs servers:join and a server the token's owner may see. For a launcher. A modpack server lists only what was changed on top of its pack: the jars that were added, and under \"removed\" the pack's jars that were taken out. Any other modded server lists every jar. Mods that Modrinth marks as not running in the game are left out. A \"url\" of null is a jar Modrinth does not know; fetch it from this address plus \"/<file>\". Answers 409 while the pack is not installed yet, and 404 for a server that loads no mods.",
+                "responses": {
+                    "200": {
+                        "description": "The mods",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "mods": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "file": {
+                                                        "type": "string"
+                                                    },
+                                                    "sha512": {
+                                                        "type": "string"
+                                                    },
+                                                    "size": {
+                                                        "type": "integer"
+                                                    },
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "removed": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/client-pack": {
+            "get": {
+                "summary": "Get where a CurseForge pack is downloaded",
+                "x-ability": "servers:join",
+                "description": "Needs servers:join and a server the token's owner may see. For CurseForge servers only; others answer 404. \"project\" and \"file\" are CurseForge's numbers for the pack and for the version the server runs. \"archive\" is the pack's zip, or null when its author forbids downloads outside CurseForge; \"page\" is the pack's page there. The files of the pack are listed in manifest.json inside the zip: send their numbers to this address plus \"/files\" for where to download them.",
+                "responses": {
+                    "200": {
+                        "description": "The pack"
+                    },
+                    "409": {
+                        "description": "The panel has no CurseForge key"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/client-pack/files": {
+            "post": {
+                "summary": "Get where the files of a CurseForge pack are downloaded",
+                "x-ability": "servers:join",
+                "description": "Needs servers:join and a server the token's owner may see. For CurseForge servers only. Send \"files\": the fileID numbers from the pack's manifest.json, at most 2000. Each comes back with project, file, name and url. A url of null is a file whose author forbids downloads outside CurseForge; \"page\" is then where a player fetches it by hand.",
+                "responses": {
+                    "200": {
+                        "description": "The files"
+                    },
+                    "409": {
+                        "description": "The panel has no CurseForge key"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/client-mods/{file}": {
+            "get": {
+                "summary": "Download one mod",
+                "x-ability": "servers:join",
+                "description": "Needs servers:join and a server the token's owner may see. One jar from the server's mods folder, and nothing else in the server's folder.",
+                "responses": {
+                    "200": {
+                        "description": "The jar"
+                    },
+                    "404": {
+                        "description": "No such jar"
                     }
                 },
                 "parameters": []

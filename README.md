@@ -10,7 +10,7 @@ Needs Docker with the Compose plugin on a Linux host. `compose.yaml` runs:
 
 | Container | What it is |
 | --- | --- |
-| `app`, `queue`, `scheduler` | The panel image three times: the website, the worker that sends webhooks and mail, and the scheduler for backups |
+| `app`, `queue`, `scheduler` | The panel image three times: the website, the worker that sends webhooks and mail, and the scheduler for backups and modpack updates |
 | `db` | MySQL |
 | `node` | The Rust service. The only container with the Docker socket and the server folders |
 | `router` | Where players connect on port 25565; forwards to the server whose hostname they typed |
@@ -180,6 +180,16 @@ On CurseForge and FTB packs required mods are named but not added by themselves:
 often ships them under a file Modrinth does not know, and a mod that is there twice keeps the
 server from starting. The node needs to reach `cdn.modrinth.com`, the panel `api.modrinth.com`.
 
+## Modpack updates
+
+A modpack server's settings have two choices, both off at first. **Look for new versions** asks
+Modrinth, CurseForge or FTB every hour for the pack's newest release; a new one is recorded in the
+activity log and reported to webhooks that follow modpack updates. **Install new versions
+automatically** also installs it: a running server is backed up first (the backup is named
+"Before auto-update") and restarted, and nothing is touched when that backup fails. A server
+without a chosen pack version installs the newest one at every start anyway, so the check only
+reports versions that come out after it first looked.
+
 ## Languages
 
 The panel is written in English, and every text goes through a translation lookup with the
@@ -210,6 +220,20 @@ be able to do.
 
 Signing in, changing a password, two-factor, passkeys and making tokens have no API: a stolen
 token must not be able to lock you out or mint another one.
+
+### A launcher
+
+A game launcher needs `servers:read` and `servers:join`, both in the read-only starting point. A
+server's answer names its Minecraft version, its modpack with the version that is installed, and
+its mod loader with its version. `/servers/{server}/client-mods` lists what the player's game
+needs on top of that: on a modpack server only the jars added to the pack and the pack's jars
+that were taken out, elsewhere every jar. A jar Modrinth does not know is downloaded through the
+panel, one file at a time; this needs no files permission on the server, only seeing it.
+
+For a CurseForge server `/servers/{server}/client-pack` says where the pack's zip is. The files
+of the pack are named in the `manifest.json` inside it; the launcher posts their numbers to
+`/servers/{server}/client-pack/files` and gets back where each is downloaded, so the CurseForge
+key never leaves the panel.
 
 ### Pairing an app
 

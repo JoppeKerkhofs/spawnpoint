@@ -35,7 +35,12 @@ class UpdateServer
                 'modpack' => self::modpack($data),
                 'bluemap_enabled' => (bool) ($data['bluemap'] ?? false),
                 'is_default' => (bool) ($data['is_default'] ?? false),
+                ...self::packUpdates($data),
             ]);
+            // What was seen of another pack says nothing about this one.
+            if (($server->modpack['project'] ?? null) !== $pack) {
+                $server->update(['pack_latest' => null]);
+            }
 
             self::demoteOtherDefaults($server);
             // Another pack: its picture is only fetched while the old one is not in the way.
@@ -85,6 +90,19 @@ class UpdateServer
             'version' => $data['modpack_version'] ?? null,
             'version_name' => $data['modpack_version_name'] ?? null,
         ];
+    }
+
+    /**
+     * Whether to look for new versions of the pack, and whether to install them; updating needs the check.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{pack_check: bool, pack_auto_update: bool}
+     */
+    public static function packUpdates(array $data): array
+    {
+        $check = in_array($data['server_type'], Server::PACK_TYPES, true) && ($data['pack_check'] ?? false);
+
+        return ['pack_check' => $check, 'pack_auto_update' => $check && ($data['pack_auto_update'] ?? false)];
     }
 
     /**

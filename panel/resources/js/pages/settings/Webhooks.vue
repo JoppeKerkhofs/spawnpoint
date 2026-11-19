@@ -49,6 +49,7 @@ const groupLabels: Record<string, string> = {
     crash: t('A server crashes'),
     backups: t('A backup is made or restored, or a schedule runs'),
     changes: t('A server is created, changed or deleted'),
+    updates: t('A modpack has a new version, or is updated automatically'),
 };
 
 const keep = { preserveScroll: true };

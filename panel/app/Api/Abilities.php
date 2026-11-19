@@ -26,6 +26,7 @@ class Abilities
         return [
             ['key' => 'servers', 'label' => (string) __('Servers'), 'abilities' => [
                 ['name' => 'servers:read', 'label' => (string) __('See servers'), 'description' => (string) __('List servers and read their live state.')],
+                ['name' => 'servers:join', 'label' => (string) __('Join servers'), 'description' => (string) __('Read which mods a game needs to join a server, and download them.')],
                 ['name' => 'servers:power', 'label' => (string) __('Power'), 'description' => (string) __('Start, stop, restart and kill servers.')],
                 ['name' => 'servers:configure', 'label' => (string) __('Configure'), 'description' => (string) __("Change a server's settings and recreate its container.")],
                 ['name' => 'servers:manage', 'label' => (string) __('Create and delete'), 'description' => (string) __('Create and delete servers, move them between nodes, and add DNS records.')],
@@ -81,7 +82,7 @@ class Abilities
      */
     public static function presets(): array
     {
-        $readOnly = ['servers:read', 'logs:read', 'files:read', 'backups:read', 'activity:read'];
+        $readOnly = ['servers:read', 'servers:join', 'logs:read', 'files:read', 'backups:read', 'activity:read'];
 
         return [
             'read-only' => $readOnly,

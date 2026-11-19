@@ -2,6 +2,7 @@
 
 use App\Actions\Servers\PowerServer;
 use App\Http\Controllers\Api\V1\BackupController;
+use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\ModController;
@@ -43,6 +44,15 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFacto
     Route::middleware('can:view,server')->group(function () {
         Route::get('servers/{server}', [ServerController::class, 'show'])->middleware('ability:servers:read');
         Route::get('servers/{server}/console', [ServerController::class, 'console'])->middleware('ability:console:use');
+
+        // For a launcher: whoever may see a server may join it, without the files permission.
+        Route::middleware('ability:servers:join')->group(function () {
+            Route::get('servers/{server}/client-mods', [ClientController::class, 'mods']);
+            Route::get('servers/{server}/client-pack', [ClientController::class, 'pack']);
+            Route::post('servers/{server}/client-pack/files', [ClientController::class, 'files']);
+            // The name becomes part of a path on the node.
+            Route::get('servers/{server}/client-mods/{file}', [ClientController::class, 'mod'])->where('file', '[^/]+\\.jar');
+        });
     });
 
     Route::get('servers/{server}/logs', [ServerController::class, 'logs'])
