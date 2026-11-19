@@ -32,9 +32,6 @@ class MoveServer implements ShouldQueue
 
     public int $poll = 5;
 
-    // States the node reports while it is still busy with the work this move asked for.
-    private const array BUSY = ['backing up', 'restoring'];
-
     public function __construct(public int $serverId, public int $targetNodeId, public int $userId) {}
 
     /**
@@ -62,7 +59,7 @@ class MoveServer implements ShouldQueue
             $running = ($from->servers()[$server->slug]['state'] ?? 'offline') === 'running';
             $from->power($server, 'stop');
             $from->createBackup($server, "Before a move to {$target->name}");
-            $this->await($from, $server);
+            $from->await($server, $this->timeout, $this->poll);
 
             $archive = $from->backups($server)[0]['name'] ?? null;
             if ($archive === null || ! str_ends_with($archive, '.tar.gz')) {
@@ -73,7 +70,7 @@ class MoveServer implements ShouldQueue
             $to->apply($server, start: false);
             $applied = true;
             $to->fetch($server, $from->transferUrl($server, $archive));
-            $this->await($to, $server);
+            $to->await($server, $this->timeout, $this->poll);
 
             $server->forceFill(['node_id' => $target->id])->save();
             // Nothing is left running on the old node; its data folder stays, like a deleted server's.
@@ -99,31 +96,6 @@ class MoveServer implements ShouldQueue
                 'to' => $target->name,
                 'reason' => $exception->getMessage(),
             ]);
-        }
-    }
-
-    /**
-     * Wait until the node has finished the backup or the restore it was asked for.
-     *
-     * @throws ConnectionException
-     * @throws RequestException
-     */
-    private function await(NodeClient $client, Server $server): void
-    {
-        $deadline = now()->addSeconds($this->timeout);
-
-        do {
-            sleep($this->poll);
-            $live = $client->servers()[$server->slug] ?? [];
-            $state = $live['state'] ?? 'offline';
-
-            if ($state === 'error') {
-                throw new RuntimeException($live['detail'] ?? (string) __('The node reported an error.'));
-            }
-        } while (in_array($state, self::BUSY, true) && now()->lt($deadline));
-
-        if (in_array($state, self::BUSY, true)) {
-            throw new RuntimeException((string) __('The node did not finish in time.'));
         }
     }
 

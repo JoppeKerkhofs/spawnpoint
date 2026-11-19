@@ -39,7 +39,9 @@ class ActivityLog extends Model
         };
 
         if ($server !== null) {
-            Webhook::notify($event, $server, $actor, isset($properties['action']) ? (string) $properties['action'] : null);
+            // The one property a message names: what a schedule did, a pack's version, or why it failed.
+            $detail = $properties['action'] ?? $properties['version'] ?? $properties['reason'] ?? null;
+            Webhook::notify($event, $server, $actor, $detail === null ? null : (string) $detail);
         }
 
         Changed::send($server, explode('.', $event)[0]);

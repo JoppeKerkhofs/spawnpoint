@@ -86,6 +86,19 @@ node lists the jars in `mods/` with their SHA-512, and Modrinth names them by th
 (`App\Services\Mods`). To install, the panel picks the build and the node downloads it; the node
 only fetches from `https://cdn.modrinth.com/`, without redirects, and checks the hash.
 
+**Modpack updates.** `modpacks:check` (hourly) asks the catalogue for the newest release of each
+pack server with `pack_check` and remembers it in `pack_latest`, so a version is reported once
+(`modpack.outdated`). With `pack_auto_update` it queues `UpdateModpack` instead: a running server
+is backed up first, then a chosen version is replaced and the container recreated, and a server
+without one is restarted, because the Minecraft image installs the newest as it starts.
+
+**What a server runs.** Not stored: the Minecraft image records what it installed in the
+server's folder (`.modrinth-modpack-manifest.json`, `.curseforge-manifest.json`, FTB's
+`.manifest.json`, `.fabric-manifest.json`, `.forge-manifest.json`, `.neoforge-manifest.json`),
+and `Mods::runs()` reads that through the node's download address, cached for a minute. The API
+answers for a launcher (`servers:join`) come from it, as does the pack's own file list that
+`client-mods` compares the mods folder with.
+
 **Live updates.** `App\Events\Changed` (a server's slug or null, and what: `state` or the
 first part of an activity event) is broadcast through Reverb to one private channel per user;
 who gets it is decided when it is sent. It never carries data: pages answer with a partial

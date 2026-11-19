@@ -33,12 +33,15 @@ use Illuminate\Support\Str;
  * @property string|null $icon The uploaded picture: a 64x64 PNG as base64.
  * @property bool $bluemap_enabled
  * @property bool $is_default
+ * @property bool $pack_check
+ * @property bool $pack_auto_update
+ * @property string|null $pack_latest
  * @property int $backup_keep
  * @property int|null $backup_retention_days
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'backup_keep', 'backup_retention_days', 'eula_accepted_at', 'icon'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'pack_check', 'pack_auto_update', 'pack_latest', 'backup_keep', 'backup_retention_days', 'eula_accepted_at', 'icon'])]
 // The picture travels as "picture" (forUser), not as raw base64 in every list.
 #[Hidden(['icon'])]
 class Server extends Model
@@ -195,6 +198,8 @@ class Server extends Model
             'modpack' => 'array',
             'bluemap_enabled' => 'boolean',
             'is_default' => 'boolean',
+            'pack_check' => 'boolean',
+            'pack_auto_update' => 'boolean',
             'backup_keep' => 'integer',
             'backup_retention_days' => 'integer',
             'eula_accepted_at' => 'datetime',

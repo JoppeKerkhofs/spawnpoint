@@ -72,6 +72,8 @@ trait ServerValidationRules
             'jvm_opts' => ['nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             'cpu_limit' => ['nullable', 'numeric', 'between:0.25,64'],
             'is_default' => ['nullable', 'boolean'],
+            'pack_check' => ['nullable', 'boolean'],
+            'pack_auto_update' => ['nullable', 'boolean'],
             // A Modrinth version id or an FTB version number; empty installs the newest.
             'modpack_version' => ['nullable', 'string', 'max:16', $this->input('server_type') === 'FTBA' ? 'regex:/^[0-9]+$/' : 'regex:/^[A-Za-z0-9]+$/'],
             'modpack_version_name' => ['nullable', 'string', 'max:120'],

@@ -22,7 +22,7 @@ test('a viewer is not offered the administration abilities on the token page', f
         ->get(route('api-tokens.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->has('groups', count(Abilities::groups()) - 1)
-            ->where('presets.read-only', ['servers:read', 'logs:read', 'files:read', 'backups:read']));
+            ->where('presets.read-only', ['servers:read', 'servers:join', 'logs:read', 'files:read', 'backups:read']));
 });
 
 test('a token is created from the abilities the picker submitted', function () {

@@ -36,6 +36,7 @@ class Webhook extends Model
         'crash' => ['server.crashed'],
         'backups' => ['backup.create', 'backup.restore', 'backup.fallback', 'schedule.run'],
         'changes' => ['server.create', 'server.update', 'server.delete', 'world.import'],
+        'updates' => ['modpack.outdated', 'modpack.update', 'modpack.update.failed'],
     ];
 
     /**
@@ -106,9 +107,9 @@ class Webhook extends Model
                 'title' => $details['name'] ?? config('app.name'),
                 'description' => $message,
                 'color' => match ($details['event']) {
-                    'server.crashed', 'server.kill', 'server.delete' => 0xD64545,
+                    'server.crashed', 'server.kill', 'server.delete', 'modpack.update.failed' => 0xD64545,
                     'server.stop', 'server.offline', 'server.restart', 'backup.fallback' => 0xE0A526,
-                    'server.online', 'server.start', 'server.create' => 0x3FA36B,
+                    'server.online', 'server.start', 'server.create', 'modpack.update' => 0x3FA36B,
                     default => 0x4F8FD6,
                 },
                 'fields' => isset($details['hostname']) ? [
@@ -149,6 +150,9 @@ class Webhook extends Model
             'server.update' => __(':actor changed the configuration of :server.', $in, $locale),
             'server.delete' => __(':actor deleted :server.', $in, $locale),
             'world.import' => __(':actor imported a world into :server.', $in, $locale),
+            'modpack.outdated' => __('Version :detail of the modpack of :server is out.', $in, $locale),
+            'modpack.update' => __('The modpack of :server was updated to version :detail.', $in, $locale),
+            'modpack.update.failed' => __('The modpack of :server could not be updated: :detail', $in, $locale),
             default => __(':event on :server.', $in, $locale),
         };
     }

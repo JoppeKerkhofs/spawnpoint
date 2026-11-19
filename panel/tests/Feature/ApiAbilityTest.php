@@ -10,7 +10,7 @@ use Laravel\Sanctum\Sanctum;
 test('the catalogue lists every ability once, grouped, with a label for each', function () {
     $all = Abilities::all();
 
-    expect($all)->toHaveCount(23)
+    expect($all)->toHaveCount(24)
         ->and($all)->toBe(array_unique($all))
         ->and($all)->toContain('servers:read', 'backups:restore', 'nodes:manage', 'profile:manage')
         // The retired name is never offered.

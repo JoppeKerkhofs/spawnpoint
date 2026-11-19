@@ -22,6 +22,8 @@ export type Server = {
     modpack: Modpack | null;
     bluemap_enabled: boolean;
     is_default: boolean;
+    pack_check: boolean;
+    pack_auto_update: boolean;
     has_mods: boolean;
     // The uploaded picture, else the modpack's, else null.
     picture: string | null;

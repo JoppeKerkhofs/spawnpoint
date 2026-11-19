@@ -44,6 +44,7 @@ const loader = ref(isPack.value ? 'PAPER' : initialType);
 const platform = ref<PackPlatform>(
     isPack.value ? (initialType as PackPlatform) : 'MODRINTH',
 );
+const packCheck = ref(props.server?.pack_check ?? false);
 const isNative = computed(
     () => !isPack.value && NATIVE_TYPES.includes(loader.value),
 );
@@ -124,6 +125,45 @@ const selectClass =
                 :initial="server?.modpack"
                 :error="errors.modpack_project"
             />
+
+            <div v-if="isPack" class="grid gap-1">
+                <label class="flex items-center gap-2">
+                    <input
+                        v-model="packCheck"
+                        type="checkbox"
+                        name="pack_check"
+                        value="1"
+                        class="size-4 accent-primary"
+                        aria-describedby="pack_updates_hint"
+                    />
+                    {{ t('Look for new versions of this modpack') }}
+                </label>
+                <label class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        name="pack_auto_update"
+                        value="1"
+                        :checked="packCheck && server?.pack_auto_update"
+                        :disabled="!packCheck"
+                        class="size-4 accent-primary"
+                        aria-describedby="pack_updates_hint"
+                    />
+                    {{ t('Install new versions automatically') }}
+                </label>
+                <span
+                    id="pack_updates_hint"
+                    class="text-[0.8125rem] text-muted-foreground"
+                >
+                    {{
+                        t(
+                            'Checked every hour. A new version is reported in Activity and to webhooks that follow modpack updates. Installing it restarts a running server, after a backup named "Before auto-update".',
+                        )
+                    }}
+                </span>
+                <InputError
+                    :message="errors.pack_check || errors.pack_auto_update"
+                />
+            </div>
 
             <template v-if="isNative">
                 <input type="hidden" name="mc_version" value="LATEST" />

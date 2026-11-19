@@ -53,6 +53,89 @@ class Mods
     }
 
     /**
+     * What a server really runs, read from the records the Minecraft image leaves in its folder
+     * when it installs a pack or a loader. Every part is null while that is not known.
+     *
+     * @return array{version: string|null, version_name: string|null, loader: string|null, loader_version: string|null, game: string|null, files: list<string>|null}
+     */
+    public static function runs(Server $server): array
+    {
+        // ponytail: a minute old at most; have the node report it with the states if that is too slow.
+        return Cache::remember("runs:{$server->id}", 60, function () use ($server): array {
+            $read = fn (string $file): array => (array) rescue(fn () => (new NodeClient($server->node))->download($server, $file)->json(), [], report: false);
+            $target = self::target($server);
+            $pack = match ($server->server_type) {
+                'MODRINTH' => $read('.modrinth-modpack-manifest.json'),
+                'AUTO_CURSEFORGE' => $read('.curseforge-manifest.json'),
+                'FTBA' => $read('.manifest.json'),
+                default => [],
+            };
+            $loader = $pack['modPackTargets']['modLoader']['name'] ?? $target['loader'] ?? null;
+            // FTB brings its own loader; everywhere else the image installs one and records it.
+            $installed = $loader === null || isset($pack['modPackTargets']) ? [] : $read(".{$loader}-manifest.json");
+            $version = $pack['versionId'] ?? $pack['fileId'] ?? null;
+            $chosen = $server->modpack['version'] ?? null;
+
+            return [
+                'version' => $version === null ? null : (string) $version,
+                'version_name' => $pack['versionName'] ?? $pack['modpackVersion'] ?? ($version !== null && $version === $chosen ? ($server->modpack['version_name'] ?? null) : null),
+                'loader' => $loader,
+                'loader_version' => $pack['modPackTargets']['modLoader']['version'] ?? $installed['origin']['loader'] ?? $installed['forgeVersion'] ?? null,
+                'game' => $pack['modPackTargets']['mcVersion'] ?? $pack['dependencies']['minecraft'] ?? $installed['origin']['game'] ?? $installed['minecraftVersion'] ?? $target['version'] ?? null,
+                'files' => isset($pack['files']) ? array_values(array_filter(array_map(self::packFile(...), (array) $pack['files']))) : null,
+            ];
+        });
+    }
+
+    /**
+     * One file of a pack as a path in the server's folder; each catalogue's record writes it its own way.
+     */
+    private static function packFile(mixed $file): ?string
+    {
+        return match (true) {
+            is_string($file) => $file,
+            isset($file['path'], $file['name']) => ltrim("{$file['path']}/{$file['name']}", './'),
+            isset($file['path']) => (string) $file['path'],
+            default => null,
+        };
+    }
+
+    /**
+     * What a player's game needs in its mods folder to join. For a pack server only what was
+     * changed on top of the pack, which the player's launcher installs itself: the jars added,
+     * and the pack's jars that were taken out. Mods that do not run in the game are left out.
+     *
+     * @param  list<string>|null  $pack  The pack's own files, or null for a server without a pack.
+     * @return array{mods: list<array{file: string, sha512: string, size: int, url: string|null}>, removed: list<string>}
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     * @throws ModrinthUnavailable
+     */
+    public static function client(Server $server, ?array $pack): array
+    {
+        $jars = (new NodeClient($server->node))->mods($server);
+        $packed = array_map(basename(...), array_filter($pack ?? [], fn (string $file): bool => (bool) preg_match('#^mods/[^/]+\.jar$#', $file)));
+        $added = array_values(array_filter($jars, fn (array $jar): bool => ! in_array($jar['name'], $packed, true)));
+        $known = $added === [] ? [] : self::modrinth('post', '/version_files', ['hashes' => array_column($added, 'sha512'), 'algorithm' => 'sha512']);
+        $projects = $known === [] ? [] : self::projects(array_column($known, 'project_id'));
+        $mods = [];
+
+        foreach ($added as $jar) {
+            $version = $known[$jar['sha512']] ?? null;
+
+            if (($projects[$version['project_id'] ?? '']['client_side'] ?? null) === 'unsupported') {
+                continue;
+            }
+
+            $file = Arr::first($version['files'] ?? [], fn (array $file): bool => ($file['hashes']['sha512'] ?? null) === $jar['sha512']);
+            $mods[] = ['file' => $jar['name'], 'sha512' => $jar['sha512'], 'size' => $jar['size'], 'url' => $file['url'] ?? null];
+        }
+
+        return ['mods' => $mods, 'removed' => array_values(array_diff($packed, array_column($jars, 'name')))];
+    }
+
+    /**
      * Search Modrinth for mods that have a build for the target and run on a server.
      *
      * @param  array{loader: string, version: string}  $target
