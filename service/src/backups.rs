@@ -7,7 +7,7 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path as FsPath, PathBuf},
     process::Stdio,
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     time::UNIX_EPOCH,
 };
 
@@ -37,8 +37,51 @@ fn server_dir(state: &AppState, slug: &str) -> PathBuf {
     FsPath::new(&*state.data_dir).join(slug)
 }
 
+// Whether archives can be written to a folder. An unmounted share leaves its empty mount point
+// behind, which is on the same disk as the fallback folder.
+fn usable(dir: &FsPath, fallback: Option<&FsPath>) -> bool {
+    let disk = |path: &FsPath| path.metadata().map(|metadata| metadata.dev()).ok();
+    let probe = dir.join(".probe");
+
+    !fallback.is_some_and(|fallback| disk(fallback) == disk(dir)) && std::fs::write(&probe, b"").is_ok() && std::fs::remove_file(&probe).is_ok()
+}
+
+// Keeps "reachable" current. A dead share can hang a write for minutes, so the check runs on
+// its own thread and counts as failed after five seconds; the next waits until that one is back.
+// ponytail: a share that dies within 15 seconds before a backup fails that backup; check per backup if it happens.
+pub async fn watch_folder(state: AppState) {
+    loop {
+        let (dir, fallback) = (state.backup_dir.clone(), state.fallback_dir.clone());
+        let mut probe = tokio::task::spawn_blocking(move || usable(FsPath::new(&*dir), fallback.as_deref().map(FsPath::new)));
+        let checked = tokio::time::timeout(std::time::Duration::from_secs(5), &mut probe).await;
+        state.reachable.store(matches!(checked, Ok(Ok(true))), Ordering::Relaxed);
+        if checked.is_err() {
+            let _ = probe.await;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+    }
+}
+
+// Whether backups go to the fallback folder for now.
+pub fn falling_back(state: &AppState) -> bool {
+    state.fallback_dir.is_some() && !state.reachable.load(Ordering::Relaxed)
+}
+
+// A server's backup folders that can be read now, the one that is written to first, and
+// whether each is the fallback. The backup folder is left alone while it is unreachable.
+fn backup_dirs(state: &AppState, slug: &str) -> Vec<(PathBuf, bool)> {
+    let main = (!falling_back(state)).then(|| (FsPath::new(&*state.backup_dir).join(slug), false));
+    let fallback = state.fallback_dir.as_deref().map(|dir| (FsPath::new(dir).join(slug), true));
+
+    main.into_iter().chain(fallback).collect()
+}
+
 fn backup_dir(state: &AppState, slug: &str) -> PathBuf {
-    FsPath::new(&*state.backup_dir).join(slug)
+    backup_dirs(state, slug).swap_remove(0).0
+}
+
+fn find(state: &AppState, slug: &str, name: &str) -> Option<PathBuf> {
+    backup_dirs(state, slug).into_iter().map(|(dir, _)| dir.join(name)).find(|path| path.is_file())
 }
 
 // "<unix seconds>.tar.gz", or "<unix seconds>.locked.tar.gz" for one that retention must keep.
@@ -63,17 +106,11 @@ fn valid_failure_name(name: &str) -> bool {
 
 // The newest backup of a server, as unix seconds.
 pub fn latest(state: &AppState, slug: &str) -> Option<u64> {
-    stored(&backup_dir(state, slug)).first().map(|(created, _, _)| *created)
+    backup_dirs(state, slug).iter().filter_map(|(dir, _)| Some(stored(dir).first()?.0)).max()
 }
 
 fn backup_path(state: &AppState, slug: &str, name: &str) -> Result<PathBuf, StatusCode> {
-    let path = backup_dir(state, slug).join(name);
-
-    if valid_slug(slug) && valid_backup_name(name) && path.is_file() {
-        Ok(path)
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+    find(state, slug, name).filter(|_| valid_slug(slug) && valid_backup_name(name)).ok_or(StatusCode::NOT_FOUND)
 }
 
 async fn run(program: &str, arguments: &[&OsStr], accepted: &[i32]) -> Result<(), String> {
@@ -335,37 +372,37 @@ pub async fn list(State(state): State<AppState>, Path(slug): Path<String>) -> Re
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let dir = backup_dir(&state, &slug);
-    let by = |name: &str| std::fs::read_to_string(dir.join(format!("{}.by", stamp(name)))).ok();
-    let mut backups: Vec<(u64, Value)> = stored(&dir)
-        .into_iter()
-        .map(|(created, name, size)| {
+    let running = state.cancels.lock().unwrap().contains_key(&slug);
+    let mut backups: Vec<(u64, Value)> = Vec::new();
+
+    for (dir, fallback) in backup_dirs(&state, &slug) {
+        let by = |name: &str| std::fs::read_to_string(dir.join(format!("{}.by", stamp(name)))).ok();
+        backups.extend(stored(&dir).into_iter().map(|(created, name, size)| {
             let entry = json!({
                 "name": name, "size": size, "created": created, "locked": name.contains(".locked."),
-                "status": "completed", "by": by(&name), "reason": null,
+                "status": "completed", "by": by(&name), "reason": null, "fallback": fallback,
             });
             (created, entry)
-        })
-        .collect();
+        }));
 
-    let running = state.cancels.lock().unwrap().contains_key(&slug);
-    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let started: u64 = stamp(&name).parse().unwrap_or(0);
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let started: u64 = stamp(&name).parse().unwrap_or(0);
 
-        if valid_failure_name(&name) {
-            let reason = std::fs::read_to_string(entry.path()).unwrap_or_default();
-            backups.push((started, json!({
-                "name": name, "size": 0, "created": started, "locked": false,
-                "status": "failed", "by": by(&name), "reason": reason,
-            })));
-        } else if running && name.ends_with(".partial") {
-            // The size so far lets the panel estimate progress against the previous backup.
-            let size = entry.metadata().map_or(0, |metadata| metadata.len());
-            backups.push((started, json!({
-                "name": "running", "size": size, "created": started, "locked": false,
-                "status": "running", "by": null, "reason": null,
-            })));
+            if valid_failure_name(&name) {
+                let reason = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                backups.push((started, json!({
+                    "name": name, "size": 0, "created": started, "locked": false,
+                    "status": "failed", "by": by(&name), "reason": reason, "fallback": fallback,
+                })));
+            } else if running && name.ends_with(".partial") {
+                // The size so far lets the panel estimate progress against the previous backup.
+                let size = entry.metadata().map_or(0, |metadata| metadata.len());
+                backups.push((started, json!({
+                    "name": "running", "size": size, "created": started, "locked": false,
+                    "status": "running", "by": null, "reason": null, "fallback": fallback,
+                })));
+            }
         }
     }
     backups.sort_by(|a, b| b.0.cmp(&a.0));
@@ -383,15 +420,17 @@ pub struct CreateBody {
     by: Option<String>,
 }
 
-pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<CreateBody>) -> StatusCode {
+// Answers with whether the archive goes to the fallback folder, for the panel to report.
+pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<CreateBody>) -> (StatusCode, Json<Value>) {
+    let fallback = Json(json!({ "fallback": falling_back(&state) }));
     if !valid_slug(&slug) || !server_dir(&state, &slug).is_dir() {
-        return StatusCode::NOT_FOUND;
+        return (StatusCode::NOT_FOUND, fallback);
     }
 
     let by = body.by.filter(|by| by.chars().count() <= 80 && !by.chars().any(char::is_control));
     let tasks = state.tasks.clone();
     let task_slug = slug.clone();
-    run_task(&tasks, slug, "backing up", async move {
+    let started = run_task(&tasks, slug, "backing up", async move {
         let started = unix_now();
         let retention = Retention { keep: body.keep, max_age_days: body.max_age_days.filter(|days| *days >= 1) };
         match archive(&state, &task_slug, retention, by.as_deref()).await {
@@ -406,7 +445,9 @@ pub async fn create(State(state): State<AppState>, Path(slug): Path<String>, Jso
             _ => {}
         }
         Ok::<(), String>(())
-    })
+    });
+
+    (started, fallback)
 }
 
 // Stops the backup that is running; what was written so far is thrown away.
@@ -448,15 +489,13 @@ pub async fn lock(
 
 pub async fn delete(State(state): State<AppState>, Path((slug, name)): Path<(String, String)>) -> Result<StatusCode, StatusCode> {
     // The record of a failed backup is removed the same way as an archive.
-    let dir = backup_dir(&state, &slug);
-    let path = if valid_slug(&slug) && valid_failure_name(&name) && dir.join(&name).is_file() {
-        dir.join(&name)
-    } else {
-        backup_path(&state, &slug, &name)?
+    let path = match find(&state, &slug, &name) {
+        Some(path) if valid_slug(&slug) && valid_failure_name(&name) => path,
+        _ => backup_path(&state, &slug, &name)?,
     };
 
-    std::fs::remove_file(path).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
-    let _ = std::fs::remove_file(dir.join(format!("{}.by", stamp(&name))));
+    std::fs::remove_file(&path).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    let _ = std::fs::remove_file(path.with_file_name(format!("{}.by", stamp(&name))));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -631,6 +670,35 @@ pub async fn import_world(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backups_go_to_the_fallback_folder_while_the_backup_folder_is_unreachable() {
+        let base = std::env::temp_dir().join(format!("spawnpoint-fallback-{}", std::process::id()));
+        let (main, fallback) = (base.join("main"), base.join("fallback"));
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::create_dir_all(fallback.join("survival")).unwrap();
+        std::fs::write(fallback.join("survival/1794600000.tar.gz"), b"").unwrap();
+
+        // Two folders on one disk are what an unmounted share looks like.
+        assert!(usable(&main, None) && !usable(&main, Some(&fallback)));
+        assert!(!usable(&base.join("missing"), None));
+
+        let mut state = AppState::for_tests("/nonexistent");
+        state.backup_dir = main.to_string_lossy().into();
+        assert_eq!(backup_dir(&state, "survival"), main.join("survival"));
+
+        state.fallback_dir = Some(fallback.to_string_lossy().into());
+        assert!(falling_back(&state));
+        assert_eq!(backup_dirs(&state, "survival"), [(fallback.join("survival"), true)]);
+
+        // Once it is back, new backups go there and those in the fallback folder stay in reach.
+        state.reachable.store(true, Ordering::Relaxed);
+        assert_eq!(backup_dir(&state, "survival"), main.join("survival"));
+        assert_eq!(backup_path(&state, "survival", "1794600000.tar.gz"), Ok(fallback.join("survival/1794600000.tar.gz")));
+        assert!(latest(&state, "survival").is_some());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn only_archives_the_service_named_are_backups() {

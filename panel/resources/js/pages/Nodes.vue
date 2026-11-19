@@ -24,6 +24,8 @@ type Node = {
     servers: number;
     allocated_mb: number;
     limit_mb: number | null;
+    used_mb: number | null;
+    host_mb: number | null;
     local: boolean;
 };
 
@@ -141,6 +143,17 @@ const remove = async (node: Node) => {
                                           used: gigabytes(node.allocated_mb),
                                       })
                             }}
+                            <template
+                                v-if="node.used_mb !== null && node.host_mb"
+                            >
+                                ·
+                                {{
+                                    t(':used of :total GB memory in use', {
+                                        used: gigabytes(node.used_mb),
+                                        total: gigabytes(node.host_mb),
+                                    })
+                                }}
+                            </template>
                         </span>
                     </div>
 

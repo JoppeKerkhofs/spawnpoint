@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\Node;
 use App\Models\Server;
 use App\Models\Setting;
@@ -363,9 +364,39 @@ class NodeClient
     }
 
     /**
+     * The memory of the node's host and how much of it is in use now, in MB. A node older
+     * than 1.6.7 does not say what is in use.
+     *
+     * @return array{total_mb: int, used_mb: int|null}
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function hostMemory(): array
+    {
+        $host = $this->send('GET', '/host')->json();
+
+        return ['total_mb' => (int) ($host['memory_mb'] ?? 0), 'used_mb' => $host['memory_used_mb'] ?? null];
+    }
+
+    /**
+     * Where the node keeps backups, whether that folder can be written to now, and the folder
+     * it uses while it cannot. Null from a node older than 1.6.7.
+     *
+     * @return array{path: string, reachable: bool, fallback: string|null}|null
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function backupFolder(): ?array
+    {
+        return $this->send('GET', '/host')->json('backup');
+    }
+
+    /**
      * List a server's backups, newest first.
      *
-     * @return list<array{name: string, size: int, created: int, locked: bool, status: string, by: string|null, reason: string|null}>
+     * @return list<array{name: string, size: int, created: int, locked: bool, status: string, by: string|null, reason: string|null, fallback?: bool}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -383,11 +414,16 @@ class NodeClient
      */
     public function createBackup(Server $server, string $by): void
     {
-        $this->send('POST', "/servers/{$server->slug}/backups", [
+        $response = $this->send('POST', "/servers/{$server->slug}/backups", [
             'keep' => $server->backup_keep,
             'max_age_days' => $server->backup_retention_days,
             'by' => $by,
         ]);
+
+        // Recorded here, where every way to start a backup comes through.
+        if ($response->json('fallback')) {
+            ActivityLog::record('backup.fallback', $server, ['node' => $this->node->name]);
+        }
     }
 
     /**

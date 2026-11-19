@@ -7,6 +7,9 @@ use App\Models\Node;
 use App\Models\Setting;
 use App\Services\CloudflareDns;
 use App\Services\MemoryLimit;
+use App\Services\NodeClient;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -35,6 +38,16 @@ class PanelSettingsController extends Controller
             'hasCurseforgeKey' => filled(Setting::value('curseforge_key')),
             // Of the first node: the others can each have their own limit, on the Nodes page.
             'effectiveMemoryLimitMb' => MemoryLimit::mb(Node::query()->first()),
+            // After the page: every node is asked, and one that is down takes seconds to say nothing.
+            'backupFolders' => Inertia::defer(fn () => Node::all()->map(function (Node $node): array {
+                try {
+                    $folder = (new NodeClient($node))->backupFolder();
+                } catch (ConnectionException|RequestException) {
+                    $folder = null;
+                }
+
+                return ['node' => $node->name, 'folder' => $folder];
+            })->all()),
         ]);
     }
 

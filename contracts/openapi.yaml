@@ -125,6 +125,7 @@ paths:
                         size: { type: integer }
                         created: { type: integer, description: Unix seconds. }
                         locked: { type: boolean }
+                        fallback: { type: boolean, description: Made while the backup folder could not be reached and kept in the node's fallback folder. }
         "403": { description: The token lacks backups:manage, or its owner is not an admin }
     post:
       summary: Start a backup

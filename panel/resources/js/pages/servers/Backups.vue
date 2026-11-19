@@ -38,6 +38,8 @@ type Backup = {
     status: 'completed' | 'running' | 'failed';
     by: string | null;
     reason: string | null;
+    // Made while the backup folder could not be reached, so kept in the node's fallback folder.
+    fallback?: boolean;
 };
 type Schedule = {
     id: number;
@@ -335,6 +337,17 @@ useLiveReload(
                                                 aria-hidden="true"
                                             />
                                             {{ t('Locked') }}
+                                        </span>
+                                        <span
+                                            v-if="backup.fallback"
+                                            class="ml-1 text-[0.8125rem] text-muted-foreground"
+                                            :title="
+                                                t(
+                                                    'Made while the backup folder could not be reached. It is kept in the fallback folder of the node.',
+                                                )
+                                            "
+                                        >
+                                            · {{ t('In the fallback folder') }}
                                         </span>
                                     </template>
                                 </td>
