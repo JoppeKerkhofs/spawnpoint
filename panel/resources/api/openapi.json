@@ -578,6 +578,10 @@
                                                     "locked": {
                                                         "type": "boolean"
                                                     },
+                                                    "fallback": {
+                                                        "type": "boolean",
+                                                        "description": "Made while the backup folder could not be reached, and kept in the fallback folder of the node."
+                                                    },
                                                     "status": {
                                                         "type": "string",
                                                         "enum": [

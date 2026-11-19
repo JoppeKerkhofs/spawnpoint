@@ -16,6 +16,8 @@ services:
       SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Put the token from "php artisan node:register" in .env}
       SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
       SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Empty: backups have nowhere else to go when the backup folder is unreachable.
+      SPAWNPOINT_BACKUP_FALLBACK_DIR: ${SPAWNPOINT_BACKUP_FALLBACK_DIR:-}
       SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
     ports:
       - "127.0.0.1:8080:8080"
@@ -23,6 +25,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
       - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Used while the backup folder, a share for one, cannot be reached. On another disk.
+      - ${SPAWNPOINT_BACKUP_FALLBACK_DIR:-/srv/mc-backups-fallback}:${SPAWNPOINT_BACKUP_FALLBACK_DIR:-/srv/mc-backups-fallback}
       - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
 
   router:

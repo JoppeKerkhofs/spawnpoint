@@ -23,6 +23,15 @@ defineProps<{
     hasCloudflareToken: boolean;
     dnsEnabled: boolean;
     effectiveMemoryLimitMb: number | null;
+    // Arrives after the page. A folder of null: the node did not answer, or is older than 1.6.7.
+    backupFolders?: {
+        node: string;
+        folder: {
+            path: string;
+            reachable: boolean;
+            fallback: string | null;
+        } | null;
+    }[];
 }>();
 
 const hint = 'text-[0.8125rem] text-muted-foreground';
@@ -160,6 +169,68 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                     </span>
                     <InputError :message="errors.activity_retention_days" />
                 </div>
+            </SectionCard>
+
+            <SectionCard :title="t('Backup folders')">
+                <p :class="hint">
+                    {{
+                        t(
+                            'Where each node keeps its backups. Set it on the node itself with SPAWNPOINT_BACKUP_DIR, and with SPAWNPOINT_BACKUP_FALLBACK_DIR a folder on another disk to use while the first cannot be reached.',
+                        )
+                    }}
+                </p>
+                <p v-if="!backupFolders" role="status" :class="hint">
+                    {{ t('Asking the nodes…') }}
+                </p>
+                <ul v-else class="flex flex-col">
+                    <li
+                        v-for="entry in backupFolders"
+                        :key="entry.node"
+                        class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-divider py-2 text-sm first:border-t-0"
+                    >
+                        <span class="font-semibold text-primary">{{
+                            entry.node
+                        }}</span>
+                        <template v-if="entry.folder">
+                            <code class="break-all">{{
+                                entry.folder.path
+                            }}</code>
+                            <span
+                                v-if="entry.folder.reachable"
+                                class="text-muted-foreground"
+                            >
+                                {{
+                                    entry.folder.fallback
+                                        ? t('Reachable. Fallback: :folder', {
+                                              folder: entry.folder.fallback,
+                                          })
+                                        : t('Reachable')
+                                }}
+                            </span>
+                            <span v-else role="alert" class="text-destructive">
+                                {{
+                                    entry.folder.fallback
+                                        ? t(
+                                              'Cannot be reached. Backups are saved in :folder until it can.',
+                                              {
+                                                  folder: entry.folder.fallback,
+                                              },
+                                          )
+                                        : t(
+                                              'Cannot be reached, and no fallback folder is set. Backups fail until it can.',
+                                          )
+                                }}
+                            </span>
+                        </template>
+                        <span v-else class="text-muted-foreground">
+                            {{
+                                t(
+                                    'Not known: the node did not answer, or is older than 1.6.7.',
+                                )
+                            }}
+                        </span>
+                    </li>
+                </ul>
             </SectionCard>
 
             <SectionCard title="CurseForge">

@@ -91,6 +91,10 @@ pub struct AppState {
     pub token: Arc<[u8]>,
     pub data_dir: Arc<str>,
     pub backup_dir: Arc<str>,
+    // Where backups go while the backup folder cannot be reached; none means nowhere else.
+    pub fallback_dir: Option<Arc<str>>,
+    // Whether the backup folder could be written to a moment ago.
+    pub reachable: Arc<std::sync::atomic::AtomicBool>,
     pub import_dir: Arc<str>,
     pub tasks: Tasks,
     // Player counts by server, with the time they were read.
@@ -117,6 +121,8 @@ impl AppState {
             token: Arc::from(&b"0123456789abcdef0123456789abcdef"[..]),
             data_dir: data_dir.into(),
             backup_dir: "/nonexistent".into(),
+            fallback_dir: None,
+            reachable: Default::default(),
             import_dir: "/nonexistent".into(),
             tasks: Tasks::default(),
             players: Default::default(),
@@ -443,6 +449,13 @@ async fn start_after_boot(state: AppState) {
     }
 }
 
+// The memory in use in MB, from the text of /proc/meminfo: what is not available to start something new.
+fn memory_used_mb(meminfo: &str) -> Option<u64> {
+    let kb = |key: &str| meminfo.lines().find_map(|line| line.strip_prefix(key)?.trim().strip_suffix("kB")?.trim().parse::<u64>().ok());
+
+    Some(kb("MemTotal:")?.saturating_sub(kb("MemAvailable:")?) / 1024)
+}
+
 // The host's memory, so the panel can refuse to hand out more than there is.
 async fn host(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     let info = state.docker.info().await.map_err(|error| {
@@ -450,7 +463,16 @@ async fn host(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> 
         StatusCode::BAD_GATEWAY
     })?;
 
-    Ok(Json(json!({ "memory_mb": info.mem_total.unwrap_or(0) / 1024 / 1024 })))
+    Ok(Json(json!({
+        "memory_mb": info.mem_total.unwrap_or(0) / 1024 / 1024,
+        // A container reads the host's own figures here.
+        "memory_used_mb": std::fs::read_to_string("/proc/meminfo").ok().and_then(|meminfo| memory_used_mb(&meminfo)),
+        "backup": {
+            "path": &*state.backup_dir,
+            "reachable": state.reachable.load(std::sync::atomic::Ordering::Relaxed),
+            "fallback": state.fallback_dir.as_deref(),
+        },
+    })))
 }
 
 // Runs slow Docker work in the background so the panel's request returns at once.
@@ -1177,12 +1199,18 @@ async fn main() {
     assert!(FsPath::new(&data_dir).is_dir(), "SPAWNPOINT_DATA_DIR ({data_dir}) is not mounted");
 
     let backup_dir = std::env::var("SPAWNPOINT_BACKUP_DIR").unwrap_or_else(|_| "/srv/mc-backups".into());
-    assert!(FsPath::new(&backup_dir).is_dir(), "SPAWNPOINT_BACKUP_DIR ({backup_dir}) is not mounted");
+    // Optional: where backups go while the backup folder, a share for one, cannot be reached.
+    let fallback_dir = std::env::var("SPAWNPOINT_BACKUP_FALLBACK_DIR").ok().filter(|dir| !dir.is_empty() && *dir != backup_dir);
+    // With a fallback the backup folder may be a share that is down now, and asking could hang.
+    let required = fallback_dir.as_ref().unwrap_or(&backup_dir);
+    assert!(FsPath::new(required).is_dir(), "The backup folder ({required}) is not mounted");
     // Inside the data folder, the file manager could reach the archives.
-    assert!(
-        !FsPath::new(&backup_dir).starts_with(&data_dir) && !FsPath::new(&data_dir).starts_with(&backup_dir),
-        "SPAWNPOINT_BACKUP_DIR and SPAWNPOINT_DATA_DIR must not contain each other"
-    );
+    for dir in [Some(&backup_dir), fallback_dir.as_ref()].into_iter().flatten() {
+        assert!(
+            !FsPath::new(dir).starts_with(&data_dir) && !FsPath::new(&data_dir).starts_with(dir),
+            "The backup folder ({dir}) and SPAWNPOINT_DATA_DIR must not contain each other"
+        );
+    }
     // Optional: host worlds offered for import. Nothing is listed when it is not mounted.
     let import_dir = std::env::var("SPAWNPOINT_IMPORT_DIR").unwrap_or_else(|_| "/srv/mc-import".into());
 
@@ -1191,6 +1219,8 @@ async fn main() {
         token: token.into_bytes().into(),
         data_dir: data_dir.into(),
         backup_dir: backup_dir.into(),
+        fallback_dir: fallback_dir.map(Into::into),
+        reachable: Default::default(),
         import_dir: import_dir.into(),
         tasks: Tasks::default(),
         players: Default::default(),
@@ -1229,6 +1259,7 @@ async fn main() {
         .route("/servers/{slug}/backups/{name}/download", get(backups::download))
         .with_state(state.clone());
 
+    tokio::spawn(backups::watch_folder(state.clone()));
     tokio::spawn(start_after_boot(state.clone()));
     tokio::spawn(monitor(state));
 
@@ -1427,6 +1458,14 @@ mod tests {
         for bad in ["", "../etc", "a/b", "Upper", "-lead", "trail-", "a b"] {
             assert!(!valid_slug(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn memory_in_use_is_what_is_not_available() {
+        let meminfo = "MemTotal:       32675356 kB\nMemFree:          812340 kB\nMemAvailable:   20387420 kB\n";
+
+        assert_eq!(memory_used_mb(meminfo), Some(11999));
+        assert_eq!(memory_used_mb("MemTotal: 1024 kB\n"), None);
     }
 
     #[test]

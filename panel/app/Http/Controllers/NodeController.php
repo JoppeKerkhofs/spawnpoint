@@ -27,10 +27,14 @@ class NodeController extends Controller
     {
         return Inertia::render('Nodes', [
             'nodes' => Node::query()->withCount('servers')->orderBy('id')->get()->map(function (Node $node): array {
+                $memory = null;
+
                 try {
-                    (new NodeClient($node))->servers();
+                    $client = new NodeClient($node);
+                    $client->servers();
                     $node->forceFill(['last_seen_at' => now()])->save();
                     $online = true;
+                    $memory = $client->hostMemory();
                 } catch (ConnectionException|RequestException) {
                     $online = false;
                 }
@@ -42,6 +46,9 @@ class NodeController extends Controller
                     'servers' => $node->servers_count,
                     'allocated_mb' => (int) $node->servers()->sum('memory_mb'),
                     'limit_mb' => $online ? MemoryLimit::mb($node) : null,
+                    // Of the whole host, whatever uses it. Null from a node older than 1.6.7.
+                    'used_mb' => $memory['used_mb'] ?? null,
+                    'host_mb' => $memory['total_mb'] ?? null,
                     // Registered by the panel from its own environment on every start, so its address is not edited here.
                     'local' => $node->name === Node::LOCAL,
                 ];

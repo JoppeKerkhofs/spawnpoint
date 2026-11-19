@@ -48,6 +48,13 @@ is `mc-{slug}`, its data is `{SPAWNPOINT_DATA_DIR}/{slug}`, the image is `itzg/m
 State is read live from Docker; there is no status column. Long tasks (backup, restore, import)
 are tracked in memory in the node.
 
+**Backup folders.** A node keeps archives in `SPAWNPOINT_BACKUP_DIR/{slug}`. With
+`SPAWNPOINT_BACKUP_FALLBACK_DIR` set it checks every 15 seconds that the first can be written to
+and is not on the fallback's disk (an unmounted share), and otherwise writes to the fallback and
+never touches the first. The list reads both and marks those in the fallback (`fallback`). The
+node says so when a backup starts, `NodeClient::createBackup()` records `backup.fallback`, which
+webhooks following backups get. `/host` reports the folders for the Settings page.
+
 **Moving a server.** `MoveServer` (a queued job) stops the server, backs it up on its node,
 `apply`s it on the new node and posts `/servers/{slug}/fetch` there with a backup download URL
 signed with the old node's token; the new node pulls the archive with `curl` and restores it.

@@ -196,3 +196,17 @@ test('the move is queued by an admin, refused onto a node without room, and clos
 
     Queue::assertPushed(MoveServer::class, 1);
 });
+
+test('the nodes page shows how much of each host its memory is in use', function () {
+    Http::fake([
+        'home.test:8080/host' => Http::response(['memory_mb' => 32768, 'memory_used_mb' => 12288]),
+        // A node from before 1.6.7 does not say.
+        'attic.test:8080/host' => Http::response(['memory_mb' => 16384]),
+        '*' => Http::response([]),
+    ]);
+
+    $this->actingAs($this->admin)->get(route('nodes.index'))->assertInertia(fn (Assert $page) => $page
+        ->where('nodes.0.used_mb', 12288)
+        ->where('nodes.0.host_mb', 32768)
+        ->where('nodes.1.used_mb', null));
+});

@@ -22,7 +22,7 @@ x-logging: &logging
 services:
   # The only container with the Docker socket and the server folders.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.6}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.6.7}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
@@ -31,6 +31,8 @@ services:
       SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to the token the panel showed when the node was added}
       SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
       SPAWNPOINT_BACKUP_DIR: ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Empty: backups have nowhere else to go when the backup folder is unreachable.
+      SPAWNPOINT_BACKUP_FALLBACK_DIR: ${SPAWNPOINT_BACKUP_FALLBACK_DIR:-}
       SPAWNPOINT_IMPORT_DIR: ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}
       # With both filled in, the node speaks https instead of http; see .env.node.example.
       SPAWNPOINT_TLS_CERT: ${SPAWNPOINT_TLS_CERT:-}
@@ -44,6 +46,8 @@ services:
       - ${SPAWNPOINT_DATA_DIR:-/srv/mc}:${SPAWNPOINT_DATA_DIR:-/srv/mc}
       # Outside the data folder, so the file manager can never reach the archives.
       - ${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}:${SPAWNPOINT_BACKUP_DIR:-/srv/mc-backups}
+      # Used while the backup folder, a share for one, cannot be reached. On another disk.
+      - ${SPAWNPOINT_BACKUP_FALLBACK_DIR:-/srv/mc-backups-fallback}:${SPAWNPOINT_BACKUP_FALLBACK_DIR:-/srv/mc-backups-fallback}
       # Host worlds offered for import; read-only.
       - ${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:${SPAWNPOINT_IMPORT_DIR:-/srv/mc-import}:ro
       # For https: uncomment, and put the certificate and key in ./tls as node.crt and node.key.

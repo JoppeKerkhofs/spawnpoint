@@ -57,6 +57,15 @@ docker compose -f compose.prod.yaml --env-file .env.compose up -d
 Server data lives in `/srv/mc`, backups in `/srv/mc-backups`, and worlds you want to import go in
 `/srv/mc-import`. The panel's own data is in the `database` volume.
 
+To keep backups somewhere else, such as a NAS or an SMB share mounted on the host, set
+`SPAWNPOINT_BACKUP_DIR` in the node's `.env` to that folder; each server gets its own folder in
+it. Set `SPAWNPOINT_BACKUP_FALLBACK_DIR` to a folder on another disk (`/srv/mc-backups`, say) and
+backups are saved there while the first cannot be reached: the share is down, or it is not
+mounted, which the node sees because both folders are then on the same disk. Each such backup is
+recorded in the activity log, reported to webhooks that follow backups, and marked in the list;
+it stays in the fallback folder. Settings shows per node which folder it uses and whether it can
+be reached. A share mounted after the node started is only seen once the node is restarted.
+
 ## More hosts
 
 Minecraft servers can run on more than one host. Each extra host runs a node, and the panel

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ActivityLog;
+use App\Models\Node;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\NodeClient;
@@ -40,6 +41,45 @@ test('a manual backup passes the retention count to the node', function () {
         && str_ends_with($request->url(), '/servers/survival/backups')
         && $request['keep'] === 7
         && $request['by'] === $this->admin->name);
+});
+
+test('a backup that the node saves in its fallback folder is recorded and reported to webhooks', function () {
+    Http::fake([
+        'node.test:8080/*' => Http::response(['fallback' => true], 202),
+        '93.184.216.34/*' => Http::response(status: 204),
+    ]);
+    $this->admin->webhooks()->create(['name' => 'Backups', 'url' => 'https://93.184.216.34/backups', 'format' => 'slack', 'events' => ['backups']]);
+
+    $this->post(route('servers.backups.store', $this->server))->assertRedirect();
+
+    expect(ActivityLog::query()->pluck('event')->all())->toBe(['backup.fallback', 'backup.create']);
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://93.184.216.34/backups'
+        && str_contains($request['text'], 'is saved in the fallback folder'));
+});
+
+test('a backup in the backup folder itself records no fallback', function () {
+    Http::fake(['node.test:8080/*' => Http::response(['fallback' => false], 202)]);
+
+    $this->post(route('servers.backups.store', $this->server));
+
+    expect(ActivityLog::query()->pluck('event')->all())->toBe(['backup.create']);
+});
+
+test('settings show the backup folder of each node, and say when a node does not answer', function () {
+    Http::fake(['node.test:8080/host' => Http::response([
+        'memory_mb' => 8192,
+        'backup' => ['path' => '/mnt/nas/minecraft', 'reachable' => false, 'fallback' => '/srv/mc-backups'],
+    ])]);
+    $silent = Node::factory()->create(['name' => 'attic', 'base_url' => 'http://attic.test:8080']);
+    Http::fake(['attic.test:8080/*' => Http::response(status: 500)]);
+
+    $this->get(route('panel-settings.edit'))->assertInertia(fn (Assert $page) => $page
+        ->missing('backupFolders')
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('backupFolders.0.folder.path', '/mnt/nas/minecraft')
+            ->where('backupFolders.0.folder.reachable', false)
+            ->where('backupFolders.0.folder.fallback', '/srv/mc-backups')
+            ->where('backupFolders.1', ['node' => $silent->name, 'folder' => null])));
 });
 
 test('restore, lock, delete and download address the backup by its name', function () {

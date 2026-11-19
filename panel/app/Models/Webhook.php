@@ -34,7 +34,7 @@ class Webhook extends Model
         'power' => ['server.start', 'server.stop', 'server.restart', 'server.kill'],
         'status' => ['server.online', 'server.offline'],
         'crash' => ['server.crashed'],
-        'backups' => ['backup.create', 'backup.restore', 'schedule.run'],
+        'backups' => ['backup.create', 'backup.restore', 'backup.fallback', 'schedule.run'],
         'changes' => ['server.create', 'server.update', 'server.delete', 'world.import'],
     ];
 
@@ -107,7 +107,7 @@ class Webhook extends Model
                 'description' => $message,
                 'color' => match ($details['event']) {
                     'server.crashed', 'server.kill', 'server.delete' => 0xD64545,
-                    'server.stop', 'server.offline', 'server.restart' => 0xE0A526,
+                    'server.stop', 'server.offline', 'server.restart', 'backup.fallback' => 0xE0A526,
                     'server.online', 'server.start', 'server.create' => 0x3FA36B,
                     default => 0x4F8FD6,
                 },
@@ -143,6 +143,7 @@ class Webhook extends Model
             'server.crashed' => $detail === null ? __(':server crashed.', $in, $locale) : __(':server crashed. :detail', $in, $locale),
             'backup.create' => __(':actor started a backup of :server.', $in, $locale),
             'backup.restore' => __(':actor restored a backup of :server.', $in, $locale),
+            'backup.fallback' => __('The backup folder cannot be reached, so the backup of :server is saved in the fallback folder.', $in, $locale),
             'schedule.run' => $detail === null ? __('A schedule ran on :server.', $in, $locale) : __('A schedule ran on :server: :detail.', $in, $locale),
             'server.create' => __(':actor created :server.', $in, $locale),
             'server.update' => __(':actor changed the configuration of :server.', $in, $locale),
