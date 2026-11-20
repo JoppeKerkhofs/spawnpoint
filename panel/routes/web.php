@@ -19,6 +19,7 @@ use App\Http\Controllers\ServiceStatusController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\RequireTwoFactor;
+use App\Services\PortalReleases;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -32,7 +33,7 @@ Route::get('support', SupportController::class)->name('support');
 Route::withoutMiddleware('web')->middleware('throttle:portal')->prefix('portal')->group(function () {
     Route::get('latest.json', [PortalController::class, 'latest']);
     Route::get('download', [PortalController::class, 'download']);
-    Route::get('spawnpoint-portal-{version}-setup.exe', [PortalController::class, 'installer'])->where('version', '\d+\.\d+\.\d+');
+    Route::get('spawnpoint-portal-{version}-setup.exe', [PortalController::class, 'installer'])->where('version', PortalReleases::PARTS);
 });
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {

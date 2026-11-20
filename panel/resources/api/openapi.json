@@ -1659,9 +1659,9 @@
                         "required": true,
                         "schema": {
                             "type": "string",
-                            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                            "pattern": "^\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}$"
                         },
-                        "description": "Three numbers, such as 1.2.3."
+                        "description": "Three numbers of at most six digits, such as 1.2.3."
                     },
                     {
                         "name": "X-Signature",
@@ -1722,6 +1722,9 @@
                     },
                     "413": {
                         "description": "The body is larger than 100 MB"
+                    },
+                    "423": {
+                        "description": "Another release is being uploaded; try again in a moment"
                     },
                     "415": {
                         "description": "The body was not sent as application/octet-stream"

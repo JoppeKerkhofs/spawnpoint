@@ -31,7 +31,7 @@ test('a preset is a subset of the catalogue and full access is all of it', funct
     $presets = Abilities::presets();
 
     expect(array_keys($presets))->toBe(['read-only', 'operator', 'full'])
-        ->and($presets['full'])->toBe(Abilities::all())
+        ->and($presets['full'])->toBe(array_values(array_diff(Abilities::all(), ['portal:release'])))
         ->and(array_diff($presets['operator'], Abilities::all()))->toBeEmpty()
         ->and(array_diff($presets['read-only'], $presets['operator']))->toBeEmpty()
         ->and($presets['read-only'])->toContain('servers:read')

@@ -255,6 +255,35 @@ curl -X PUT https://panel.example.com/api/v1/portal/releases/1.2.3 \
   --data-binary @setup.exe
 ```
 
+A version has three numbers of at most six digits. Only one upload runs at a time: a second one
+answers 423. The `full` starting point and a paired app never get `portal:release`; choose it by
+name.
+
+Behind a reverse proxy, mind three things:
+
+- The proxy must allow a request body of at least 100 MB on `/api/v1/portal/` (nginx
+  `client_max_body_size 101m`, for instance). The panel's own PHP allows 101 MB.
+- Set `TRUSTED_PROXIES` to the proxy's address, or every visitor shares one address and the
+  limit of 60 requests a minute on the three public addresses.
+- With two-factor required, the token's owner must have set it up, or the upload answers 403.
+
+To check a deployed panel, with a token that has `portal:release`:
+
+```sh
+# A real upload: 201 (a second one with the same version: 409)
+curl -sS -o /dev/null -w '%{http_code}\n' -X PUT "$PANEL/api/v1/portal/releases/0.0.1" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/octet-stream" \
+  -H "X-Signature: c2ln" -H "X-Sha256: $(sha256sum setup.exe | cut -d' ' -f1)" --data-binary @setup.exe
+# Over the cap (101 MB of zeroes): 413
+head -c 105906176 /dev/zero | curl -sS -o /dev/null -w '%{http_code}\n' -X PUT "$PANEL/api/v1/portal/releases/0.0.2" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/octet-stream" \
+  -H "X-Signature: c2ln" -H "X-Sha256: $(head -c 32 /dev/zero | sha256sum | cut -d' ' -f1)" --data-binary @-
+# The download: the same bytes you sent
+curl -sS "$PANEL/portal/spawnpoint-portal-0.0.1-setup.exe" | sha256sum
+# The files survive a recreate: still there afterwards
+docker compose up -d --force-recreate app && curl -sS "$PANEL/portal/latest.json"
+```
+
 ### Pairing an app
 
 An app never needs your password. It shows an eight-character code; under Settings, API tokens,

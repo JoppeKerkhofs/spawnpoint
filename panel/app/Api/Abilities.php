@@ -88,7 +88,8 @@ class Abilities
         return [
             'read-only' => $readOnly,
             'operator' => [...$readOnly, 'servers:power', 'console:use', 'files:write', 'backups:create', 'backups:restore', 'schedules:manage'],
-            'full' => self::all(),
+            // Uploading releases is only ever granted by naming it.
+            'full' => array_values(array_diff(self::all(), ['portal:release'])),
         ];
     }
 

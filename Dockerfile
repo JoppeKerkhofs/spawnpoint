@@ -53,6 +53,7 @@ RUN install-php-extensions pdo_mysql pcntl \
 WORKDIR /app
 COPY --from=build /app /app
 COPY docker/Caddyfile /etc/frankenphp/Caddyfile
+COPY docker/php.ini $PHP_INI_DIR/conf.d/zz-spawnpoint.ini
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint
 
 # Unprivileged user: port 8080 needs no capability; Caddy and `artisan tinker` write to /data

@@ -3,6 +3,7 @@
 use App\Api\Abilities;
 use App\Models\ActivityLog;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 // A raw PUT, the way the launcher's workflow sends it. A null header is left out.
@@ -178,4 +179,74 @@ test('the public addresses are limited per address', function () {
 
     $this->get('/portal/latest.json')->assertTooManyRequests();
     $this->get('/portal/download')->assertTooManyRequests();
+});
+
+test('the image lets a request through that is as large as the cap', function () {
+    $ini = parse_ini_file(base_path('../docker/php.ini'));
+
+    expect(ini_parse_quantity($ini['post_max_size'] ?? '0'))->toBeGreaterThan(config('panel.portal_max_bytes'));
+});
+
+test('a large declared length reaches the controller when post_max_size allows it', function () {
+    $limit = (int) ini_parse_quantity((string) ini_get('post_max_size'));
+    $declared = min(25 * 1024 * 1024, $limit - 1);
+
+    $server = ['CONTENT_TYPE' => 'application/octet-stream', 'CONTENT_LENGTH' => $declared, 'HTTP_X_SIGNATURE' => 'c2ln', 'HTTP_X_SHA256' => str_repeat('0', 64), 'HTTP_AUTHORIZATION' => bearer($this->token)['Authorization']];
+    test()->call('PUT', '/api/v1/portal/releases/1.0.0', [], [], [], $server, 'small')->assertUnprocessable();
+});
+
+test('a second upload while one is being published is refused with 423', function () {
+    $lock = Cache::lock('portal-release', 30);
+    expect($lock->get())->toBeTrue();
+
+    portalPut($this->token, '1.0.0', 'x')->assertStatus(423);
+    expect(Storage::disk('local')->allFiles('portal'))->toBe([]);
+
+    $lock->release();
+    portalPut($this->token, '1.0.0', 'x')->assertCreated();
+    // The lock is released on the way out, also after a refusal.
+    portalPut($this->token, '1.0.0', 'x')->assertStatus(409);
+    portalPut($this->token, '1.0.1', 'x')->assertCreated();
+});
+
+test('a publish clears old temporary files and installers without metadata, never a listed release', function () {
+    $disk = Storage::disk('local');
+    $disk->put('portal/.upload-old', 'cut off');
+    $disk->put('portal/.upload-young', 'running');
+    $disk->put('portal/spawnpoint-portal-0.5.0-setup.exe', 'no metadata');
+    touch($disk->path('portal/.upload-old'), now()->subHours(2)->getTimestamp());
+
+    portalPut($this->token, '1.0.0', 'listed')->assertCreated();
+
+    expect($disk->allFiles('portal'))->toEqualCanonicalizing([
+        'portal/.upload-young',
+        'portal/spawnpoint-portal-1.0.0-setup.exe', 'portal/spawnpoint-portal-1.0.0-setup.json',
+    ]);
+});
+
+test('a version part of more than six digits is refused', function () {
+    portalPut($this->token, '99999999999999999999.0.0', 'x')->assertUnprocessable();
+    portalPut($this->token, '1.0.1234567', 'x')->assertUnprocessable();
+    portalPut($this->token, '999999.999999.999999', 'x')->assertCreated();
+
+    $this->get('/portal/spawnpoint-portal-99999999999999999999.0.0-setup.exe')->assertNotFound();
+    expect(collect(app('router')->getRoutes()->getRoutes())->first(fn ($route) => str_contains($route->uri(), 'setup.exe'))->wheres['version'])->toBe('\d{1,6}\.\d{1,6}\.\d{1,6}');
+});
+
+test('the installer is sent with nosniff', function () {
+    portalPut($this->token, '1.0.0', 'x')->assertCreated();
+
+    $this->get('/portal/spawnpoint-portal-1.0.0-setup.exe')->assertHeader('X-Content-Type-Options', 'nosniff');
+});
+
+test('no preset carries the release ability, but an admin can still choose it', function () {
+    expect(Abilities::presets()['full'])->not->toContain('portal:release');
+    foreach (Abilities::presets() as $preset) {
+        expect($preset)->not->toContain('portal:release');
+    }
+
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin)->post(route('api-tokens.store'), ['name' => 'CI', 'abilities' => ['portal:release']])->assertSessionHasNoErrors();
+
+    expect($admin->tokens()->sole()->abilities)->toBe(['portal:release']);
 });

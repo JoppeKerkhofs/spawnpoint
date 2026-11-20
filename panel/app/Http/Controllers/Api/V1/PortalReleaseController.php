@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Services\PortalReleases;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 
 class PortalReleaseController extends Controller
@@ -19,7 +20,7 @@ class PortalReleaseController extends Controller
         Validator::validate(
             ['version' => $version, 'signature' => $request->header('X-Signature'), 'sha256' => $request->header('X-Sha256')],
             [
-                'version' => ['required', 'string', 'max:32', 'regex:'.PortalReleases::VERSION],
+                'version' => ['required', 'string', 'regex:'.PortalReleases::VERSION],
                 'signature' => ['required', 'string', 'max:2000', 'regex:/^[A-Za-z0-9+\/=]+\z/'],
                 'sha256' => ['required', 'string', 'regex:/^[0-9a-fA-F]{64}\z/'],
             ],
@@ -30,6 +31,15 @@ class PortalReleaseController extends Controller
         // Symfony reads a form-encoded PUT into memory before this runs, so only a raw body is taken.
         abort_unless(str_starts_with((string) $request->header('Content-Type'), 'application/octet-stream'), 415, 'Send the installer as application/octet-stream.');
 
+        // One upload at a time: the version check and the publish must not interleave. Released on every path.
+        $response = Cache::lock('portal-release', 1800)->get(fn () => $this->publish($request, $version, $releases));
+        abort_if($response === false, 423, 'Another release is being uploaded; try again in a moment.');
+
+        return $response;
+    }
+
+    private function publish(Request $request, string $version, PortalReleases $releases): JsonResponse
+    {
         $current = array_key_first($releases->all());
         abort_if($current !== null && version_compare($version, $current, '<='), 409, "The newest release is {$current}; upload a greater version.");
 

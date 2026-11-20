@@ -11,9 +11,12 @@ use RuntimeException;
  */
 class PortalReleases
 {
-    public const string VERSION = '/^\d+\.\d+\.\d+\z/';
+    // Six digits a part: version_compare saturates on longer numbers, and nothing after could win.
+    public const string PARTS = '\d{1,6}\.\d{1,6}\.\d{1,6}';
 
-    private const string INSTALLER = '/^spawnpoint-portal-(\d+\.\d+\.\d+)-setup\.exe\z/';
+    public const string VERSION = '/^'.self::PARTS.'\z/';
+
+    private const string INSTALLER = '/^spawnpoint-portal-('.self::PARTS.')-setup\.exe\z/';
 
     private const int KEEP = 3;
 
@@ -106,8 +109,23 @@ class PortalReleases
         rename($temp, $installer);
         rename($temp.'.json', substr($installer, 0, -3).'json');
 
-        foreach (array_slice(array_keys($this->all()), self::KEEP) as $old) {
-            Storage::disk('local')->delete(['portal/'.self::name($old), 'portal/'.substr(self::name($old), 0, -3).'json']);
+        $disk = Storage::disk('local');
+        $listed = $this->all();
+
+        foreach (array_slice(array_keys($listed), self::KEEP) as $old) {
+            $disk->delete(['portal/'.self::name($old), 'portal/'.substr(self::name($old), 0, -3).'json']);
+            unset($listed[$old]);
+        }
+
+        // What a crashed upload left: temporary files past an hour, and an installer without its JSON.
+        foreach ($disk->files('portal') as $file) {
+            $name = basename($file);
+            $cutOff = str_starts_with($name, '.upload-') && $disk->lastModified($file) < now()->subHour()->getTimestamp();
+            $orphan = preg_match(self::INSTALLER, $name, $match) === 1 && ! isset($listed[$match[1]]);
+
+            if ($cutOff || $orphan) {
+                $disk->delete($file);
+            }
         }
     }
 }

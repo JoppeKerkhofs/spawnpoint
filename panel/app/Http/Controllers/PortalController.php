@@ -26,7 +26,7 @@ class PortalController extends Controller
     {
         abort_unless(isset($releases->all()[$version]), 404);
 
-        return response()->download(PortalReleases::path($version), PortalReleases::name($version), ['Content-Type' => 'application/octet-stream']);
+        return response()->download(PortalReleases::path($version), PortalReleases::name($version), ['Content-Type' => 'application/octet-stream', 'X-Content-Type-Options' => 'nosniff']);
     }
 
     public function download(PortalReleases $releases): RedirectResponse
