@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
+import { Download } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import BlockCube from '@/components/BlockCube.vue';
@@ -81,6 +82,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => timers.forEach(clearInterval));
 
+// Not an Inertia visit: the address redirects to a file.
+const launcherDownload = '/portal/download';
+
 const mainNavItems = computed<NavItem[]>(() => [
     {
         title: t('Servers'),
@@ -136,6 +140,23 @@ const mainNavItems = computed<NavItem[]>(() => [
                     >
                         {{ item.title }}
                     </Link>
+                    <a
+                        v-if="page.props.launcherVersion"
+                        :href="launcherDownload"
+                        :aria-label="
+                            t('Download the launcher, version :version', {
+                                version: page.props.launcherVersion,
+                            })
+                        "
+                        class="ml-2 inline-flex items-center gap-1.5 self-center rounded border border-white/30 px-2.5 py-1 text-[0.8125rem] whitespace-nowrap text-white/90 tabular-nums hover:bg-white/10 hover:text-white"
+                    >
+                        <Download aria-hidden="true" class="size-4" />
+                        {{
+                            t('Launcher v:version', {
+                                version: page.props.launcherVersion,
+                            })
+                        }}
+                    </a>
                 </nav>
 
                 <div class="flex-1" />

@@ -22,7 +22,7 @@ x-logging: &logging
 services:
   # The only container with the Docker socket and the server folders.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.8.0}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.8.1}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped

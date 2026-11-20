@@ -250,3 +250,24 @@ test('no preset carries the release ability, but an admin can still choose it', 
 
     expect($admin->tokens()->sole()->abilities)->toBe(['portal:release']);
 });
+
+test('signed-in pages carry the newest launcher version once there is one, and an upload shows at once', function () {
+    $this->actingAs(User::factory()->create());
+    $shared = fn () => $this->get(route('dashboard'))->viewData('page')['props']['launcherVersion'] ?? null;
+
+    expect($shared())->toBeNull();
+
+    portalPut($this->token, '1.0.0', 'a')->assertCreated();
+    expect($shared())->toBe('1.0.0');
+
+    portalPut($this->token, '1.1.0', 'b')->assertCreated();
+    expect($shared())->toBe('1.1.0');
+});
+
+test('a signed-out page does not carry the launcher version', function () {
+    portalPut($this->token, '1.0.0', 'a')->assertCreated();
+
+    app('auth')->forgetGuards();
+
+    expect($this->get(route('login'))->viewData('page')['props']['launcherVersion'])->toBeNull();
+});

@@ -241,7 +241,8 @@ The panel can hold the installer of your launcher and its update file. Three add
 login: `/portal/latest.json` (what the launcher's updater reads), `/portal/download` (redirects
 to the newest installer, for a first install) and `/portal/spawnpoint-portal-<version>-setup.exe`.
 Only the three newest releases are kept, in the `portal` volume. An install that never uploads
-anything serves nothing: all three answer 404.
+anything serves nothing: all three answer 404. Once a release is stored, every signed-in user sees a
+"Download the launcher" link with its version in the panel's navigation.
 
 Upload with a token that has the `portal:release` ability, which only an admin can give. The body
 is the installer itself, up to 100 MB; the version must be greater than the newest one:

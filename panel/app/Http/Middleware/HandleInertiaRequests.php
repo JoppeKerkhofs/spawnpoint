@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Services\Languages;
+use App\Services\PortalReleases;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -49,6 +50,7 @@ class HandleInertiaRequests extends Middleware
             'live' => $request->user() !== null && config('broadcasting.default') === 'reverb'
                 ? ['key' => config('broadcasting.connections.reverb.key'), ...config('broadcasting.connections.reverb.browser')]
                 : null,
+            'launcherVersion' => $request->user() !== null ? PortalReleases::latestVersion() : null,
             'auth' => [
                 'user' => $request->user(),
             ],

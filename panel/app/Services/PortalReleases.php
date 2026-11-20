@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -59,6 +60,12 @@ class PortalReleases
         return $releases;
     }
 
+    // Every page asks; the folder is listed once a minute. An empty string caches "none".
+    public static function latestVersion(): ?string
+    {
+        return Cache::remember('portal-latest-version', 60, fn (): string => array_key_first((new self)->all()) ?? '') ?: null;
+    }
+
     /**
      * Copy the stream into a temporary file, at most $max bytes. Null when it is longer.
      *
@@ -108,6 +115,8 @@ class PortalReleases
         file_put_contents($temp.'.json', json_encode($meta));
         rename($temp, $installer);
         rename($temp.'.json', substr($installer, 0, -3).'json');
+
+        Cache::forget('portal-latest-version');
 
         $disk = Storage::disk('local');
         $listed = $this->all();
