@@ -52,6 +52,7 @@ x-panel: &panel
     MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Spawnpoint}
   volumes:
     - routes:/proxy
+    - portal:/app/storage/app/private/portal
 
 services:
   db:
@@ -244,6 +245,8 @@ volumes:
   database:
   # Written by the panel, read by the router and the map proxy.
   routes:
+  # The launcher releases uploaded to the panel, served at /portal/.
+  portal:
 
 networks:
   # The panel, its database and the node. Minecraft containers are never on it.

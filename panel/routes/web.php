@@ -10,6 +10,7 @@ use App\Http\Controllers\ModController;
 use App\Http\Controllers\ModpackSearchController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PanelSettingsController;
+use App\Http\Controllers\PortalController;
 use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ServerController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\ServiceStatusController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\RequireTwoFactor;
+use App\Services\PortalReleases;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -26,6 +28,13 @@ Route::get('node-upstream/{node}', [NodeController::class, 'upstream'])->whereNu
 // Public: anyone can read what the panel keeps about them, signed in or not.
 Route::get('privacy', PrivacyController::class)->name('privacy');
 Route::get('support', SupportController::class)->name('support');
+
+// The launcher's releases: public, and with no session, cookie or CSRF token.
+Route::withoutMiddleware('web')->middleware('throttle:portal')->prefix('portal')->group(function () {
+    Route::get('latest.json', [PortalController::class, 'latest']);
+    Route::get('download', [PortalController::class, 'download']);
+    Route::get('spawnpoint-portal-{version}-setup.exe', [PortalController::class, 'installer'])->where('version', PortalReleases::PARTS);
+});
 
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

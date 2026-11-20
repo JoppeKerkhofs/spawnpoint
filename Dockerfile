@@ -53,6 +53,7 @@ RUN install-php-extensions pdo_mysql pcntl \
 WORKDIR /app
 COPY --from=build /app /app
 COPY docker/Caddyfile /etc/frankenphp/Caddyfile
+COPY docker/php.ini $PHP_INI_DIR/conf.d/zz-spawnpoint.ini
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint
 
 # Unprivileged user: port 8080 needs no capability; Caddy and `artisan tinker` write to /data
@@ -61,7 +62,8 @@ COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint
 RUN adduser -D -H -u 1000 app \
     && setcap -r /usr/local/bin/frankenphp \
     && chmod -R go-w . \
-    && mkdir -p /proxy/maps \n    && chown -R app:app storage bootstrap/cache /data /config /proxy
+    && mkdir -p /proxy/maps storage/app/private/portal \
+    && chown -R app:app storage bootstrap/cache /data /config /proxy
 
 
 # The base image declares ports 80, 443 and 2019, and a Dockerfile cannot take a declared port

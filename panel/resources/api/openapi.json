@@ -1647,6 +1647,94 @@
                 "parameters": []
             }
         },
+        "/portal/releases/{version}": {
+            "put": {
+                "summary": "Publish a launcher release",
+                "x-ability": "portal:release",
+                "description": "Needs portal:release and an admin owner. The body is the installer itself, sent raw as application/octet-stream (not a form), at most 100 MB. The panel serves it at /portal/spawnpoint-portal-{version}-setup.exe and lists it in /portal/latest.json, for the launcher's updater. The version must be greater than the newest stored one, and only the three newest releases are kept.",
+                "parameters": [
+                    {
+                        "name": "version",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}$"
+                        },
+                        "description": "Three numbers of at most six digits, such as 1.2.3."
+                    },
+                    {
+                        "name": "X-Signature",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9+/=]{1,2000}$"
+                        },
+                        "description": "The update signature: one line of base64 text."
+                    },
+                    {
+                        "name": "X-Sha256",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-fA-F]{64}$"
+                        },
+                        "description": "The SHA-256 of the body, in hex. The panel hashes what it stored and refuses a body that differs."
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Published",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {
+                                            "type": "string"
+                                        },
+                                        "url": {
+                                            "type": "string"
+                                        },
+                                        "size": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The version is not greater than the newest stored one; the message names it"
+                    },
+                    "413": {
+                        "description": "The body is larger than 100 MB"
+                    },
+                    "423": {
+                        "description": "Another release is being uploaded; try again in a moment"
+                    },
+                    "415": {
+                        "description": "The body was not sent as application/octet-stream"
+                    },
+                    "422": {
+                        "description": "A bad version or header, an empty body, or a body that does not match X-Sha256 (nothing is kept)"
+                    }
+                }
+            }
+        },
         "/webhooks": {
             "get": {
                 "summary": "List your own webhooks",

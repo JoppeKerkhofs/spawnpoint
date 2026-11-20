@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\ModpackController;
 use App\Http\Controllers\Api\V1\NodeController;
 use App\Http\Controllers\Api\V1\PairingController;
 use App\Http\Controllers\Api\V1\PanelController;
+use App\Http\Controllers\Api\V1\PortalReleaseController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -122,6 +123,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFacto
         Route::get('settings', [PanelController::class, 'settings'])->middleware('ability:settings:read');
         Route::put('settings', [PanelController::class, 'saveSettings'])->middleware('ability:settings:manage');
         Route::get('activity', [PanelController::class, 'activity'])->middleware('ability:activity:read');
+        // The controller checks the version before it becomes part of a file name.
+        Route::put('portal/releases/{version}', [PortalReleaseController::class, 'store'])->middleware('ability:portal:release');
     });
 
     Route::patch('me', [MeController::class, 'update'])->middleware('ability:profile:manage');

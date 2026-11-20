@@ -56,6 +56,7 @@ class Abilities
                 ['name' => 'settings:read', 'label' => (string) __('See settings'), 'description' => (string) __('Read the panel settings. Secrets are never sent.')],
                 ['name' => 'settings:manage', 'label' => (string) __('Change settings'), 'description' => (string) __('Change the panel settings.')],
                 ['name' => 'activity:read', 'label' => (string) __('Read the activity log'), 'description' => (string) __('See who did what in the panel.')],
+                ['name' => 'portal:release', 'label' => (string) __('Publish launcher releases'), 'description' => (string) __("Upload the launcher's installer and update file to serve at /portal/.")],
             ]],
             ['key' => 'account', 'label' => (string) __('Own account'), 'abilities' => [
                 ['name' => 'profile:manage', 'label' => (string) __('Change your name and language'), 'description' => (string) __('Nothing else: not your e-mail, password, two-factor or tokens.')],
@@ -87,7 +88,8 @@ class Abilities
         return [
             'read-only' => $readOnly,
             'operator' => [...$readOnly, 'servers:power', 'console:use', 'files:write', 'backups:create', 'backups:restore', 'schedules:manage'],
-            'full' => self::all(),
+            // Uploading releases is only ever granted by naming it.
+            'full' => array_values(array_diff(self::all(), ['portal:release'])),
         ];
     }
 

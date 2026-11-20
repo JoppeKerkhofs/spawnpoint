@@ -10,7 +10,7 @@ use Laravel\Sanctum\Sanctum;
 test('the catalogue lists every ability once, grouped, with a label for each', function () {
     $all = Abilities::all();
 
-    expect($all)->toHaveCount(24)
+    expect($all)->toHaveCount(25)
         ->and($all)->toBe(array_unique($all))
         ->and($all)->toContain('servers:read', 'backups:restore', 'nodes:manage', 'profile:manage')
         // The retired name is never offered.
@@ -31,7 +31,7 @@ test('a preset is a subset of the catalogue and full access is all of it', funct
     $presets = Abilities::presets();
 
     expect(array_keys($presets))->toBe(['read-only', 'operator', 'full'])
-        ->and($presets['full'])->toBe(Abilities::all())
+        ->and($presets['full'])->toBe(array_values(array_diff(Abilities::all(), ['portal:release'])))
         ->and(array_diff($presets['operator'], Abilities::all()))->toBeEmpty()
         ->and(array_diff($presets['read-only'], $presets['operator']))->toBeEmpty()
         ->and($presets['read-only'])->toContain('servers:read')
