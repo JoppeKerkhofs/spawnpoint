@@ -235,6 +235,26 @@ of the pack are named in the `manifest.json` inside it; the launcher posts their
 `/servers/{server}/client-pack/files` and gets back where each is downloaded, so the CurseForge
 key never leaves the panel.
 
+### Serving a launcher's releases
+
+The panel can hold the installer of your launcher and its update file. Three addresses need no
+login: `/portal/latest.json` (what the launcher's updater reads), `/portal/download` (redirects
+to the newest installer, for a first install) and `/portal/spawnpoint-portal-<version>-setup.exe`.
+Only the three newest releases are kept, in the `portal` volume. An install that never uploads
+anything serves nothing: all three answer 404.
+
+Upload with a token that has the `portal:release` ability, which only an admin can give. The body
+is the installer itself, up to 100 MB; the version must be greater than the newest one:
+
+```sh
+curl -X PUT https://panel.example.com/api/v1/portal/releases/1.2.3 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-Signature: $(cat setup.exe.sig)" \
+  -H "X-Sha256: $(sha256sum setup.exe | cut -d' ' -f1)" \
+  --data-binary @setup.exe
+```
+
 ### Pairing an app
 
 An app never needs your password. It shows an eight-character code; under Settings, API tokens,

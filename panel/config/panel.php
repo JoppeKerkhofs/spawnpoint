@@ -40,6 +40,9 @@ return [
     // Where the map proxy from compose.yaml is reachable; each server's map is at /<server>/ under it.
     'bluemap_url' => env('PANEL_BLUEMAP_URL', 'http://localhost:8100'),
 
+    // The largest launcher installer the upload route takes, in bytes.
+    'portal_max_bytes' => 100 * 1024 * 1024,
+
     // Needed to search CurseForge and to install its packs. Never sent to the browser.
     'curseforge_key' => env('CURSEFORGE_API_KEY'),
 

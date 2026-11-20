@@ -25,7 +25,7 @@ x-logging: &logging
 
 # The web server, the queue worker and the scheduler are the same image with the same settings.
 x-panel: &panel
-  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.7.0}
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.8.0}
   restart: unless-stopped
   logging: *logging
   security_opt:
@@ -70,6 +70,7 @@ x-panel: &panel
     MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Spawnpoint}
   volumes:
     - routes:/proxy
+    - portal:/app/storage/app/private/portal
 
 services:
   db:
@@ -164,7 +165,7 @@ services:
   # The only container with the Docker socket and the server folders. It has no published
   # port: the panel reaches it over the `panel` network, and every request must be signed.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.7.0}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.8.0}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
@@ -270,6 +271,8 @@ volumes:
   database:
   # Written by the panel, read by the router and the map proxy.
   routes:
+  # The launcher releases uploaded to the panel, served at /portal/.
+  portal:
 
 networks:
   # The panel, its database and the node. Minecraft containers are never on it.

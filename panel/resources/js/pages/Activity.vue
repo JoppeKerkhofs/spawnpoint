@@ -57,6 +57,7 @@ const labels: Record<string, string> = {
     'token.create': t('Created an API token'),
     'token.revoke': t('Revoked an API token'),
     'settings.update': t('Changed the panel settings'),
+    'portal.release': t('Published a launcher release'),
     'node.create': t('Added a node'),
     'node.update': t('Changed a node'),
     'node.delete': t('Removed a node'),

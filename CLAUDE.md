@@ -115,6 +115,12 @@ The image stops a server whose `ICON` cannot be fetched, so the panel first chec
 and only takes addresses on the catalogues' picture hosts (`Server::PICTURE_PREFIXES`, the same
 list as in the node): the address is chosen by whoever configures the server.
 
+**Launcher releases.** `PUT /api/v1/portal/releases/{version}` (`portal:release`, admin) streams an
+installer into `portal/` on the `local` disk (a volume) with a JSON file beside it, and keeps the
+three newest. `/portal/latest.json`, `/portal/download` and the installer are public routes
+without the `web` middleware, so no session, cookie or CSRF. `App\Services\PortalReleases` builds
+every path from a version that matched `\d+\.\d+\.\d+`, and URLs from `APP_URL`, never `Host`.
+
 **Panel containers.** `app` (web), `queue` (webhooks, mail), `scheduler` (`schedules:run`,
 `servers:watch` and `servers:broadcast` every minute) and `realtime` (`reverb:start`, reached
 through the app's Caddy at `/app/*`) are the same image. Only `app` runs migrations.
