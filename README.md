@@ -267,7 +267,9 @@ Behind a reverse proxy, mind three things:
   limit of 60 requests a minute on the three public addresses.
 - With two-factor required, the token's owner must have set it up, or the upload answers 403.
 
-To check a deployed panel, with a token that has `portal:release`:
+To check a deployed panel, with a token that has `portal:release`. Do this before the first real
+release or on a test panel: the first command publishes version 0.0.1 with a signature no launcher
+accepts, and it stays the newest release until a real, higher version is uploaded.
 
 ```sh
 # A real upload: 201 (a second one with the same version: 409)
