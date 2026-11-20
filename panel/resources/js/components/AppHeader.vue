@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
+import { Download } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import BlockCube from '@/components/BlockCube.vue';
@@ -147,12 +148,14 @@ const mainNavItems = computed<NavItem[]>(() => [
                                 version: page.props.launcherVersion,
                             })
                         "
-                        class="border-b-2 border-transparent px-3 pt-4 pb-3.5 text-[0.9375rem] text-white/80 hover:text-white"
+                        class="ml-2 inline-flex items-center gap-1.5 self-center rounded border border-white/30 px-2.5 py-1 text-[0.8125rem] whitespace-nowrap text-white/90 tabular-nums hover:bg-white/10 hover:text-white"
                     >
-                        {{ t('Download the launcher') }}
-                        <span class="text-xs text-white/50 tabular-nums"
-                            >v{{ page.props.launcherVersion }}</span
-                        >
+                        <Download aria-hidden="true" class="size-4" />
+                        {{
+                            t('Launcher v:version', {
+                                version: page.props.launcherVersion,
+                            })
+                        }}
                     </a>
                 </nav>
 
