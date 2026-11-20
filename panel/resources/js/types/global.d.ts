@@ -19,6 +19,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             appVersion: string;
+            launcherVersion: string | null;
             theme: 'default' | 'blocky';
             locale: string;
             languages: Record<string, string>;

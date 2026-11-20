@@ -81,6 +81,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => timers.forEach(clearInterval));
 
+// Not an Inertia visit: the address redirects to a file.
+const launcherDownload = '/portal/download';
+
 const mainNavItems = computed<NavItem[]>(() => [
     {
         title: t('Servers'),
@@ -136,6 +139,21 @@ const mainNavItems = computed<NavItem[]>(() => [
                     >
                         {{ item.title }}
                     </Link>
+                    <a
+                        v-if="page.props.launcherVersion"
+                        :href="launcherDownload"
+                        :aria-label="
+                            t('Download the launcher, version :version', {
+                                version: page.props.launcherVersion,
+                            })
+                        "
+                        class="border-b-2 border-transparent px-3 pt-4 pb-3.5 text-[0.9375rem] text-white/80 hover:text-white"
+                    >
+                        {{ t('Download the launcher') }}
+                        <span class="text-xs text-white/50 tabular-nums"
+                            >v{{ page.props.launcherVersion }}</span
+                        >
+                    </a>
                 </nav>
 
                 <div class="flex-1" />
