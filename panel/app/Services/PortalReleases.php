@@ -19,8 +19,6 @@ class PortalReleases
 
     private const string INSTALLER = '/^spawnpoint-portal-('.self::PARTS.')-setup\.exe\z/';
 
-    private const int KEEP = 3;
-
     public static function name(string $version): string
     {
         return "spawnpoint-portal-{$version}-setup.exe";
@@ -60,10 +58,38 @@ class PortalReleases
         return $releases;
     }
 
+    /**
+     * The releases anyone may download, newest first. The first is what the updater is offered.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function downloadable(): array
+    {
+        return array_filter($this->all(), fn (array $meta): bool => ($meta['downloadable'] ?? true) === true);
+    }
+
     // Every page asks; the folder is listed once a minute. An empty string caches "none".
     public static function latestVersion(): ?string
     {
-        return Cache::remember('portal-latest-version', 60, fn (): string => array_key_first((new self)->all()) ?? '') ?: null;
+        return Cache::remember('portal-latest-version', 60, fn (): string => array_key_first((new self)->downloadable()) ?? '') ?: null;
+    }
+
+    /**
+     * Keep a release listed but refuse its download, or allow it again.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public function mark(string $version, array $meta, bool $downloadable): void
+    {
+        Storage::disk('local')->put('portal/'.substr(self::name($version), 0, -3).'json', (string) json_encode([...$meta, 'downloadable' => $downloadable]));
+        Cache::forget('portal-latest-version');
+    }
+
+    // The JSON file goes first: without it the release is no longer listed.
+    public function delete(string $version): void
+    {
+        Storage::disk('local')->delete(['portal/'.substr(self::name($version), 0, -3).'json', 'portal/'.self::name($version)]);
+        Cache::forget('portal-latest-version');
     }
 
     /**
@@ -104,7 +130,7 @@ class PortalReleases
 
     /**
      * Make the temporary file the release. The installer is renamed before its JSON file, which
-     * is what makes a release visible, and only the newest few are kept.
+     * is what makes a release visible. Old releases stay until someone removes them.
      *
      * @param  array<string, mixed>  $meta
      */
@@ -120,11 +146,6 @@ class PortalReleases
 
         $disk = Storage::disk('local');
         $listed = $this->all();
-
-        foreach (array_slice(array_keys($listed), self::KEEP) as $old) {
-            $disk->delete(['portal/'.self::name($old), 'portal/'.substr(self::name($old), 0, -3).'json']);
-            unset($listed[$old]);
-        }
 
         // What a crashed upload left: temporary files past an hour, and an installer without its JSON.
         foreach ($disk->files('portal') as $file) {

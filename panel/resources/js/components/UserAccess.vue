@@ -13,6 +13,7 @@ type User = {
     name: string;
     email: string;
     role: 'admin' | 'viewer';
+    manages_launcher: boolean;
     shares: Record<string, string[]>;
 };
 
@@ -46,6 +47,7 @@ const presets = [
 
 const form = useForm({
     role: props.user.role,
+    manages_launcher: props.user.manages_launcher,
     // Server id to what the viewer may do there; a server that is missing is not shared.
     shares: { ...props.user.shares },
 });
@@ -71,6 +73,7 @@ const isPreset = (id: number, permissions: string[]) =>
 const save = () => {
     form.transform((data) => ({
         role: data.role,
+        manages_launcher: data.manages_launcher,
         shared: Object.keys(data.shares),
         permissions: Object.entries(data.shares).flatMap(([id, held]) =>
             held.map((permission) => `${id}:${permission}`),
@@ -124,6 +127,18 @@ const remove = async () => {
                 </span>
             </div>
             <InputError :message="form.errors.role" />
+
+            <label
+                v-if="form.role === 'viewer'"
+                class="flex items-center gap-2"
+            >
+                <input
+                    v-model="form.manages_launcher"
+                    type="checkbox"
+                    class="size-4 accent-primary"
+                />
+                {{ t('May manage the launcher versions') }}
+            </label>
 
             <div
                 v-if="form.role === 'viewer' && servers.length"

@@ -3,8 +3,10 @@
 use App\Api\Abilities;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\PortalReleases;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 
 // A raw PUT, the way the launcher's workflow sends it. A null header is left out.
 function portalPut(?string $token, string $version, string $body, array $headers = [])
@@ -112,16 +114,90 @@ test('a version must be greater than the newest, compared per part', function ()
     expect(Storage::disk('local')->get('portal/spawnpoint-portal-1.9.0-setup.exe'))->toBe('a');
 });
 
-test('only the three newest releases are kept', function () {
+test('old releases stay until someone removes them', function () {
     foreach (['1.0.0', '1.1.0', '1.2.0', '1.3.0'] as $version) {
         portalPut($this->token, $version, "build {$version}")->assertCreated();
     }
 
-    expect(Storage::disk('local')->allFiles('portal'))->toEqualCanonicalizing([
-        'portal/spawnpoint-portal-1.1.0-setup.exe', 'portal/spawnpoint-portal-1.1.0-setup.json',
-        'portal/spawnpoint-portal-1.2.0-setup.exe', 'portal/spawnpoint-portal-1.2.0-setup.json',
-        'portal/spawnpoint-portal-1.3.0-setup.exe', 'portal/spawnpoint-portal-1.3.0-setup.json',
-    ]);
+    expect(Storage::disk('local')->allFiles('portal'))->toHaveCount(8);
+});
+
+test('the versions page is public and lists every release, newest first', function () {
+    portalPut($this->token, '1.0.0', 'old')->assertCreated();
+    portalPut($this->token, '1.1.0', 'newer')->assertCreated();
+    // The token's owner would otherwise still be signed in for the requests below.
+    auth()->forgetGuards();
+
+    $this->get('/portal/versions')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('PortalVersions')
+        ->where('canManage', false)
+        ->has('releases', 2)
+        ->where('releases.0.version', '1.1.0')
+        ->where('releases.0.size', 5)
+        ->where('releases.0.url', 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-setup.exe')
+        ->where('releases.1.version', '1.0.0'));
+});
+
+test('managing releases is for admins and for viewers who were given it', function () {
+    portalPut($this->token, '1.0.0', 'a')->assertCreated();
+    $viewer = User::factory()->create();
+    // The token's owner would otherwise still be signed in for the requests below.
+    auth()->forgetGuards();
+
+    $this->put('/portal/versions/1.0.0', ['downloadable' => false])->assertRedirect(route('login'));
+    $this->actingAs($viewer)->put('/portal/versions/1.0.0', ['downloadable' => false])->assertForbidden();
+    $this->actingAs($viewer)->delete('/portal/versions/1.0.0')->assertForbidden();
+    $this->actingAs($viewer)->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('canManage', false));
+
+    $viewer->forceFill(['manages_launcher' => true])->save();
+    $this->actingAs($viewer)->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('canManage', true));
+    $this->actingAs($viewer)->put('/portal/versions/1.0.0', ['downloadable' => false])->assertRedirect();
+    $this->actingAs($viewer)->put('/portal/versions/9.9.9', ['downloadable' => false])->assertNotFound();
+});
+
+test('a release that is not downloadable stays listed, is refused, and the updater gets the one before', function () {
+    portalPut($this->token, '1.0.0', 'old', ['X-Signature' => 'b2xk'])->assertCreated();
+    portalPut($this->token, '1.1.0', 'new', ['X-Signature' => 'bmV3'])->assertCreated();
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)->put('/portal/versions/1.1.0', ['downloadable' => false])->assertRedirect();
+
+    $this->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->has('releases', 2)->where('releases.0.version', '1.1.0')->where('releases.0.url', null));
+    $this->get('/portal/spawnpoint-portal-1.1.0-setup.exe')->assertNotFound();
+    $this->get('/portal/latest.json')->assertJsonPath('version', '1.0.0')->assertJsonPath('platforms.windows-x86_64.signature', 'b2xk');
+    $this->get('/portal/download')->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.0.0-setup.exe');
+    expect(PortalReleases::latestVersion())->toBe('1.0.0');
+    // Its number stays taken: an upload must still be greater.
+    portalPut($this->token, '1.1.0', 'again')->assertStatus(409);
+
+    $this->actingAs($admin)->put('/portal/versions/1.1.0', ['downloadable' => true])->assertRedirect();
+    $this->get('/portal/spawnpoint-portal-1.1.0-setup.exe')->assertOk();
+    $this->get('/portal/latest.json')->assertJsonPath('version', '1.1.0')->assertJsonPath('platforms.windows-x86_64.signature', 'bmV3');
+    expect(ActivityLog::query()->where('event', 'like', 'portal.%')->orderBy('id')->pluck('event')->all())
+        ->toBe(['portal.release', 'portal.release', 'portal.withhold', 'portal.allow']);
+});
+
+test('removing a release deletes its files', function () {
+    portalPut($this->token, '1.0.0', 'old')->assertCreated();
+    portalPut($this->token, '1.1.0', 'new')->assertCreated();
+
+    $this->actingAs(User::factory()->admin()->create())->delete('/portal/versions/1.1.0')->assertRedirect();
+
+    expect(Storage::disk('local')->allFiles('portal'))->toEqualCanonicalizing(['portal/spawnpoint-portal-1.0.0-setup.exe', 'portal/spawnpoint-portal-1.0.0-setup.json'])
+        ->and(PortalReleases::latestVersion())->toBe('1.0.0')
+        ->and(ActivityLog::query()->latest('id')->first()->only('event', 'properties'))->toBe(['event' => 'portal.remove', 'properties' => ['version' => '1.1.0']]);
+    $this->get('/portal/latest.json')->assertJsonPath('version', '1.0.0');
+});
+
+test('an admin ticks the launcher permission for a viewer, and it goes with the role', function () {
+    $viewer = User::factory()->create();
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->put(route('users.update', $viewer), ['role' => 'viewer', 'manages_launcher' => true])->assertRedirect();
+    expect($viewer->refresh()->manages_launcher)->toBeTrue();
+
+    $this->put(route('users.update', $viewer), ['role' => 'admin', 'manages_launcher' => true])->assertRedirect();
+    expect($viewer->refresh()->manages_launcher)->toBeFalse();
 });
 
 test('latest.json is 404 until something is uploaded, then has the updater shape', function () {

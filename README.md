@@ -240,7 +240,10 @@ key never leaves the panel.
 The panel can hold the installer of your launcher and its update file. Three addresses need no
 login: `/portal/latest.json` (what the launcher's updater reads), `/portal/download` (redirects
 to the newest installer, for a first install) and `/portal/spawnpoint-portal-<version>-setup.exe`.
-Only the three newest releases are kept, in the `portal` volume. An install that never uploads
+Releases are kept in the `portal` volume until someone removes them. `/portal/versions` lists
+them all for anyone; an admin, or a viewer given "May manage the launcher versions" on the Users
+page, can remove a version there or keep it listed without a download. The updater is offered
+the newest version that can be downloaded. An install that never uploads
 anything serves nothing: all three answer 404. Once a release is stored, every signed-in user sees a
 "Download the launcher" link with its version in the panel's navigation.
 

@@ -53,6 +53,8 @@ const signedIn = computed(() => page.props.auth?.user != null);
                 </p>
             </div>
 
+            <slot />
+
             <section
                 v-for="section in sections"
                 :key="section.title"

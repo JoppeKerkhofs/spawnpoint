@@ -14,7 +14,14 @@ type Request = {
 // One dialog at a time, shown by AppDialog in the layout.
 export const dialog = reactive<{ current: Request | null }>({ current: null });
 
-const DESTRUCTIVE = ['Delete', 'Revoke', 'Stop', 'Replace', 'Restore'];
+const DESTRUCTIVE = [
+    'Delete',
+    'Remove',
+    'Revoke',
+    'Stop',
+    'Replace',
+    'Restore',
+];
 
 /**
  * Ask for a yes or no. Pass the English text, with :name for variables; it is translated here.

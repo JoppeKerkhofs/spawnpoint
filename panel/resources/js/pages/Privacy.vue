@@ -95,6 +95,35 @@ const sections = computed((): DocumentSection[] => [
         ],
     },
     {
+        title: t('If you use the launcher'),
+        intro: t(
+            'The launcher is an optional Windows application for playing on these servers. It is downloaded from this panel and sends no usage statistics to anyone.',
+        ),
+        points: [
+            t(
+                'Downloading it, and its check for a newer version, are requests to this panel, which sees your IP address like any other visit.',
+            ),
+            t(
+                'When you link the launcher to your account, the panel keeps the device name you gave it and an API token, as a hash, with when it was last used. You can revoke it under Settings.',
+            ),
+            t(
+                'The launcher keeps that token on your computer, in the Windows Credential Manager. With it, it asks the panel for the servers shared with you, what they run and who is online.',
+            ),
+            t(
+                'Your instances, worlds, mods and settings stay on your computer. The panel never receives them.',
+            ),
+            t(
+                'To install the game the launcher downloads directly from Mojang, Fabric, Forge and NeoForge, and mods and modpacks with their pictures from Modrinth, CurseForge and Feed The Beast. Each of them sees your IP address and what was requested.',
+            ),
+            t(
+                'It loads the faces of online players from mc-heads.net, which tells that service their usernames.',
+            ),
+            t(
+                'If Discord runs on your computer, the launcher tells it that the launcher is open, or the name and Minecraft version of what you play, never the address of a server. You can switch this off in the launcher.',
+            ),
+        ],
+    },
+    {
         title: t('Cookies'),
         intro: t(
             'The panel only uses cookies it needs to work. There is no analytics, no advertising and no tracking.',
