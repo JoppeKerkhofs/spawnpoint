@@ -80,6 +80,22 @@ test('when two-factor is required, users without it are sent to set it up', func
     $this->actingAs(User::factory()->admin()->withTwoFactor()->create())->get(route('dashboard'))->assertOk();
 });
 
+test('a section of the settings is saved on its own', function () {
+    $this->actingAs($this->admin)->put(route('panel-settings.update'), settingsForm(['memory_limit_mb' => '8192', 'privacy_contact' => 'Joppe']));
+
+    // Only the section's fields are read: nothing else is required, changed or cleared.
+    $this->put(route('panel-settings.update'), ['section' => 'data', 'activity_retention_days' => '30', 'base_domain' => 'other.example'])
+        ->assertSessionHasNoErrors();
+
+    expect(Setting::value('activity_retention_days'))->toBe('30')
+        ->and(Setting::value('memory_limit_mb'))->toBe('8192')
+        ->and(Setting::value('privacy_contact'))->toBe('Joppe')
+        ->and(Setting::value('base_domain'))->not->toBe('other.example');
+
+    $this->put(route('panel-settings.update'), ['section' => 'general', 'base_domain' => ''])->assertSessionHasErrors('base_domain');
+    $this->put(route('panel-settings.update'), ['section' => 'nonsense'])->assertSessionHasErrors('section');
+});
+
 test('actions leave a trail with who, what and which server', function () {
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
     $this->actingAs($this->admin);

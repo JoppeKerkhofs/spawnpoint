@@ -151,6 +151,10 @@ test('managing releases is for admins and for viewers who were given it', functi
 
     $viewer->forceFill(['manages_launcher' => true])->save();
     $this->actingAs($viewer)->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('canManage', true));
+    // An admin gets the buttons under Settings, not on the public page.
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin)->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('canManage', false));
+    $this->actingAs($admin)->get(route('panel-settings.edit'))->assertInertia(fn (Assert $page) => $page->has('launcherReleases', 1)->where('launcherReleases.0.version', '1.0.0'));
     $this->actingAs($viewer)->put('/portal/versions/1.0.0', ['downloadable' => false])->assertRedirect();
     $this->actingAs($viewer)->put('/portal/versions/9.9.9', ['downloadable' => false])->assertNotFound();
 });

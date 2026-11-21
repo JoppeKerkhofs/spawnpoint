@@ -82,8 +82,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => timers.forEach(clearInterval));
 
-// Not an Inertia visit: the address redirects to a file.
-const launcherDownload = '/portal/download';
+// Not an Inertia visit: the page is public and has its own layout.
+const launcherDownload = '/portal/versions';
 
 const mainNavItems = computed<NavItem[]>(() => [
     {
