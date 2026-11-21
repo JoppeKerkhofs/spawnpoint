@@ -39,23 +39,16 @@ class PortalController extends Controller
     }
 
     /**
-     * Every release with its download link. Public; whoever may manage them gets the buttons too.
+     * Every release with its download link. Public.
      */
     public function versions(Request $request, PortalReleases $releases): Response
     {
-        $list = [];
-        foreach ($releases->all() as $version => $meta) {
-            $list[] = [
-                'version' => $version,
-                'released' => $meta['uploaded_at'] ?? null,
-                'size' => $meta['size'] ?? null,
-                'url' => ($meta['downloadable'] ?? true) === true ? PortalReleases::url($version) : null,
-            ];
-        }
+        $user = $request->user();
 
         return Inertia::render('PortalVersions', [
-            'releases' => $list,
-            'canManage' => $request->user()?->can('manage-launcher') ?? false,
+            'releases' => $releases->listing(),
+            // Admins manage them under Settings; a viewer who was given it cannot open that page.
+            'canManage' => $user !== null && ! $user->isAdmin() && $user->can('manage-launcher'),
         ]);
     }
 

@@ -117,9 +117,9 @@ list as in the node): the address is chosen by whoever configures the server.
 
 **Launcher releases.** `PUT /api/v1/portal/releases/{version}` (`portal:release`, admin) streams an
 installer into `portal/` on the `local` disk (a volume) with a JSON file beside it. Every release is
-kept until someone removes it on `/portal/versions`: a public page that lists them, with buttons
-for whoever passes the `manage-launcher` gate (admins, and viewers with
-`users.manages_launcher`). A release with `downloadable: false` in its JSON stays listed, is not
+kept until someone removes it. `/portal/versions` is the public download page; the buttons are
+under Settings, Launcher for admins, and on the download page for a viewer with
+`users.manages_launcher` (gate `manage-launcher`), who cannot open Settings. A release with `downloadable: false` in its JSON stays listed, is not
 served, and is skipped by the updater. `/portal/latest.json`, `/portal/download` and the installer are public routes
 without the `web` middleware, so no session, cookie or CSRF. `App\Services\PortalReleases` builds
 every path from a version that matched `\d+\.\d+\.\d+`, and URLs from `APP_URL`, never `Host`.

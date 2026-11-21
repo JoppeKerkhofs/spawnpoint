@@ -8,21 +8,33 @@ use App\Models\Setting;
 use App\Services\CloudflareDns;
 use App\Services\MemoryLimit;
 use App\Services\NodeClient;
+use App\Services\PortalReleases;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PanelSettingsController extends Controller
 {
+    // What each section of the page saves.
+    private const array SECTIONS = [
+        'general' => ['base_domain', 'bluemap_url', 'memory_limit_mb'],
+        'data' => ['activity_retention_days'],
+        'services' => ['curseforge_key', 'remove_curseforge_key', 'cloudflare_token', 'remove_cloudflare_token', 'dns_target'],
+        'security' => ['privacy_contact', 'require_two_factor'],
+    ];
+
     /**
      * Show the panel-wide settings.
      */
-    public function edit(): Response
+    public function edit(PortalReleases $releases): Response
     {
         return Inertia::render('PanelSettings', [
+            'launcherReleases' => $releases->listing(),
             'settings' => [
                 'base_domain' => Setting::value('base_domain'),
                 'bluemap_url' => Setting::value('bluemap_url'),
@@ -56,7 +68,12 @@ class PanelSettingsController extends Controller
      */
     public function update(Request $request): RedirectResponse
     {
-        $data = $request->validate([
+        // A section of the page saves only its own fields; without one, everything is saved.
+        $section = $request->validate(['section' => ['nullable', Rule::in(array_keys(self::SECTIONS))]])['section'] ?? null;
+        $fields = $section === null ? array_merge(...array_values(self::SECTIONS)) : self::SECTIONS[$section];
+        $saves = fn (string $field): bool => in_array($field, $fields, true);
+
+        $data = $request->validate(Arr::only([
             'base_domain' => ['required', 'string', 'max:190', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/'],
             'bluemap_url' => ['required', 'url:http,https', 'max:255'],
             'memory_limit_mb' => ['nullable', 'integer', 'between:1024,4194304'],
@@ -71,27 +88,37 @@ class PanelSettingsController extends Controller
             'privacy_contact' => ['nullable', 'string', 'max:200'],
             // An IP address, or a hostname for a CNAME record.
             'dns_target' => ['nullable', 'string', 'max:253', 'regex:/^([0-9a-fA-F:.]+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$/'],
-        ]);
+        ], $fields));
 
-        Setting::put('base_domain', $data['base_domain']);
-        Setting::put('bluemap_url', $data['bluemap_url']);
-        Setting::put('memory_limit_mb', isset($data['memory_limit_mb']) ? (string) $data['memory_limit_mb'] : null);
-        Setting::put('require_two_factor', ($data['require_two_factor'] ?? false) ? '1' : null);
-        Setting::put('activity_retention_days', isset($data['activity_retention_days']) ? (string) $data['activity_retention_days'] : null);
-
-        // An empty key field means "keep the saved one".
-        if ($data['remove_curseforge_key'] ?? false) {
-            Setting::put('curseforge_key', null);
-        } elseif (filled($data['curseforge_key'] ?? null)) {
-            Setting::put('curseforge_key', $data['curseforge_key']);
+        if ($saves('base_domain')) {
+            Setting::put('base_domain', $data['base_domain']);
+            Setting::put('bluemap_url', $data['bluemap_url']);
+            Setting::put('memory_limit_mb', isset($data['memory_limit_mb']) ? (string) $data['memory_limit_mb'] : null);
         }
 
-        Setting::put('dns_target', $data['dns_target'] ?? null);
-        Setting::put('privacy_contact', $data['privacy_contact'] ?? null);
-        if ($data['remove_cloudflare_token'] ?? false) {
-            Setting::put('cloudflare_token', null);
-        } elseif (filled($data['cloudflare_token'] ?? null)) {
-            Setting::put('cloudflare_token', $data['cloudflare_token']);
+        if ($saves('activity_retention_days')) {
+            Setting::put('activity_retention_days', isset($data['activity_retention_days']) ? (string) $data['activity_retention_days'] : null);
+        }
+
+        if ($saves('curseforge_key')) {
+            // An empty key field means "keep the saved one".
+            if ($data['remove_curseforge_key'] ?? false) {
+                Setting::put('curseforge_key', null);
+            } elseif (filled($data['curseforge_key'] ?? null)) {
+                Setting::put('curseforge_key', $data['curseforge_key']);
+            }
+
+            Setting::put('dns_target', $data['dns_target'] ?? null);
+            if ($data['remove_cloudflare_token'] ?? false) {
+                Setting::put('cloudflare_token', null);
+            } elseif (filled($data['cloudflare_token'] ?? null)) {
+                Setting::put('cloudflare_token', $data['cloudflare_token']);
+            }
+        }
+
+        if ($saves('privacy_contact')) {
+            Setting::put('require_two_factor', ($data['require_two_factor'] ?? false) ? '1' : null);
+            Setting::put('privacy_contact', $data['privacy_contact'] ?? null);
         }
 
         ActivityLog::record('settings.update');

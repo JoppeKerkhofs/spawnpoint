@@ -68,6 +68,26 @@ class PortalReleases
         return array_filter($this->all(), fn (array $meta): bool => ($meta['downloadable'] ?? true) === true);
     }
 
+    /**
+     * What the pages show of every release; no address for one that may not be downloaded.
+     *
+     * @return list<array{version: string, released: mixed, size: mixed, url: string|null}>
+     */
+    public function listing(): array
+    {
+        $list = [];
+        foreach ($this->all() as $version => $meta) {
+            $list[] = [
+                'version' => (string) $version,
+                'released' => $meta['uploaded_at'] ?? null,
+                'size' => $meta['size'] ?? null,
+                'url' => ($meta['downloadable'] ?? true) === true ? self::url((string) $version) : null,
+            ];
+        }
+
+        return $list;
+    }
+
     // Every page asks; the folder is listed once a minute. An empty string caches "none".
     public static function latestVersion(): ?string
     {
