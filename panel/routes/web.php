@@ -36,6 +36,14 @@ Route::withoutMiddleware('web')->middleware('throttle:portal')->prefix('portal')
     Route::get('spawnpoint-portal-{version}-setup.exe', [PortalController::class, 'installer'])->where('version', PortalReleases::PARTS);
 });
 
+// A page, so with a session: it shows the buttons to whoever may manage the releases.
+Route::get('portal/versions', [PortalController::class, 'versions'])->middleware('throttle:portal')->name('portal.versions');
+
+Route::middleware(['auth', 'verified', RequireTwoFactor::class, 'can:manage-launcher'])->where(['version' => PortalReleases::PARTS])->group(function () {
+    Route::put('portal/versions/{version}', [PortalController::class, 'update'])->name('portal.versions.update');
+    Route::delete('portal/versions/{version}', [PortalController::class, 'destroy'])->name('portal.versions.destroy');
+});
+
 Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('service-status', ServiceStatusController::class)->name('service-status');

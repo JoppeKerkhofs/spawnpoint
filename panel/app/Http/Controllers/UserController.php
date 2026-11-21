@@ -28,6 +28,7 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
+                'manages_launcher' => $user->manages_launcher,
                 // Server id to the permissions of that share; an empty list is "may see it".
                 'shares' => (object) DB::table('server_user')->where('user_id', $user->id)->pluck('permissions', 'server_id')
                     ->map(fn (?string $permissions): array => json_decode((string) $permissions, true) ?? [])->all(),
@@ -103,6 +104,8 @@ class UserController extends Controller
     {
         return [
             'role' => ['required', Rule::in(['admin', 'viewer'])],
+            // A viewer who may also manage the launcher's releases; an admin always may.
+            'manages_launcher' => ['nullable', 'boolean'],
             // The servers shared with a viewer, and per server what they may do there.
             'shared' => ['nullable', 'array'],
             'shared.*' => ['integer', 'exists:servers,id'],
@@ -118,7 +121,7 @@ class UserController extends Controller
     private function grant(User $user, array $data): void
     {
         // The role is not mass assignable, so a profile form can never change it.
-        $user->forceFill(['role' => $data['role']])->save();
+        $user->forceFill(['role' => $data['role'], 'manages_launcher' => $data['role'] === 'viewer' && ($data['manages_launcher'] ?? false)])->save();
         // Admins see every server, so sharing only means something for viewers.
         $shares = [];
         foreach ($data['role'] === 'viewer' ? ($data['shared'] ?? []) : [] as $serverId) {

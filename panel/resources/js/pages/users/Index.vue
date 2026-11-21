@@ -15,6 +15,7 @@ type User = {
     name: string;
     email: string;
     role: 'admin' | 'viewer';
+    manages_launcher: boolean;
     shares: Record<string, string[]>;
 };
 

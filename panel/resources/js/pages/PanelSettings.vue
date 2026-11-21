@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/lib/i18n';
 import { privacy } from '@/routes';
+import { versions } from '@/routes/portal';
 import { update } from '@/routes/panel-settings';
 
 defineProps<{
@@ -419,5 +420,18 @@ const hint = 'text-[0.8125rem] text-muted-foreground';
                 t('Save')
             }}</Button>
         </Form>
+
+        <SectionCard :title="t('Launcher')">
+            <p>
+                {{
+                    t(
+                        'Every launcher version this panel offers, with its download link. Remove a version there, or keep it listed without a download.',
+                    )
+                }}
+            </p>
+            <a :href="versions.url()" class="text-primary underline">{{
+                t('Manage the launcher versions')
+            }}</a>
+        </SectionCard>
     </div>
 </template>
