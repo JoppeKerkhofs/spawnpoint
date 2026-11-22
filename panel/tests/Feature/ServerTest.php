@@ -65,6 +65,7 @@ test('an admin creates a server and its node is told to create and start it', fu
             'whitelist_on' => false,
             'jvm_opts' => '',
             'cpu_limit' => null,
+            'auto_restart' => false,
             'seed' => null,
             'import_host' => null,
             'is_default' => false,

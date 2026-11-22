@@ -140,13 +140,15 @@ test('ops, whitelist, jvm flags and cpu limit are parsed, stored and sent to the
         'name' => 'Survival', 'server_type' => 'PAPER', 'mc_version' => 'LATEST', 'java_version' => '25', 'memory_mb' => '4096',
         'motd' => 'Hi', 'difficulty' => 'normal', 'mode' => 'survival', 'max_players' => '20',
         'ops' => "JoppeK, Lien_B\nJoppeK", 'whitelist' => '1', 'whitelist_names' => 'MaartenVH', 'jvm_opts' => '-XX:+UseZGC', 'cpu_limit' => '2.5',
+        'auto_restart' => '1',
     ])->assertSessionHasNoErrors();
 
     Http::assertSent(fn (Request $request) => $request['ops'] === ['JoppeK', 'Lien_B']
         && $request['whitelist'] === ['MaartenVH']
         && $request['whitelist_on'] === true
         && $request['jvm_opts'] === '-XX:+UseZGC'
-        && $request['cpu_limit'] === 2.5);
+        && $request['cpu_limit'] === 2.5
+        && $request['auto_restart'] === true);
 });
 
 test('player names and cpu limits are validated', function (array $overrides, string $field) {

@@ -34,7 +34,7 @@ test('a viewer sees only the servers shared with them, and only their states', f
         ->assertInertia(fn (Assert $page) => $page
             ->has('servers', 1)
             ->where('servers.0.slug', 'shared')
-            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0]])),
+            ->loadDeferredProps(fn (Assert $reload) => $reload->where('states.servers', ['shared' => ['state' => 'running', 'detail' => null, 'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0, 'restarts' => 0]])),
         );
 });
 
