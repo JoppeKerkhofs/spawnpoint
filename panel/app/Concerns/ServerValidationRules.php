@@ -71,6 +71,7 @@ trait ServerValidationRules
             'whitelist_names' => ['nullable', 'string', 'max:3400', $this->playerNames()],
             'jvm_opts' => ['nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1F\x7F]*$/'],
             'cpu_limit' => ['nullable', 'numeric', 'between:0.25,64'],
+            'auto_restart' => ['nullable', 'boolean'],
             'is_default' => ['nullable', 'boolean'],
             'pack_check' => ['nullable', 'boolean'],
             'pack_auto_update' => ['nullable', 'boolean'],

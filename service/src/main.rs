@@ -31,7 +31,7 @@ use bollard::{
     exec::{CreateExecOptions, StartExecResults},
     models::{
         ContainerCreateBody, ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse,
-        HealthStatusEnum, HostConfig,
+        HealthStatusEnum, HostConfig, RestartPolicy, RestartPolicyNameEnum,
     },
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptions, KillContainerOptions,
@@ -55,6 +55,7 @@ const NETWORK: &str = "minecraft";
 // Holds one empty file per server that was stopped on purpose. Not a valid server name, so it can
 // never collide with a server's folder or be reached through the file manager.
 const STOPPED_DIR: &str = ".mcpanel-stopped";
+const MAX_RESTARTS: i64 = 5;
 // BlueMap's built-in web server listens here unless its config says otherwise.
 const BLUEMAP_PORT: &str = "8100";
 const JAVA_VERSIONS: [u8; 4] = [8, 17, 21, 25];
@@ -177,6 +178,9 @@ struct ServerConfig {
     // In cores; none means no limit.
     #[serde(default)]
     cpu_limit: Option<f64>,
+    // Lets Docker start the server again after a crash, at most MAX_RESTARTS times.
+    #[serde(default)]
+    auto_restart: bool,
     // Used when the world is first generated.
     #[serde(default)]
     seed: Option<String>,
@@ -381,6 +385,12 @@ fn describe(state: &ContainerState) -> (&'static str, Option<String>) {
     }
 }
 
+// Docker counts restarts since the last start by hand, so a crash that was recovered from stays visible.
+fn restart_note(label: &str, restarts: i64) -> Option<String> {
+    (restarts > 0 && matches!(label, "running" | "starting"))
+        .then(|| format!("Restarted automatically after a crash, {restarts} of {MAX_RESTARTS} times. The logs say why."))
+}
+
 fn is_not_found(error: &DockerError) -> bool {
     matches!(error, DockerError::DockerResponseServerError { status_code: 404, .. })
 }
@@ -556,6 +566,12 @@ async fn apply(
             memory: Some(i64::from(config.memory_mb) * 1024 * 1024),
             nano_cpus: config.cpu_limit.map(|cores| (cores * 1e9) as i64),
             network_mode: Some(NETWORK.to_owned()),
+            // Docker never applies this after a stop or kill the panel asked for, nor after exit code 0.
+            // ponytail: Docker counts until the next start by hand, not consecutive crashes; count in the node if that bites.
+            restart_policy: config.auto_restart.then(|| RestartPolicy {
+                name: Some(RestartPolicyNameEnum::ON_FAILURE),
+                maximum_retry_count: Some(MAX_RESTARTS),
+            }),
             ..Default::default()
         }),
         ..Default::default()
@@ -688,6 +704,7 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
     let mut player_counts: HashMap<String, Value> = HashMap::new();
     // Mod and plugin jars put in place after the server last started, so not loaded yet.
     let mut changed_mods: HashMap<String, usize> = HashMap::new();
+    let mut restarts: HashMap<String, i64> = HashMap::new();
     for container in containers {
         let names = container.names.unwrap_or_default();
         let Some(slug) = names.first().and_then(|name| name.strip_prefix("/mc-")) else {
@@ -702,7 +719,9 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
                 let booted = state.booted.lock().unwrap().get(slug).filter(|(start, _)| *start == started_at).map(|(_, at)| *at);
                 changed_mods.insert(slug.to_owned(), booted.map_or(0, |booted| mods_newer_than(&state, slug, booted)));
             }
-            servers.insert(slug.to_owned(), (label.to_owned(), detail));
+            let restarted = inspected.restart_count.unwrap_or(0);
+            restarts.insert(slug.to_owned(), restarted);
+            servers.insert(slug.to_owned(), (label.to_owned(), detail.or_else(|| restart_note(label, restarted))));
         }
     }
 
@@ -731,6 +750,7 @@ async fn list_servers(State(state): State<AppState>) -> Result<Json<Value>, Stat
                     "disk_bytes": disk.get(&slug),
                     "last_backup": last_backups.get(&slug),
                     "mods_changed": changed_mods.get(&slug).copied().unwrap_or(0),
+                    "restarts": restarts.get(&slug).copied().unwrap_or(0),
                 })
             })
             .collect(),
@@ -1486,6 +1506,10 @@ mod tests {
         assert_eq!(describe(&state(EXITED, 143, false, None)).0, "offline");
         assert_eq!(describe(&state(EXITED, 1, false, None)).0, "error");
         assert_eq!(describe(&state(EXITED, 137, true, None)).0, "error");
+
+        assert_eq!(restart_note("running", 0), None);
+        assert_eq!(restart_note("offline", 2), None);
+        assert!(restart_note("running", 2).unwrap().contains("2 of 5"));
     }
 
     #[test]

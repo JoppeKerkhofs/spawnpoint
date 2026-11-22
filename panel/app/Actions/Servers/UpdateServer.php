@@ -123,6 +123,7 @@ class UpdateServer
             'whitelist_names' => self::names((string) ($data['whitelist_names'] ?? '')),
             'jvm_opts' => (string) ($data['jvm_opts'] ?? ''),
             'cpu_limit' => filled($data['cpu_limit'] ?? null) ? (float) $data['cpu_limit'] : null,
+            'auto_restart' => (bool) ($data['auto_restart'] ?? false),
         ];
     }
 

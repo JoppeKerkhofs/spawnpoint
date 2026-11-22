@@ -86,6 +86,23 @@ test('watching the servers reports a crash once, with every field for a json web
         ->and($sent->first()[0]['message'])->toBe('Survival crashed. Exited with code 1');
 });
 
+test('watching the servers reports a crash that Docker recovered from by itself', function () {
+    $this->admin->webhooks()->create(['name' => 'SMS', 'url' => 'https://93.184.216.34/sms', 'format' => 'json', 'events' => ['crash']]);
+    $running = fn (int $restarts) => [['slug' => 'survival', 'state' => 'running', 'detail' => null, 'restarts' => $restarts]];
+    Http::fake([
+        'node.test:8080/servers' => Http::sequence()->push($running(0))->push($running(2))->push($running(2))->push($running(0)),
+        '93.184.216.34/*' => Http::response(),
+    ]);
+
+    foreach (range(1, 4) as $minute) {
+        $this->artisan('servers:watch');
+    }
+
+    $sent = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/sms'));
+    expect($sent)->toHaveCount(1)
+        ->and($sent->first()[0]['message'])->toBe('Survival crashed. It was started again automatically (2 of 5).');
+});
+
 test('the automatic backup is a daily schedule, and backups carry the age limit to the node', function () {
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
     $this->actingAs($this->admin);

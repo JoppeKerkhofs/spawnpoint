@@ -45,6 +45,7 @@ export type Server = {
         whitelist_names?: string[];
         jvm_opts?: string;
         cpu_limit?: number | null;
+        auto_restart?: boolean;
     };
 };
 

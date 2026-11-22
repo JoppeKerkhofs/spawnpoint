@@ -45,7 +45,9 @@ proxies there. Only the token-authorised paths are relayed; a node's signed API 
 
 **Servers.** A server is identified by its `slug`, the first label of its hostname. The container
 is `mc-{slug}`, its data is `{SPAWNPOINT_DATA_DIR}/{slug}`, the image is `itzg/minecraft-server`.
-State is read live from Docker; there is no status column. Long tasks (backup, restore, import)
+State is read live from Docker; there is no status column. With `auto_restart` the container gets
+Docker's `on-failure:5` restart policy; the node reports Docker's restart count (`restarts`), and
+`servers:watch` tells crash webhooks when it rises. Long tasks (backup, restore, import)
 are tracked in memory in the node.
 
 **Backup folders.** A node keeps archives in `SPAWNPOINT_BACKUP_DIR/{slug}`. With

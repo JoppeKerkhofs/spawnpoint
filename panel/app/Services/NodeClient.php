@@ -25,7 +25,7 @@ class NodeClient
      * Get the live state of every server on every node, keyed by slug. "online" is false when
      * a node did not answer; its servers are then listed as "unknown".
      *
-     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int, restarts: int}>}
      */
     public static function states(): array
     {
@@ -44,7 +44,7 @@ class NodeClient
                 foreach ($node->servers()->pluck('slug') as $slug) {
                     $servers[$slug] = [
                         'state' => 'unknown', 'detail' => (string) __('The node :name did not answer.', ['name' => $node->name]),
-                        'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0,
+                        'players' => null, 'usage' => null, 'disk_bytes' => null, 'last_backup' => null, 'mods_changed' => 0, 'restarts' => 0,
                     ];
                 }
             }
@@ -58,7 +58,7 @@ class NodeClient
      * pages are open, so a reload after an announcement costs the nodes nothing, or else live.
      * A viewer gets the servers shared with them and no others.
      *
-     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>}
+     * @return array{online: bool, servers: array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int, restarts: int}>}
      */
     public static function recentStates(User $user): array
     {
@@ -74,7 +74,7 @@ class NodeClient
     /**
      * Get the live state of the servers on this node, keyed by slug.
      *
-     * @return array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int}>
+     * @return array<string, array{state: string, detail: string|null, players: array<string, mixed>|null, usage: array<string, mixed>|null, disk_bytes: int|null, last_backup: int|null, mods_changed: int, restarts: int}>
      *
      * @throws ConnectionException
      * @throws RequestException
@@ -96,6 +96,8 @@ class NodeClient
                 'last_backup' => $server['last_backup'] ?? null,
                 // Mod or plugin jars put in place since the server started, so not loaded yet.
                 'mods_changed' => $server['mods_changed'] ?? 0,
+                // How often Docker started it again after a crash, since it was last started by hand.
+                'restarts' => $server['restarts'] ?? 0,
             ];
         }
 
@@ -131,6 +133,7 @@ class NodeClient
             'whitelist_on' => (bool) ($server->settings['whitelist'] ?? false),
             'jvm_opts' => $server->settings['jvm_opts'] ?? '',
             'cpu_limit' => $server->settings['cpu_limit'] ?? null,
+            'auto_restart' => (bool) ($server->settings['auto_restart'] ?? false),
             'seed' => $server->settings['seed'] ?? null,
             // Only when the server is created: a world from the import folder to begin with.
             'import_host' => $importHost,

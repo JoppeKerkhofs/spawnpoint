@@ -311,6 +311,18 @@ const selectClass =
                 {{ t('Leave empty for no limit.') }}
             </span>
             <InputError :message="errors.cpu_limit" />
+
+            <label class="mt-2 flex items-center gap-2">
+                <input
+                    type="checkbox"
+                    name="auto_restart"
+                    value="1"
+                    :checked="server?.settings.auto_restart"
+                    class="size-4 accent-primary"
+                />
+                {{ t('Start again after a crash, at most 5 times') }}
+            </label>
+            <InputError :message="errors.auto_restart" />
         </div>
     </SectionCard>
 
