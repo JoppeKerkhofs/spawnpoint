@@ -9,6 +9,7 @@ use App\Http\Controllers\FileController;
 use App\Http\Controllers\ModController;
 use App\Http\Controllers\ModpackSearchController;
 use App\Http\Controllers\NodeController;
+use App\Http\Controllers\PairDeviceController;
 use App\Http\Controllers\PanelSettingsController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\PrivacyController;
@@ -138,6 +139,13 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class, 'can:manage-user
     Route::post('users', [UserController::class, 'store'])->name('users.store');
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+});
+
+// Outside the two-factor check, like the account settings: the API refuses the token anyway.
+Route::middleware(['auth', 'verified', 'throttle:pairing-approve'])->where(['code' => '[A-Za-z0-9]{8}'])->group(function () {
+    Route::get('pair/{code}', [PairDeviceController::class, 'show'])->name('pair.show');
+    Route::post('pair/{code}', [PairDeviceController::class, 'approve'])->name('pair.approve');
+    Route::delete('pair/{code}', [PairDeviceController::class, 'refuse'])->name('pair.refuse');
 });
 
 require __DIR__.'/settings.php';

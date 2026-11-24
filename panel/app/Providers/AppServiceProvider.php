@@ -55,6 +55,8 @@ class AppServiceProvider extends ServiceProvider
         // app then polls every 3 seconds, which is 20 a minute, and gets room above that.
         RateLimiter::for('pairing', fn (Request $request) => Limit::perMinute(5)->by((string) $request->ip()));
         RateLimiter::for('pairing-poll', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
+        // The page a person allows a device on: signed in, but codes must not be guessable there.
+        RateLimiter::for('pairing-approve', fn (Request $request) => Limit::perMinute(20)->by((string) ($request->user()?->id ?: $request->ip())));
         // The launcher's public downloads, shared by its three addresses.
         RateLimiter::for('portal', fn (Request $request) => Limit::perMinute(60)->by((string) $request->ip()));
     }

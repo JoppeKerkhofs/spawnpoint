@@ -1834,7 +1834,7 @@
         "/pair": {
             "post": {
                 "summary": "Start pairing a device",
-                "description": "Needs no token. Answers with a code to show the person and a secret to keep. Show the code; they approve it in the panel.",
+                "description": "Needs no token. Answers with a code to show the person and a secret to keep. Show the code; they approve it in the panel. Send `abilities` (only `servers:read` and `servers:join` can be asked for) to also get `approve_path`: open that path of the panel in a browser, where the signed-in person names the device and allows it, without typing the code or picking abilities.",
                 "responses": {
                     "201": {
                         "description": "The code and the secret"

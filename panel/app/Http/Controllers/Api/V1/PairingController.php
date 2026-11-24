@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DevicePairing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Getting a token onto a device without a password ever reaching it: the app shows a code, a
@@ -14,11 +15,17 @@ use Illuminate\Http\Request;
 class PairingController extends Controller
 {
     /**
-     * Start a pairing. The answer holds the code to show and the secret to keep.
+     * Start a pairing. The answer holds the code to show and the secret to keep. An app that
+     * names what it needs also gets the page to open, where a signed-in person allows it.
      */
     public function start(Request $request): JsonResponse
     {
-        $data = $request->validate(['device_name' => ['required', 'string', 'max:60']]);
+        $data = $request->validate([
+            'device_name' => ['required', 'string', 'max:60'],
+            'abilities' => ['sometimes', 'array', 'min:1'],
+            'abilities.*' => [Rule::in(DevicePairing::REQUESTABLE)],
+        ]);
+        $requested = isset($data['abilities']) ? array_values(array_unique($data['abilities'])) : null;
 
         // Nobody will ever collect these; this is the cheapest moment to clear them out.
         DevicePairing::pruneExpired();
@@ -28,6 +35,7 @@ class PairingController extends Controller
             'code' => DevicePairing::newCode(),
             'secret_hash' => hash('sha256', $secret),
             'device_name' => $data['device_name'],
+            'requested_abilities' => $requested,
             'expires_at' => now()->addMinutes(DevicePairing::MINUTES),
             'created_at' => now(),
         ]);
@@ -39,6 +47,8 @@ class PairingController extends Controller
             'expires_at' => $pairing->expires_at->toIso8601String(),
             // Seconds between polls.
             'interval' => 3,
+            // A path, not an address: the app knows which address it reached this panel at.
+            ...($requested === null ? [] : ['approve_path' => "/pair/{$pairing->code}"]),
         ]], 201);
     }
 

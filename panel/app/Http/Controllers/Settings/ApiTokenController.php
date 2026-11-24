@@ -101,13 +101,11 @@ class ApiTokenController extends Controller
     }
 
     /**
-     * The pairing a code belongs to, if it is still waiting. The code is typed by hand, so case
-     * and spaces are forgiven.
+     * The pairing a code belongs to, if it is still waiting.
      */
     private function pendingPairing(Request $request): DevicePairing
     {
-        $code = strtoupper(str_replace([' ', '-'], '', (string) $request->input('code')));
-        $pairing = DevicePairing::query()->where('code', $code)->where('expires_at', '>', now())->whereNull('approved_at')->first();
+        $pairing = DevicePairing::waiting((string) $request->input('code'));
 
         if ($pairing === null) {
             throw ValidationException::withMessages(['code' => __('No device is waiting with that code. Codes expire after ten minutes.')]);
