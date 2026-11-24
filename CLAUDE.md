@@ -81,7 +81,9 @@ what they may do there (`Server::PERMISSIONS`). Routes check it with
 parameter. API tokens need both the token ability and the owner's permission.
 Abilities live in `App\Api\Abilities` and are checked by the `ability:` middleware beside
 `can:`; `backups:manage` is a retired name kept for tokens issued before 1.5.0. A device is
-paired by code (`device_pairings`), never by handing over a password.
+paired by code (`device_pairings`), never by handing over a password: the person types the code on
+the tokens page and picks abilities, or, when the app asked for `servers:read` and `servers:join`
+itself, opens `/pair/{code}`, signs in and allows it (`PairDeviceController`).
 
 **Mods.** The Mods page (Fabric, Forge, NeoForge and modpack servers) keeps no record: the
 node lists the jars in `mods/` with their SHA-512, and Modrinth names them by that fingerprint
