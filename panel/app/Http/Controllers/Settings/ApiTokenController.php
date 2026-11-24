@@ -28,17 +28,26 @@ class ApiTokenController extends Controller
                 'last_used' => $token->last_used_at?->diffForHumans(),
                 'created' => $token->created_at->diffForHumans(),
             ]),
-            // Only what this user could ever use: a viewer is not shown the administration group.
-            ...Abilities::offeredTo($request->user()),
             // Only the hash is stored, so this is the one time the token can be shown.
             'newToken' => $request->session()->get('new_token'),
+        ]);
+    }
+
+    /**
+     * The page a token is made on: by hand, or by pairing a device.
+     */
+    public function create(Request $request): Response
+    {
+        return Inertia::render('settings/ApiTokenCreate', [
+            // Only what this user could ever use: a viewer is not shown the administration group.
+            ...Abilities::offeredTo($request->user()),
             // The device a pairing code was just looked up for, until it is approved.
             'pairing' => $request->session()->get('pairing'),
         ]);
     }
 
     /**
-     * Create a token and show it once.
+     * Create a token and show it once, on the list.
      */
     public function store(Request $request): RedirectResponse
     {
@@ -51,7 +60,7 @@ class ApiTokenController extends Controller
         $token = $request->user()->createToken($data['name'], $data['abilities']);
         ActivityLog::record('token.create', properties: ['name' => $data['name'], 'abilities' => $data['abilities']]);
 
-        return back()->with('new_token', $token->plainTextToken);
+        return to_route('api-tokens.index')->with('new_token', $token->plainTextToken);
     }
 
     /**
@@ -97,7 +106,7 @@ class ApiTokenController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('":device" is paired. It can sign in now.', ['device' => $pairing->device_name])]);
 
-        return back();
+        return to_route('api-tokens.index');
     }
 
     /**

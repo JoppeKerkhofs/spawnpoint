@@ -48,7 +48,9 @@ const selectClass = 'h-9 rounded-md border border-input bg-card px-2.5 text-sm';
         </div>
 
         <div class="flex flex-wrap items-start gap-5">
-            <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-3">
+            <div
+                class="min-w-0 flex-[999_1_560px] overflow-hidden rounded-md border border-border bg-card"
+            >
                 <UserAccess
                     v-for="user in users"
                     :key="user.id"

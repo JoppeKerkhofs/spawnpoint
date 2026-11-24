@@ -34,7 +34,9 @@ Route::get('support', SupportController::class)->name('support');
 Route::withoutMiddleware('web')->middleware('throttle:portal')->prefix('portal')->group(function () {
     Route::get('latest.json', [PortalController::class, 'latest']);
     Route::get('download', [PortalController::class, 'download']);
-    Route::get('spawnpoint-portal-{version}-setup.exe', [PortalController::class, 'installer'])->where('version', PortalReleases::PARTS);
+    foreach (PortalReleases::PLATFORMS as $platform => $ending) {
+        Route::get("spawnpoint-portal-{version}{$ending}", [PortalController::class, 'installer'])->where('version', PortalReleases::PARTS)->defaults('platform', $platform);
+    }
 });
 
 // A page, so with a session: it shows the buttons to whoever may manage the releases.

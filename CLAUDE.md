@@ -120,8 +120,11 @@ and only takes addresses on the catalogues' picture hosts (`Server::PICTURE_PREF
 list as in the node): the address is chosen by whoever configures the server.
 
 **Launcher releases.** `PUT /api/v1/portal/releases/{version}` (`portal:release`, admin) streams an
-installer into `portal/` on the `local` disk (a volume) with a JSON file beside it. Every release is
-kept until someone removes it. `/portal/versions` is the public download page; the buttons are
+installer into `portal/` on the `local` disk (a volume) with a JSON file beside it. A version has one
+installer per system (`?platform=`, Windows when left out; the list is `PortalReleases::PLATFORMS`),
+and the newest version may still get the one it lacks. `latest.json` names every system the newest
+version has, so the others are offered no update; withholding and removing go per version. Every
+release is kept until someone removes it. `/portal/versions` is the public download page; the buttons are
 under Settings, Launcher for admins, and on the download page for a viewer with
 `users.manages_launcher` (gate `manage-launcher`), who cannot open Settings. A release with `downloadable: false` in its JSON stays listed, is not
 served, and is skipped by the updater. `/portal/latest.json`, `/portal/download` and the installer are public routes
