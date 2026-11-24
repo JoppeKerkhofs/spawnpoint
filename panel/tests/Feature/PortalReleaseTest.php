@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 // A raw PUT, the way the launcher's workflow sends it. A null header is left out.
-function portalPut(?string $token, string $version, string $body, array $headers = [])
+function portalPut(?string $token, string $version, string $body, array $headers = [], ?string $platform = null)
 {
     $headers = ['Content-Type' => 'application/octet-stream', 'X-Signature' => 'c2lnbmF0dXJl', 'X-Sha256' => hash('sha256', $body), ...$headers];
     if ($token !== null) {
@@ -20,7 +20,7 @@ function portalPut(?string $token, string $version, string $body, array $headers
         $server[strtolower($name) === 'content-type' ? 'CONTENT_TYPE' : 'HTTP_'.strtoupper(str_replace('-', '_', $name))] = $value;
     }
 
-    return test()->call('PUT', "/api/v1/portal/releases/{$version}", [], [], [], $server, $body);
+    return test()->call('PUT', "/api/v1/portal/releases/{$version}".($platform === null ? '' : "?platform={$platform}"), [], [], [], $server, $body);
 }
 
 function offeredAbilities(User $user): array
@@ -92,6 +92,7 @@ test('a good upload is stored with its signature, hash and size', function () {
         ->assertCreated()
         ->assertExactJson([
             'version' => '1.2.3',
+            'platform' => 'windows-x86_64',
             'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.2.3-setup.exe',
             'size' => 15,
         ]);
@@ -101,7 +102,7 @@ test('a good upload is stored with its signature, hash and size', function () {
         ->and(json_decode($disk->get('portal/spawnpoint-portal-1.2.3-setup.json'), true))
         ->toMatchArray(['signature' => 'c2lnL25hdHVyZT0=', 'sha256' => hash('sha256', 'installer bytes'), 'size' => 15])
         ->and($disk->allFiles('portal'))->toHaveCount(2)
-        ->and(ActivityLog::sole()->only('event', 'properties'))->toBe(['event' => 'portal.release', 'properties' => ['version' => '1.2.3']]);
+        ->and(ActivityLog::sole()->only('event', 'properties'))->toBe(['event' => 'portal.release', 'properties' => ['version' => '1.2.3', 'platform' => 'windows-x86_64']]);
 });
 
 test('a version must be greater than the newest, compared per part', function () {
@@ -350,4 +351,86 @@ test('a signed-out page does not carry the launcher version', function () {
     app('auth')->forgetGuards();
 
     expect($this->get(route('login'))->viewData('page')['props']['launcherVersion'])->toBeNull();
+});
+
+test('the newest version takes one installer per system, and the updater is told of each', function () {
+    $this->freezeTime();
+    portalPut($this->token, '1.0.0', 'old')->assertCreated();
+    portalPut($this->token, '1.1.0', 'windows', ['X-Signature' => 'd2lu'])->assertCreated();
+
+    portalPut($this->token, '1.1.0', 'linux', ['X-Signature' => 'bGlu'], 'linux-x86_64')
+        ->assertCreated()
+        ->assertExactJson([
+            'version' => '1.1.0',
+            'platform' => 'linux-x86_64',
+            'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-x86_64.AppImage',
+            'size' => 5,
+        ]);
+
+    // Taken: the same system again, and a system for a version that is no longer the newest.
+    portalPut($this->token, '1.1.0', 'again', [], 'linux-x86_64')->assertStatus(409);
+    portalPut($this->token, '1.0.0', 'late', [], 'linux-x86_64')->assertStatus(409);
+    portalPut($this->token, '1.2.0', 'x', [], 'darwin-aarch64')->assertUnprocessable();
+    portalPut($this->token, '1.2.0', 'x', [], '../x')->assertUnprocessable();
+
+    $this->get('/portal/latest.json')->assertExactJson([
+        'version' => '1.1.0',
+        'pub_date' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
+        'platforms' => [
+            'windows-x86_64' => ['signature' => 'd2lu', 'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-setup.exe'],
+            'linux-x86_64' => ['signature' => 'bGlu', 'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-x86_64.AppImage'],
+        ],
+    ]);
+    $appImage = $this->get('/portal/spawnpoint-portal-1.1.0-x86_64.AppImage')->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+    expect($appImage->streamedContent())->toBe('linux');
+    $this->get('/portal/spawnpoint-portal-1.0.0-x86_64.AppImage')->assertNotFound();
+    $this->get('/portal/spawnpoint-portal-1.1.0-x86_64.json')->assertNotFound();
+    expect(ActivityLog::query()->latest('id')->first()->properties)->toBe(['version' => '1.1.0', 'platform' => 'linux-x86_64']);
+});
+
+test('a visitor is offered the installer of their own system first', function () {
+    portalPut($this->token, '1.0.0', 'old')->assertCreated();
+    portalPut($this->token, '1.1.0', 'windows')->assertCreated();
+    portalPut($this->token, '1.1.0', 'linux!', [], 'linux-x86_64')->assertCreated();
+    auth()->forgetGuards();
+    $linux = ['User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0'];
+    $android = ['User-Agent' => 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36'];
+
+    $this->get('/portal/download', $linux)->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.1.0-x86_64.AppImage');
+    $this->get('/portal/download', $android)->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.1.0-setup.exe');
+    $this->get('/portal/download')->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.1.0-setup.exe');
+
+    $this->get('/portal/versions', $linux)->assertInertia(fn (Assert $page) => $page
+        ->where('platform', 'linux-x86_64')
+        ->where('releases.0.files', [
+            ['platform' => 'windows-x86_64', 'size' => 7, 'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-setup.exe'],
+            ['platform' => 'linux-x86_64', 'size' => 6, 'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.1.0-x86_64.AppImage'],
+        ])
+        ->has('releases.1.files', 1));
+    $this->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('platform', 'windows-x86_64'));
+
+    // A version made for Linux alone goes to Windows visitors too: it is the only one there is.
+    portalPut($this->token, '1.2.0', 'linux', [], 'linux-x86_64')->assertCreated();
+    auth()->forgetGuards();
+    $this->get('/portal/download')->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.2.0-x86_64.AppImage');
+    $this->get('/portal/latest.json')->assertJsonMissingPath('platforms.windows-x86_64')->assertJsonPath('platforms.linux-x86_64.signature', 'c2lnbmF0dXJl');
+});
+
+test('withholding and removing a version cover every installer it has', function () {
+    portalPut($this->token, '1.0.0', 'windows')->assertCreated();
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin)->put('/portal/versions/1.0.0', ['downloadable' => false])->assertRedirect();
+
+    // An installer that arrives for a withheld version is withheld with it.
+    portalPut($this->token, '1.0.0', 'linux', [], 'linux-x86_64')->assertCreated();
+    $this->get('/portal/spawnpoint-portal-1.0.0-x86_64.AppImage')->assertNotFound();
+    $this->get('/portal/latest.json')->assertNotFound();
+    $this->get('/portal/versions')->assertInertia(fn (Assert $page) => $page->where('releases.0.url', null)->where('releases.0.files.1.url', null));
+
+    $this->actingAs($admin)->put('/portal/versions/1.0.0', ['downloadable' => true])->assertRedirect();
+    $this->get('/portal/spawnpoint-portal-1.0.0-x86_64.AppImage')->assertOk();
+    $this->get('/portal/spawnpoint-portal-1.0.0-setup.exe')->assertOk();
+
+    $this->actingAs($admin)->delete('/portal/versions/1.0.0')->assertRedirect();
+    expect(Storage::disk('local')->allFiles('portal'))->toBe([]);
 });

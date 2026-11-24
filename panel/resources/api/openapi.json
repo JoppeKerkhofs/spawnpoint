@@ -1651,7 +1651,7 @@
             "put": {
                 "summary": "Publish a launcher release",
                 "x-ability": "portal:release",
-                "description": "Needs portal:release and an admin owner. The body is the installer itself, sent raw as application/octet-stream (not a form), at most 100 MB. The panel serves it at /portal/spawnpoint-portal-{version}-setup.exe and lists it in /portal/latest.json, for the launcher's updater. The version must be greater than the newest stored one, and only the three newest releases are kept.",
+                "description": "Needs portal:release and an admin owner. The body is the installer itself, sent raw as application/octet-stream (not a form), at most 100 MB. A version has one installer per system, named by platform. The panel serves it at /portal/spawnpoint-portal-{version}-setup.exe (Windows) or /portal/spawnpoint-portal-{version}-x86_64.AppImage (Linux) and lists it in /portal/latest.json, for the launcher's updater. The version must be greater than the newest stored one, or be the newest one for a system it has no installer for yet.",
                 "parameters": [
                     {
                         "name": "version",
@@ -1662,6 +1662,17 @@
                             "pattern": "^\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}$"
                         },
                         "description": "Three numbers of at most six digits, such as 1.2.3."
+                    },
+                    {
+                        "name": "platform",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": ["windows-x86_64", "linux-x86_64"],
+                            "default": "windows-x86_64"
+                        },
+                        "description": "The system the installer is for."
                     },
                     {
                         "name": "X-Signature",

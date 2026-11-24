@@ -8,7 +8,8 @@ use RuntimeException;
 
 /**
  * The launcher's installers, kept on the local disk under portal/ with a small JSON file
- * beside each. Paths are built only from versions that matched the pattern, never from input.
+ * beside each: one per version and system. Paths are built only from versions that matched the
+ * pattern and the systems listed here, never from input.
  */
 class PortalReleases
 {
@@ -17,40 +18,66 @@ class PortalReleases
 
     public const string VERSION = '/^'.self::PARTS.'\z/';
 
-    private const string INSTALLER = '/^spawnpoint-portal-('.self::PARTS.')-setup\.exe\z/';
+    // The updater's name of each system, and what its installer's name ends in. Windows comes first.
+    public const array PLATFORMS = ['windows-x86_64' => '-setup.exe', 'linux-x86_64' => '-x86_64.AppImage'];
 
-    public static function name(string $version): string
+    public const string WINDOWS = 'windows-x86_64';
+
+    public static function name(string $version, string $platform = self::WINDOWS): string
     {
-        return "spawnpoint-portal-{$version}-setup.exe";
+        return "spawnpoint-portal-{$version}".self::PLATFORMS[$platform];
     }
 
-    public static function url(string $version): string
+    public static function url(string $version, string $platform = self::WINDOWS): string
     {
-        return rtrim((string) config('app.url'), '/').'/portal/'.self::name($version);
+        return rtrim((string) config('app.url'), '/').'/portal/'.self::name($version, $platform);
     }
 
-    public static function path(string $version): string
+    public static function path(string $version, string $platform = self::WINDOWS): string
     {
-        return Storage::disk('local')->path('portal/'.self::name($version));
+        return Storage::disk('local')->path('portal/'.self::name($version, $platform));
+    }
+
+    private static function meta(string $version, string $platform): string
+    {
+        return 'portal/'.pathinfo(self::name($version, $platform), PATHINFO_FILENAME).'.json';
+    }
+
+    // The version in an installer's file name, or null when the name is not that system's.
+    private static function versionIn(string $name, string $platform): ?string
+    {
+        $pattern = '/^spawnpoint-portal-('.self::PARTS.')'.preg_quote(self::PLATFORMS[$platform], '/').'\z/';
+
+        return preg_match($pattern, $name, $match) === 1 ? $match[1] : null;
+    }
+
+    // The system a browser says it runs on, as far as there is an installer for it.
+    public static function platformOf(?string $userAgent): string
+    {
+        $agent = (string) $userAgent;
+
+        return str_contains($agent, 'Linux') && ! str_contains($agent, 'Android') ? 'linux-x86_64' : self::WINDOWS;
     }
 
     /**
-     * Every stored release by version, newest first.
+     * Every stored release by version, newest first, with what is known of each system's installer.
      *
-     * @return array<string, array<string, mixed>>
+     * @return array<string, array<string, array<string, mixed>>>
      */
     public function all(): array
     {
         $disk = Storage::disk('local');
+        $files = $disk->files('portal');
         $releases = [];
 
-        foreach ($disk->files('portal') as $file) {
-            $meta = preg_match(self::INSTALLER, basename($file), $match) === 1
-                ? json_decode((string) $disk->get(substr($file, 0, -3).'json'), true)
-                : null;
+        foreach (array_keys(self::PLATFORMS) as $platform) {
+            foreach ($files as $file) {
+                $version = self::versionIn(basename($file), $platform);
+                $meta = $version === null ? null : json_decode((string) $disk->get(self::meta($version, $platform)), true);
 
-            if (is_array($meta)) {
-                $releases[$match[1]] = $meta;
+                if (is_array($meta)) {
+                    $releases[$version][$platform] = $meta;
+                }
             }
         }
         uksort($releases, fn (string $a, string $b): int => version_compare($b, $a));
@@ -59,29 +86,49 @@ class PortalReleases
     }
 
     /**
-     * The releases anyone may download, newest first. The first is what the updater is offered.
+     * Whether a version may be downloaded. Its installers all carry the same answer.
      *
-     * @return array<string, array<string, mixed>>
+     * @param  array<string, array<string, mixed>>  $installers
      */
-    public function downloadable(): array
+    private static function allowed(array $installers): bool
     {
-        return array_filter($this->all(), fn (array $meta): bool => ($meta['downloadable'] ?? true) === true);
+        return (reset($installers)['downloadable'] ?? true) === true;
     }
 
     /**
-     * What the pages show of every release; no address for one that may not be downloaded.
+     * The releases anyone may download, newest first. The first is what the updater is offered.
      *
-     * @return list<array{version: string, released: mixed, size: mixed, url: string|null}>
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    public function downloadable(): array
+    {
+        return array_filter($this->all(), self::allowed(...));
+    }
+
+    /**
+     * What the pages show of every release; no address for one that may not be downloaded. The
+     * version's own size and address are those of its first installer.
+     *
+     * @return list<array{version: string, released: mixed, size: mixed, url: string|null, files: list<array{platform: string, size: mixed, url: string|null}>}>
      */
     public function listing(): array
     {
         $list = [];
-        foreach ($this->all() as $version => $meta) {
+        foreach ($this->all() as $version => $installers) {
+            $files = [];
+            foreach ($installers as $platform => $meta) {
+                $files[] = [
+                    'platform' => $platform,
+                    'size' => $meta['size'] ?? null,
+                    'url' => self::allowed($installers) ? self::url((string) $version, $platform) : null,
+                ];
+            }
             $list[] = [
                 'version' => (string) $version,
-                'released' => $meta['uploaded_at'] ?? null,
-                'size' => $meta['size'] ?? null,
-                'url' => ($meta['downloadable'] ?? true) === true ? self::url((string) $version) : null,
+                'released' => reset($installers)['uploaded_at'] ?? null,
+                'size' => $files[0]['size'],
+                'url' => $files[0]['url'],
+                'files' => $files,
             ];
         }
 
@@ -91,24 +138,26 @@ class PortalReleases
     // Every page asks; the folder is listed once a minute. An empty string caches "none".
     public static function latestVersion(): ?string
     {
-        return Cache::remember('portal-latest-version', 60, fn (): string => array_key_first((new self)->downloadable()) ?? '') ?: null;
+        return Cache::remember('portal-latest-version', 60, fn (): string => (string) (array_key_first((new self)->downloadable()) ?? '')) ?: null;
     }
 
-    /**
-     * Keep a release listed but refuse its download, or allow it again.
-     *
-     * @param  array<string, mixed>  $meta
-     */
-    public function mark(string $version, array $meta, bool $downloadable): void
+    // Keep a release listed but refuse its downloads, or allow them again.
+    public function mark(string $version, bool $downloadable): void
     {
-        Storage::disk('local')->put('portal/'.substr(self::name($version), 0, -3).'json', (string) json_encode([...$meta, 'downloadable' => $downloadable]));
+        foreach ($this->all()[$version] ?? [] as $platform => $meta) {
+            Storage::disk('local')->put(self::meta($version, $platform), (string) json_encode([...$meta, 'downloadable' => $downloadable]));
+        }
         Cache::forget('portal-latest-version');
     }
 
-    // The JSON file goes first: without it the release is no longer listed.
+    // The JSON files go first: without them the release is no longer listed.
     public function delete(string $version): void
     {
-        Storage::disk('local')->delete(['portal/'.substr(self::name($version), 0, -3).'json', 'portal/'.self::name($version)]);
+        $platforms = array_keys(self::PLATFORMS);
+        Storage::disk('local')->delete([
+            ...array_map(fn (string $platform): string => self::meta($version, $platform), $platforms),
+            ...array_map(fn (string $platform): string => 'portal/'.self::name($version, $platform), $platforms),
+        ]);
         Cache::forget('portal-latest-version');
     }
 
@@ -149,29 +198,37 @@ class PortalReleases
     }
 
     /**
-     * Make the temporary file the release. The installer is renamed before its JSON file, which
-     * is what makes a release visible. Old releases stay until someone removes them.
+     * Make the temporary file the release's installer for one system. The installer is renamed
+     * before its JSON file, which is what makes it visible. A version that may not be downloaded
+     * stays that way. Old releases stay until someone removes them.
      *
      * @param  array<string, mixed>  $meta
      */
-    public function publish(string $version, string $temp, array $meta): void
+    public function publish(string $version, string $platform, string $temp, array $meta): void
     {
-        $installer = self::path($version);
+        $disk = Storage::disk('local');
+        $installers = $this->all()[$version] ?? [];
+        if ($installers !== [] && ! self::allowed($installers)) {
+            $meta['downloadable'] = false;
+        }
 
         file_put_contents($temp.'.json', json_encode($meta));
-        rename($temp, $installer);
-        rename($temp.'.json', substr($installer, 0, -3).'json');
+        rename($temp, self::path($version, $platform));
+        rename($temp.'.json', $disk->path(self::meta($version, $platform)));
 
         Cache::forget('portal-latest-version');
 
-        $disk = Storage::disk('local');
         $listed = $this->all();
 
         // What a crashed upload left: temporary files past an hour, and an installer without its JSON.
         foreach ($disk->files('portal') as $file) {
             $name = basename($file);
             $cutOff = str_starts_with($name, '.upload-') && $disk->lastModified($file) < now()->subHour()->getTimestamp();
-            $orphan = preg_match(self::INSTALLER, $name, $match) === 1 && ! isset($listed[$match[1]]);
+            $orphan = false;
+            foreach (array_keys(self::PLATFORMS) as $system) {
+                $of = self::versionIn($name, $system);
+                $orphan = $orphan || ($of !== null && ! isset($listed[$of][$system]));
+            }
 
             if ($cutOff || $orphan) {
                 $disk->delete($file);

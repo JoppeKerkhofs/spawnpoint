@@ -2,7 +2,8 @@
 import { ask } from '@/lib/dialogs';
 import { t } from '@/lib/i18n';
 import { router, useForm } from '@inertiajs/vue3';
-import { Check } from '@lucide/vue';
+import { Check, ChevronDown } from '@lucide/vue';
+import { computed } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -52,6 +53,15 @@ const form = useForm({
     shares: { ...props.user.shares },
 });
 
+// What the closed row says of the user, as it was last saved.
+const access = computed(() =>
+    props.user.role === 'admin'
+        ? t('Admin')
+        : t('Viewer · servers shared: :count', {
+              count: Object.keys(props.user.shares).length,
+          }),
+);
+
 const share = (id: number, on: boolean) => {
     if (on) {
         form.shares[id] = [];
@@ -95,9 +105,10 @@ const remove = async () => {
 </script>
 
 <template>
-    <article class="overflow-hidden rounded-md border border-border bg-card">
-        <div
-            class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-4 py-3"
+    <!-- A row of the list that opens: the browser's own disclosure, so keys and readers know it. -->
+    <details class="group border-t border-border first:border-t-0">
+        <summary
+            class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 group-open:bg-muted hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden"
         >
             <h2 class="font-bold text-primary">
                 {{ user.name }}
@@ -106,9 +117,23 @@ const remove = async () => {
                 }}</span>
             </h2>
             <span class="text-sm text-muted-foreground">{{ user.email }}</span>
-        </div>
+            <span class="flex-1" />
+            <span
+                v-if="form.isDirty"
+                class="text-sm font-semibold text-primary group-open:hidden"
+                >{{ t('Unsaved changes') }}</span
+            >
+            <span class="text-sm text-muted-foreground">{{ access }}</span>
+            <ChevronDown
+                class="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden="true"
+            />
+        </summary>
 
-        <form class="flex flex-col gap-4 px-4 py-3" @submit.prevent="save">
+        <form
+            class="flex flex-col gap-4 border-t border-border px-4 py-3"
+            @submit.prevent="save"
+        >
             <div class="flex flex-wrap items-center gap-2">
                 <Label :for="`role-${user.id}`">{{ t('Role') }}</Label>
                 <select
@@ -322,5 +347,5 @@ const remove = async () => {
                 >
             </div>
         </form>
-    </article>
+    </details>
 </template>

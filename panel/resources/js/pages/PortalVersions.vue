@@ -10,11 +10,28 @@ import type { LauncherRelease } from '@/types';
 
 const props = defineProps<{
     releases: LauncherRelease[];
+    // The visitor's system, as the panel read it from the browser.
+    platform: string;
     // For someone who manages the releases but cannot open Settings, where admins do it.
     canManage: boolean;
 }>();
 
+// Names of products, so not translated.
+const systems: Record<string, string> = {
+    'windows-x86_64': 'Windows',
+    'linux-x86_64': 'Linux',
+};
+const system = (platform: string) => systems[platform] ?? platform;
+
 const latest = computed(() => props.releases.find((release) => release.url));
+// The visitor's own system first.
+const latestFiles = computed(() =>
+    [...(latest.value?.files ?? [])].sort(
+        (a, b) =>
+            Number(b.platform === props.platform) -
+            Number(a.platform === props.platform),
+    ),
+);
 const previous = computed(() =>
     props.releases.filter((release) => release !== latest.value),
 );
@@ -31,9 +48,7 @@ const megabytes = (size: number | null) =>
 <template>
     <PublicDocument
         :title="t('Download the launcher')"
-        :description="
-            t('The launcher for Windows, to play on the servers of this panel.')
-        "
+        :description="t('The launcher, to play on the servers of this panel.')"
         :sections="[]"
     >
         <p v-if="!releases.length" class="text-muted-foreground">
@@ -54,7 +69,10 @@ const megabytes = (size: number | null) =>
                 </h2>
                 <p class="text-sm text-muted-foreground tabular-nums">
                     {{
-                        [released(latest.released), megabytes(latest.size)]
+                        [
+                            released(latest.released),
+                            megabytes(latestFiles[0]?.size ?? null),
+                        ]
                             .filter(Boolean)
                             .join(' · ')
                     }}
@@ -65,10 +83,20 @@ const megabytes = (size: number | null) =>
                 :version="latest.version"
                 downloadable
             />
-            <Button as-child size="lg">
-                <a :href="latest.url ?? undefined">
+            <Button
+                v-for="(file, index) in latestFiles"
+                :key="file.platform"
+                as-child
+                :size="index === 0 ? 'lg' : 'sm'"
+                :variant="index === 0 ? 'default' : 'outline'"
+            >
+                <a :href="file.url ?? undefined">
                     <Download aria-hidden="true" />
-                    {{ t('Download now') }}
+                    {{
+                        t('Download for :system', {
+                            system: system(file.platform),
+                        })
+                    }}
                 </a>
             </Button>
         </section>
@@ -89,14 +117,7 @@ const megabytes = (size: number | null) =>
                     <div class="min-w-0 flex-1 tabular-nums">
                         <span class="font-semibold">{{ release.version }}</span>
                         <span class="ml-3 text-sm text-muted-foreground">
-                            {{
-                                [
-                                    released(release.released),
-                                    megabytes(release.size),
-                                ]
-                                    .filter(Boolean)
-                                    .join(' · ')
-                            }}
+                            {{ released(release.released) }}
                         </span>
                     </div>
                     <LauncherReleaseActions
@@ -104,24 +125,29 @@ const megabytes = (size: number | null) =>
                         :version="release.version"
                         :downloadable="release.url !== null"
                     />
-                    <Button
-                        v-if="release.url"
-                        as-child
-                        variant="outline"
-                        size="sm"
-                    >
-                        <a
-                            :href="release.url"
-                            :aria-label="
-                                t('Download version :version', {
-                                    version: release.version,
-                                })
-                            "
+                    <template v-if="release.url">
+                        <Button
+                            v-for="file in release.files"
+                            :key="file.platform"
+                            as-child
+                            variant="outline"
+                            size="sm"
                         >
-                            <Download aria-hidden="true" />
-                            {{ t('Download') }}
-                        </a>
-                    </Button>
+                            <a
+                                :href="file.url ?? undefined"
+                                :aria-label="
+                                    t('Download version :version for :system', {
+                                        version: release.version,
+                                        system: system(file.platform),
+                                    })
+                                "
+                                :title="megabytes(file.size)"
+                            >
+                                <Download aria-hidden="true" />
+                                {{ system(file.platform) }}
+                            </a>
+                        </Button>
+                    </template>
                     <span v-else class="text-sm text-muted-foreground">{{
                         t('Not downloadable')
                     }}</span>

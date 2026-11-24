@@ -16,26 +16,35 @@ class PortalController extends Controller
     public function latest(PortalReleases $releases): JsonResponse
     {
         $all = $releases->downloadable();
-        $version = array_key_first($all) ?? abort(404);
-        $meta = $all[$version];
+        $version = (string) (array_key_first($all) ?? abort(404));
+        $installers = $all[$version];
 
-        return response()->json([
-            'version' => $version,
-            'pub_date' => $meta['uploaded_at'],
-            'platforms' => ['windows-x86_64' => ['signature' => $meta['signature'], 'url' => PortalReleases::url($version)]],
-        ])->header('Cache-Control', 'no-cache');
+        // A system the newest version has no installer for is left out, so it is offered no update.
+        $platforms = [];
+        $released = null;
+        foreach ($installers as $platform => $meta) {
+            $released ??= $meta['uploaded_at'];
+            $platforms[$platform] = ['signature' => $meta['signature'], 'url' => PortalReleases::url($version, $platform)];
+        }
+
+        return response()->json(['version' => $version, 'pub_date' => $released, 'platforms' => $platforms])->header('Cache-Control', 'no-cache');
     }
 
-    public function installer(string $version, PortalReleases $releases): BinaryFileResponse
+    public function installer(string $version, string $platform, PortalReleases $releases): BinaryFileResponse
     {
-        abort_unless(isset($releases->downloadable()[$version]), 404);
+        abort_unless(isset($releases->downloadable()[$version][$platform]), 404);
 
-        return response()->download(PortalReleases::path($version), PortalReleases::name($version), ['Content-Type' => 'application/octet-stream', 'X-Content-Type-Options' => 'nosniff']);
+        return response()->download(PortalReleases::path($version, $platform), PortalReleases::name($version, $platform), ['Content-Type' => 'application/octet-stream', 'X-Content-Type-Options' => 'nosniff']);
     }
 
-    public function download(PortalReleases $releases): RedirectResponse
+    // The newest installer for the visitor's system, or the first there is.
+    public function download(Request $request, PortalReleases $releases): RedirectResponse
     {
-        return redirect(PortalReleases::url(array_key_first($releases->downloadable()) ?? abort(404)));
+        $all = $releases->downloadable();
+        $version = (string) (array_key_first($all) ?? abort(404));
+        $platform = PortalReleases::platformOf($request->userAgent());
+
+        return redirect(PortalReleases::url($version, isset($all[$version][$platform]) ? $platform : (string) array_key_first($all[$version])));
     }
 
     /**
@@ -47,6 +56,8 @@ class PortalController extends Controller
 
         return Inertia::render('PortalVersions', [
             'releases' => $releases->listing(),
+            // The visitor's system, whose installer the page offers first.
+            'platform' => PortalReleases::platformOf($request->userAgent()),
             // Admins manage them under Settings; a viewer who was given it cannot open that page.
             'canManage' => $user !== null && ! $user->isAdmin() && $user->can('manage-launcher'),
         ]);
@@ -55,7 +66,8 @@ class PortalController extends Controller
     public function update(Request $request, string $version, PortalReleases $releases): RedirectResponse
     {
         $downloadable = (bool) $request->validate(['downloadable' => ['required', 'boolean']])['downloadable'];
-        $releases->mark($version, $releases->all()[$version] ?? abort(404), $downloadable);
+        abort_unless(isset($releases->all()[$version]), 404);
+        $releases->mark($version, $downloadable);
         ActivityLog::record($downloadable ? 'portal.allow' : 'portal.withhold', properties: ['version' => $version]);
 
         return back();

@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class PortalReleaseController extends Controller
 {
@@ -17,10 +18,14 @@ class PortalReleaseController extends Controller
      */
     public function store(Request $request, string $version, PortalReleases $releases): JsonResponse
     {
+        // Without a platform it is Windows: what the launcher's workflow sent before there were others.
+        $platform = $request->query('platform', PortalReleases::WINDOWS);
+
         Validator::validate(
-            ['version' => $version, 'signature' => $request->header('X-Signature'), 'sha256' => $request->header('X-Sha256')],
+            ['version' => $version, 'platform' => $platform, 'signature' => $request->header('X-Signature'), 'sha256' => $request->header('X-Sha256')],
             [
                 'version' => ['required', 'string', 'regex:'.PortalReleases::VERSION],
+                'platform' => ['required', 'string', Rule::in(array_keys(PortalReleases::PLATFORMS))],
                 'signature' => ['required', 'string', 'max:2000', 'regex:/^[A-Za-z0-9+\/=]+\z/'],
                 'sha256' => ['required', 'string', 'regex:/^[0-9a-fA-F]{64}\z/'],
             ],
@@ -32,16 +37,19 @@ class PortalReleaseController extends Controller
         abort_unless(str_starts_with((string) $request->header('Content-Type'), 'application/octet-stream'), 415, 'Send the installer as application/octet-stream.');
 
         // One upload at a time: the version check and the publish must not interleave. Released on every path.
-        $response = Cache::lock('portal-release', 1800)->get(fn () => $this->publish($request, $version, $releases));
+        $response = Cache::lock('portal-release', 1800)->get(fn () => $this->publish($request, $version, $platform, $releases));
         abort_if($response === false, 423, 'Another release is being uploaded; try again in a moment.');
 
         return $response;
     }
 
-    private function publish(Request $request, string $version, PortalReleases $releases): JsonResponse
+    private function publish(Request $request, string $version, string $platform, PortalReleases $releases): JsonResponse
     {
-        $current = array_key_first($releases->all());
-        abort_if($current !== null && version_compare($version, $current, '<='), 409, "The newest release is {$current}; upload a greater version.");
+        // The newest version may still get the installer of a system it has none for.
+        $all = $releases->all();
+        $current = (string) array_key_first($all);
+        $taken = $all !== [] && (version_compare($version, $current, '<') || isset($all[$version][$platform]));
+        abort_if($taken, 409, "The newest release is {$current}; upload a greater version.");
 
         $max = (int) config('panel.portal_max_bytes');
         $temp = $releases->receive($request->getContent(true), $max);
@@ -53,14 +61,14 @@ class PortalReleaseController extends Controller
             abort(422, 'The body does not match X-Sha256.');
         }
 
-        $releases->publish($version, $temp, [
+        $releases->publish($version, $platform, $temp, [
             'signature' => (string) $request->header('X-Signature'),
             'sha256' => strtolower((string) $request->header('X-Sha256')),
             'size' => $size,
             'uploaded_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
         ]);
-        ActivityLog::record('portal.release', properties: ['version' => $version]);
+        ActivityLog::record('portal.release', properties: ['version' => $version, 'platform' => $platform]);
 
-        return response()->json(['version' => $version, 'url' => PortalReleases::url($version), 'size' => $size], 201);
+        return response()->json(['version' => $version, 'platform' => $platform, 'url' => PortalReleases::url($version, $platform), 'size' => $size], 201);
     }
 }

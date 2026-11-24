@@ -30,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('settings/locale', LocaleController::class)->name('locale.update');
 
     Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
+    Route::get('settings/api-tokens/create', [ApiTokenController::class, 'create'])->name('api-tokens.create');
     Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
     Route::delete('settings/api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
     Route::post('settings/api-tokens/pairing', [ApiTokenController::class, 'pairing'])->name('api-tokens.pairing');
