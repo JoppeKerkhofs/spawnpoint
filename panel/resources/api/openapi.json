@@ -1651,7 +1651,7 @@
             "put": {
                 "summary": "Publish a launcher release",
                 "x-ability": "portal:release",
-                "description": "Needs portal:release and an admin owner. The body is the installer itself, sent raw as application/octet-stream (not a form), at most 100 MB. A version has one installer per system, named by platform. The panel serves it at /portal/spawnpoint-portal-{version}-setup.exe (Windows) or /portal/spawnpoint-portal-{version}-x86_64.AppImage (Linux) and lists it in /portal/latest.json, for the launcher's updater. The version must be greater than the newest stored one, or be the newest one for a system it has no installer for yet.",
+                "description": "Needs portal:release and an admin owner. The body is the installer itself, sent raw as application/octet-stream (not a form), at most 100 MB. A version has one installer per system, named by platform. The panel serves it at /portal/spawnpoint-portal-{version}-setup.exe (Windows), /portal/spawnpoint-portal-{version}-x86_64.AppImage (Linux) or /portal/spawnpoint-portal-{version}-aarch64.app.tar.gz (macOS on Apple silicon) and lists it in /portal/latest.json, for the launcher's updater. The version must be greater than the newest stored one, or be the newest one for a system it has no installer for yet.",
                 "parameters": [
                     {
                         "name": "version",
@@ -1669,7 +1669,11 @@
                         "required": false,
                         "schema": {
                             "type": "string",
-                            "enum": ["windows-x86_64", "linux-x86_64"],
+                            "enum": [
+                                "windows-x86_64",
+                                "linux-x86_64",
+                                "darwin-aarch64"
+                            ],
                             "default": "windows-x86_64"
                         },
                         "description": "The system the installer is for."

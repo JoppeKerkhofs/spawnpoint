@@ -370,7 +370,7 @@ test('the newest version takes one installer per system, and the updater is told
     // Taken: the same system again, and a system for a version that is no longer the newest.
     portalPut($this->token, '1.1.0', 'again', [], 'linux-x86_64')->assertStatus(409);
     portalPut($this->token, '1.0.0', 'late', [], 'linux-x86_64')->assertStatus(409);
-    portalPut($this->token, '1.2.0', 'x', [], 'darwin-aarch64')->assertUnprocessable();
+    portalPut($this->token, '1.2.0', 'x', [], 'darwin-x86_64')->assertUnprocessable();
     portalPut($this->token, '1.2.0', 'x', [], '../x')->assertUnprocessable();
 
     $this->get('/portal/latest.json')->assertExactJson([
@@ -414,6 +414,23 @@ test('a visitor is offered the installer of their own system first', function ()
     auth()->forgetGuards();
     $this->get('/portal/download')->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.2.0-x86_64.AppImage');
     $this->get('/portal/latest.json')->assertJsonMissingPath('platforms.windows-x86_64')->assertJsonPath('platforms.linux-x86_64.signature', 'c2lnbmF0dXJl');
+});
+
+test('a Mac gets the packed app, as its download and as its update', function () {
+    portalPut($this->token, '1.0.0', 'windows')->assertCreated();
+    portalPut($this->token, '1.0.0', 'mac', ['X-Signature' => 'bWFj'], 'darwin-aarch64')
+        ->assertCreated()
+        ->assertJsonPath('url', 'https://panel.example.com/portal/spawnpoint-portal-1.0.0-aarch64.app.tar.gz');
+    auth()->forgetGuards();
+    $mac = ['User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15'];
+
+    $this->get('/portal/latest.json')->assertJsonPath('platforms.darwin-aarch64', ['signature' => 'bWFj', 'url' => 'https://panel.example.com/portal/spawnpoint-portal-1.0.0-aarch64.app.tar.gz']);
+    $this->get('/portal/download', $mac)->assertRedirect('https://panel.example.com/portal/spawnpoint-portal-1.0.0-aarch64.app.tar.gz');
+    $this->get('/portal/versions', $mac)->assertInertia(fn (Assert $page) => $page->where('platform', 'darwin-aarch64')->has('releases.0.files', 2));
+    expect($this->get('/portal/spawnpoint-portal-1.0.0-aarch64.app.tar.gz')->assertOk()->streamedContent())->toBe('mac');
+
+    $this->actingAs(User::factory()->admin()->create())->delete('/portal/versions/1.0.0')->assertRedirect();
+    expect(Storage::disk('local')->allFiles('portal'))->toBe([]);
 });
 
 test('withholding and removing a version cover every installer it has', function () {
