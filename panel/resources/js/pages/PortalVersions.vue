@@ -20,6 +20,7 @@ const props = defineProps<{
 const systems: Record<string, string> = {
     'windows-x86_64': 'Windows',
     'linux-x86_64': 'Linux',
+    'darwin-aarch64': 'macOS (Apple silicon)',
 };
 const system = (platform: string) => systems[platform] ?? platform;
 

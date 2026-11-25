@@ -19,7 +19,8 @@ class PortalReleases
     public const string VERSION = '/^'.self::PARTS.'\z/';
 
     // The updater's name of each system, and what its installer's name ends in. Windows comes first.
-    public const array PLATFORMS = ['windows-x86_64' => '-setup.exe', 'linux-x86_64' => '-x86_64.AppImage'];
+    // macOS: the packed app is what the updater installs, so it is the download too. Apple chips only.
+    public const array PLATFORMS = ['windows-x86_64' => '-setup.exe', 'linux-x86_64' => '-x86_64.AppImage', 'darwin-aarch64' => '-aarch64.app.tar.gz'];
 
     public const string WINDOWS = 'windows-x86_64';
 
@@ -55,6 +56,10 @@ class PortalReleases
     public static function platformOf(?string $userAgent): string
     {
         $agent = (string) $userAgent;
+        // A Mac's browser does not say which chip it has.
+        if (str_contains($agent, 'Macintosh')) {
+            return 'darwin-aarch64';
+        }
 
         return str_contains($agent, 'Linux') && ! str_contains($agent, 'Android') ? 'linux-x86_64' : self::WINDOWS;
     }
