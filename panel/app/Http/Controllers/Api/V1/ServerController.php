@@ -152,6 +152,8 @@ class ServerController extends Controller
             ],
             'loader' => ($runs['loader'] ?? null) === null ? null : ['name' => $runs['loader'], 'version' => $runs['loader_version']],
             'picture' => $server->picture(),
+            // Java flags for the players' game, not the server's own (jvm_opts).
+            'client_jvm_opts' => ($server->settings['client_jvm_opts'] ?? '') ?: null,
             'state' => $live['state'] ?? ($states['online'] ? 'offline' : 'unknown'),
             'detail' => $live['detail'] ?? null,
             'players' => $live['players'] ?? null,

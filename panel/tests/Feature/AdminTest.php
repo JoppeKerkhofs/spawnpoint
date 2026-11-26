@@ -140,9 +140,10 @@ test('ops, whitelist, jvm flags and cpu limit are parsed, stored and sent to the
         'name' => 'Survival', 'server_type' => 'PAPER', 'mc_version' => 'LATEST', 'java_version' => '25', 'memory_mb' => '4096',
         'motd' => 'Hi', 'difficulty' => 'normal', 'mode' => 'survival', 'max_players' => '20',
         'ops' => "JoppeK, Lien_B\nJoppeK", 'whitelist' => '1', 'whitelist_names' => 'MaartenVH', 'jvm_opts' => '-XX:+UseZGC', 'cpu_limit' => '2.5',
-        'auto_restart' => '1',
+        'auto_restart' => '1', 'client_jvm_opts' => '-XX:+UseG1GC',
     ])->assertSessionHasNoErrors();
 
+    expect($this->server->refresh()->settings['client_jvm_opts'])->toBe('-XX:+UseG1GC');
     Http::assertSent(fn (Request $request) => $request['ops'] === ['JoppeK', 'Lien_B']
         && $request['whitelist'] === ['MaartenVH']
         && $request['whitelist_on'] === true
@@ -165,6 +166,7 @@ test('player names and cpu limits are validated', function (array $overrides, st
     'whitelist name too long' => [['whitelist_names' => 'ANameThatIsFarTooLong'], 'whitelist_names'],
     'cpu limit too small' => [['cpu_limit' => '0.01'], 'cpu_limit'],
     'jvm flags with a line break' => [['jvm_opts' => "-Xmx1G\n-evil"], 'jvm_opts'],
+    'player jvm flags with a line break' => [['client_jvm_opts' => "-Dx\n-evil"], 'client_jvm_opts'],
 ]);
 
 test('a server saved before these options existed still sends valid defaults', function () {

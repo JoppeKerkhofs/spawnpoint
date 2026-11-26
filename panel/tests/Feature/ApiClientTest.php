@@ -47,14 +47,16 @@ test('a server says which pack version and loader it really runs', function () {
 });
 
 test('a server without mods has no pack and no loader, and one not installed yet no versions', function () {
-    clientServer(['mc_version' => '1.21.10']);
+    clientServer(['mc_version' => '1.21.10', 'settings' => [...Server::factory()->make()->settings, 'client_jvm_opts' => '-XX:+UseZGC']]);
     Server::factory()->for(Node::first())->create(['slug' => 'fresh', 'server_type' => 'NEOFORGE', 'mc_version' => '1.21.1']);
     Http::fake(['node.test:8080/servers' => Http::response([]), 'node.test:8080/*' => Http::response(status: 404)]);
 
     $this->getJson('/api/v1/servers/modded', bearer($this->join))->assertOk()
-        ->assertJsonPath('data.game_version', '1.21.10')->assertJsonPath('data.modpack', null)->assertJsonPath('data.loader', null);
+        ->assertJsonPath('data.game_version', '1.21.10')->assertJsonPath('data.modpack', null)->assertJsonPath('data.loader', null)
+        ->assertJsonPath('data.client_jvm_opts', '-XX:+UseZGC');
     $this->getJson('/api/v1/servers/fresh', bearer($this->join))->assertOk()
-        ->assertJsonPath('data.game_version', '1.21.1')->assertJsonPath('data.loader', ['name' => 'neoforge', 'version' => null]);
+        ->assertJsonPath('data.game_version', '1.21.1')->assertJsonPath('data.loader', ['name' => 'neoforge', 'version' => null])
+        ->assertJsonPath('data.client_jvm_opts', null);
 });
 
 test('an ftb pack names its own loader', function () {

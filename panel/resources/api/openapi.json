@@ -118,6 +118,13 @@
                                                             "unknown"
                                                         ]
                                                     },
+                                                    "client_jvm_opts": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ],
+                                                        "description": "Java flags the server's owner set for the game of players who join with Portal. Null when none are set."
+                                                    },
                                                     "detail": {
                                                         "type": [
                                                             "string",
@@ -289,6 +296,10 @@
                                                         "importing",
                                                         "unknown"
                                                     ]
+                                                },
+                                                "client_jvm_opts": {
+                                                    "type": ["string", "null"],
+                                                    "description": "Java flags the server's owner set for the game of players who join with Portal. Null when none are set."
                                                 },
                                                 "detail": {
                                                     "type": ["string", "null"],

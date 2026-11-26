@@ -392,6 +392,29 @@ const selectClass =
                 />
                 <InputError :message="errors.jvm_opts" />
             </div>
+
+            <div class="grid gap-2">
+                <Label for="client_jvm_opts">{{
+                    t('JVM flags for players who join with Portal')
+                }}</Label>
+                <Input
+                    id="client_jvm_opts"
+                    name="client_jvm_opts"
+                    spellcheck="false"
+                    maxlength="500"
+                    class="font-mono"
+                    placeholder="-XX:+UseZGC"
+                    :default-value="server?.settings.client_jvm_opts ?? ''"
+                />
+                <span class="text-[0.8125rem] text-muted-foreground">
+                    {{
+                        t(
+                            'For the game on each player’s own computer, from their next join. Portal leaves out memory flags and anything that loads code.',
+                        )
+                    }}
+                </span>
+                <InputError :message="errors.client_jvm_opts" />
+            </div>
         </div>
     </SectionCard>
 
