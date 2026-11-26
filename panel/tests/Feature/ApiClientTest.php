@@ -103,6 +103,7 @@ test('a pack server lists only what was changed on top of the pack, without mods
             ['file' => 'own-mod.jar', 'sha512' => 'h-own', 'size' => 4, 'url' => null],
         ],
         'removed' => ['taken-out.jar'],
+        'files' => [],
     ]);
     // The pack's own jar is not looked up: the launcher has it from the pack.
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/version_files') && $request['hashes'] === ['h-sodium', 'h-server', 'h-own']);
@@ -137,7 +138,7 @@ test('joining needs its ability and a server the owner may see, not the files pe
     Server::first()->viewers()->attach($viewer, ['permissions' => json_encode([])]);
 
     $this->getJson('/api/v1/servers/modded/client-mods', bearer($viewer->createToken('Launcher', ['servers:join'])->plainTextToken))
-        ->assertOk()->assertExactJson(['mods' => [], 'removed' => []]);
+        ->assertOk()->assertExactJson(['mods' => [], 'removed' => [], 'files' => []]);
     $this->getJson('/api/v1/servers/modded/client-mods', bearer($outsider))->assertForbidden();
     $this->getJson('/api/v1/servers/modded/client-mods', bearer($this->admin->createToken('Read', ['servers:read', 'files:read'])->plainTextToken))
         ->assertStatus(403)->assertJsonPath('message', 'This token lacks the servers:join ability.');
@@ -178,4 +179,27 @@ test('a curseforge server says where its pack and the files in it are downloaded
 
     config(['panel.curseforge_key' => null]);
     $this->getJson('/api/v1/servers/modded/client-pack', bearer($this->join))->assertStatus(409);
+});
+
+test('the files chosen for players are listed with the mods and passed on, and nothing else', function () {
+    clientServer(['server_type' => 'FABRIC', 'mc_version' => '1.21.10', 'client_files' => ['config/create', 'kubejs/client_scripts/a.js']]);
+    $listed = [['path' => 'config/create/common.toml', 'size' => 3, 'sha512' => 'h-common']];
+    Http::fake([
+        'node.test:8080/servers/modded/mods' => Http::response([]),
+        'node.test:8080/servers/modded/client-files' => Http::response($listed),
+        'node.test:8080/servers/modded/download*' => Http::response('abc', 200, ['Content-Length' => '3']),
+    ]);
+
+    $this->getJson('/api/v1/servers/modded/client-mods', bearer($this->join))->assertOk()->assertJsonPath('files', $listed);
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/client-files') && $request['paths'] === ['config/create', 'kubejs/client_scripts/a.js']);
+
+    $response = $this->get('/api/v1/servers/modded/client-files/config/create/common.toml', bearer($this->join))->assertOk();
+    expect($response->streamedContent())->toBe('abc');
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), 'path=config%2Fcreate%2Fcommon.toml'));
+
+    $this->get('/api/v1/servers/modded/client-files/kubejs/client_scripts/a.js', bearer($this->join))->assertOk();
+    $this->get('/api/v1/servers/modded/client-files/config/other.toml', bearer($this->join))->assertNotFound();
+    $this->get('/api/v1/servers/modded/client-files/config/created.toml', bearer($this->join))->assertNotFound();
+    $this->get('/api/v1/servers/modded/client-files/config/create/..%2F..%2Fserver.properties', bearer($this->join))->assertNotFound();
+    $this->get('/api/v1/servers/modded/client-files/server.properties', bearer($this->join))->assertNotFound();
 });

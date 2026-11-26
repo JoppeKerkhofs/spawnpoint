@@ -27,6 +27,9 @@ use crate::{claims, unix_now, valid_slug, AppState};
 // Larger files are downloaded and uploaded, not edited.
 const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+// What players get is configuration: a larger file, or more of them, is left out.
+const MAX_CLIENT_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CLIENT_FILES: usize = 2000;
 
 type Params = Query<HashMap<String, String>>;
 
@@ -265,6 +268,43 @@ pub async fn list_mods(State(state): State<AppState>, Path(slug): Path<String>) 
 }
 
 #[derive(Deserialize)]
+pub struct PathsBody {
+    paths: Vec<String>,
+}
+
+// Every file at or under the given paths, each with its fingerprint. Links are not followed.
+fn client_file_list(mut todo: Vec<(String, PathBuf)>) -> Vec<Value> {
+    let mut files = std::collections::BTreeMap::new();
+
+    while let Some((relative, path)) = todo.pop() {
+        let Ok(metadata) = path.symlink_metadata() else { continue };
+        if metadata.is_dir() {
+            for entry in std::fs::read_dir(&path).into_iter().flatten().flatten() {
+                todo.push((format!("{relative}/{}", entry.file_name().to_string_lossy()), entry.path()));
+            }
+        } else if metadata.is_file() && metadata.len() <= MAX_CLIENT_FILE_BYTES && files.len() < MAX_CLIENT_FILES {
+            if let Ok(hash) = sha512(&path) {
+                files.insert(relative, (metadata.len(), hash));
+            }
+        }
+    }
+
+    files.into_iter().map(|(path, (size, sha512))| json!({ "path": path, "size": size, "sha512": sha512 })).collect()
+}
+
+pub async fn client_files(State(state): State<AppState>, Path(slug): Path<String>, Json(body): Json<PathsBody>) -> Result<Json<Value>, StatusCode> {
+    let mut start = Vec::new();
+    for path in &body.paths {
+        let relative = path.trim_matches('/');
+        start.push((relative.to_owned(), resolve(&state, &slug, relative)?));
+    }
+
+    let files = tokio::task::spawn_blocking(move || client_file_list(start)).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(Value::Array(files)))
+}
+
+#[derive(Deserialize)]
 pub struct ModBody {
     url: String,
     name: String,
@@ -440,6 +480,28 @@ mod tests {
         assert_eq!(check("dir-out/world.zip"), Err(StatusCode::FORBIDDEN));
         assert_eq!(resolve(&state, "../data/other", ""), Err(StatusCode::NOT_FOUND));
         assert_eq!(resolve(&state, "absent", ""), Err(StatusCode::NOT_FOUND));
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn files_for_players_are_listed_under_what_was_chosen() {
+        let base = std::env::temp_dir().join(format!("spawnpoint-client-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("config/create")).unwrap();
+        std::fs::write(base.join("config/create/a.toml"), "abc").unwrap();
+        std::fs::write(base.join("config/one.toml"), "abc").unwrap();
+        std::fs::write(base.join("config/other.toml"), "no").unwrap();
+        std::fs::write(base.join("secret"), "token").unwrap();
+        symlink(base.join("secret"), base.join("config/create/link")).unwrap();
+
+        let chosen = |path: &str| (path.to_owned(), base.join(path));
+        let listed = client_file_list(vec![chosen("config/create"), chosen("config/one.toml"), chosen("config/gone")]);
+        let paths: Vec<&str> = listed.iter().map(|file| file["path"].as_str().unwrap()).collect();
+
+        assert_eq!(paths, vec!["config/create/a.toml", "config/one.toml"]);
+        assert_eq!(listed[0]["size"], 3);
+        assert_eq!(listed[0]["sha512"].as_str().unwrap().len(), 128);
 
         std::fs::remove_dir_all(&base).unwrap();
     }

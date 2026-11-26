@@ -107,3 +107,23 @@ test('viewers cannot use the file manager', function () {
 
     Http::assertNothingSent();
 });
+
+test('a file or folder is chosen for players inside the folders a launcher takes, and taken back', function () {
+    $choose = fn (string $path, bool $on = true) => $this->put(route('servers.files.client', $this->server), ['path' => $path, 'on' => $on]);
+
+    $choose('config/create')->assertRedirect();
+    $choose('kubejs/client_scripts/a.js');
+    $choose('config/create');
+    expect($this->server->refresh()->client_files)->toBe(['kubejs/client_scripts/a.js', 'config/create']);
+    expect($this->server->sendsToPlayers('config/create/common.toml'))->toBeTrue();
+    expect($this->server->sendsToPlayers('config/created.toml'))->toBeFalse();
+
+    $choose('config/create', false);
+    expect($this->server->refresh()->client_files)->toBe(['kubejs/client_scripts/a.js']);
+
+    $choose('config')->assertStatus(422);
+    $choose('mods/a.jar')->assertStatus(422);
+    $choose('server.properties')->assertStatus(422);
+    $choose('config/../world')->assertSessionHasErrors('path');
+    expect($this->server->refresh()->client_files)->toBe(['kubejs/client_scripts/a.js']);
+});

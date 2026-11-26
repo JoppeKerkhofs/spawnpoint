@@ -9,7 +9,7 @@ class FileRequest extends FormRequest
 {
     // A path inside the server's folder: no parent steps, no backslashes, no control characters.
     // The Rust service checks again and also refuses symlinks that lead outside.
-    private const string PATH = 'not_regex:/(^|\/)\.\.?(\/|$)|[\\\\\x00-\x1F\x7F]/';
+    public const string PATH = 'not_regex:/(^|\/)\.\.?(\/|$)|[\\\\\x00-\x1F\x7F]/';
 
     /**
      * Get the validation rules that apply to the request.
@@ -24,6 +24,7 @@ class FileRequest extends FormRequest
             'from' => ['nullable', 'string', 'max:1000', self::PATH],
             'to' => ['nullable', 'string', 'max:1000', self::PATH],
             // The editor is for text files up to the size the Rust service will read back.
+            'on' => ['nullable', 'boolean'],
             'content' => ['nullable', 'string', 'max:1048576'],
         ];
     }

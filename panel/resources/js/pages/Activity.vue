@@ -47,6 +47,7 @@ const labels: Record<string, string> = {
     'file.save': t('Saved a file'),
     'file.folder': t('Created a folder'),
     'file.rename': t('Renamed a file'),
+    'file.client': t('Changed the files for players'),
     'file.delete': t('Deleted a file'),
     'mod.install': t('Installed a mod'),
     'mod.update': t('Updated a mod'),

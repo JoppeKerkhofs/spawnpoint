@@ -18,6 +18,7 @@ import { useLiveReload } from '@/lib/live';
 import type { Server, States } from '@/lib/servers';
 import { files } from '@/routes/servers';
 import {
+    client,
     destroy,
     download,
     folder,
@@ -32,6 +33,8 @@ const props = defineProps<{
     states?: States;
     path: string;
     entries: Entry[];
+    clientFiles: string[];
+    clientRoots: string[];
     file: { path: string; content: string } | null;
     error: string | null;
     upload: { url: string };
@@ -74,8 +77,23 @@ const browse = (path: string, edit?: string) =>
 
 const reloadFolder = {
     preserveScroll: true,
-    only: ['entries', 'file', 'error'],
+    only: ['entries', 'file', 'error', 'clientFiles'],
 };
+
+// A launcher takes files from a few folders only, and never such a folder as a whole.
+const forPlayers = computed(() =>
+    props.clientRoots.includes(props.path.split('/')[0]),
+);
+const inChosenFolder = (path: string) =>
+    props.clientFiles.some((chosen) => path.startsWith(`${chosen}/`));
+const sent = (path: string) =>
+    props.clientFiles.includes(path) || inChosenFolder(path);
+const sendToPlayers = (entry: Entry, on: boolean) =>
+    router.put(
+        client.url(slug.value),
+        { path: join(entry.name), on },
+        reloadFolder,
+    );
 
 // The editor works on a copy, so "Revert" and the unsaved mark compare against what was loaded.
 const draft = ref(props.file?.content ?? '');
@@ -325,6 +343,13 @@ const size = (entry: Entry) => {
                                 <th scope="col" class="px-4 py-2 font-normal">
                                     {{ t('Name') }}
                                 </th>
+                                <th
+                                    v-if="forPlayers"
+                                    scope="col"
+                                    class="px-4 py-2 font-normal"
+                                >
+                                    {{ t('For players') }}
+                                </th>
                                 <th scope="col" class="px-4 py-2 font-normal">
                                     {{ t('Size') }}
                                 </th>
@@ -366,6 +391,29 @@ const size = (entry: Entry) => {
                                         />
                                         {{ entry.name }}
                                     </Link>
+                                </td>
+                                <td v-if="forPlayers" class="px-4 py-2">
+                                    <input
+                                        type="checkbox"
+                                        class="size-4 accent-primary"
+                                        :checked="sent(join(entry.name))"
+                                        :disabled="
+                                            inChosenFolder(join(entry.name))
+                                        "
+                                        :aria-label="
+                                            t('Send :name to players', {
+                                                name: entry.name,
+                                            })
+                                        "
+                                        @change="
+                                            sendToPlayers(
+                                                entry,
+                                                (
+                                                    $event.target as HTMLInputElement
+                                                ).checked,
+                                            )
+                                        "
+                                    />
                                 </td>
                                 <td
                                     class="px-4 py-2 text-sm whitespace-nowrap text-muted-foreground tabular-nums"
@@ -436,7 +484,7 @@ const size = (entry: Entry) => {
                             </tr>
                             <tr v-if="!entries.length">
                                 <td
-                                    colspan="4"
+                                    :colspan="forPlayers ? 5 : 4"
                                     class="border-t border-divider px-4 py-3 text-sm text-muted-foreground"
                                 >
                                     {{ t('This folder is empty.') }}
@@ -445,6 +493,17 @@ const size = (entry: Entry) => {
                         </tbody>
                     </table>
                 </div>
+
+                <p
+                    v-if="forPlayers"
+                    class="border-t border-divider px-4 py-2.5 text-sm text-muted-foreground"
+                >
+                    {{
+                        t(
+                            'A ticked file or folder is copied to every player who joins with Portal, on each sync. It replaces their own copy, which is kept beside it as a backup. Tick nothing that holds a password or a key.',
+                        )
+                    }}
+                </p>
 
                 <div
                     role="status"

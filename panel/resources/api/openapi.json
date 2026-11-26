@@ -1276,7 +1276,7 @@
             "get": {
                 "summary": "List the mods a player's game needs",
                 "x-ability": "servers:join",
-                "description": "Needs servers:join and a server the token's owner may see. For a launcher. A modpack server lists only what was changed on top of its pack: the jars that were added, and under \"removed\" the pack's jars that were taken out. Any other modded server lists every jar. Mods that Modrinth marks as not running in the game are left out. A \"url\" of null is a jar Modrinth does not know; fetch it from this address plus \"/<file>\". Answers 409 while the pack is not installed yet, and 404 for a server that loads no mods.",
+                "description": "Needs servers:join and a server the token's owner may see. For a launcher. A modpack server lists only what was changed on top of its pack: the jars that were added, and under \"removed\" the pack's jars that were taken out. Any other modded server lists every jar. Mods that Modrinth marks as not running in the game are left out. A \"url\" of null is a jar Modrinth does not know; fetch it from this address plus \"/<file>\". \"files\" are the files the server's owner chose for players, such as configuration: fetch each from \"/servers/{server}/client-files/<path>\" and put it at that path in the game folder. Answers 409 while the pack is not installed yet, and 404 for a server that loads no mods.",
                 "responses": {
                     "200": {
                         "description": "The mods",
@@ -1309,6 +1309,23 @@
                                             "type": "array",
                                             "items": {
                                                 "type": "string"
+                                            }
+                                        },
+                                        "files": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "path": {
+                                                        "type": "string"
+                                                    },
+                                                    "sha512": {
+                                                        "type": "string"
+                                                    },
+                                                    "size": {
+                                                        "type": "integer"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1363,6 +1380,22 @@
                     },
                     "404": {
                         "description": "No such jar"
+                    }
+                },
+                "parameters": []
+            }
+        },
+        "/servers/{server}/client-files/{path}": {
+            "get": {
+                "summary": "Download one file chosen for players",
+                "x-ability": "servers:join",
+                "description": "Needs servers:join and a server the token's owner may see. One of the files the server's owner chose for players, or a file in a folder that was chosen, and nothing else in the server's folder. The path may hold slashes.",
+                "responses": {
+                    "200": {
+                        "description": "The file"
+                    },
+                    "404": {
+                        "description": "Not a file chosen for players"
                     }
                 },
                 "parameters": []
