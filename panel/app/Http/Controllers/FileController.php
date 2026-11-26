@@ -39,11 +39,30 @@ class FileController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             'path' => $path,
             'entries' => $entries ?? [],
+            'clientFiles' => $server->client_files ?? [],
+            'clientRoots' => Server::CLIENT_ROOTS,
             'file' => $file ?? null,
             'error' => $error ?? null,
             // A closure, so an upload can ask for a fresh token first.
             'upload' => fn () => ['url' => $client->fileUrl($server, 'upload')],
         ]);
+    }
+
+    /**
+     * Choose a file or folder for the players' launchers, or take it back.
+     */
+    public function client(FileRequest $request, Server $server): RedirectResponse
+    {
+        $path = $request->path();
+        abort_unless(str_contains($path, '/') && in_array(strtok($path, '/'), Server::CLIENT_ROOTS, true), 422);
+
+        $chosen = array_values(array_diff($server->client_files ?? [], [$path]));
+        $on = $request->boolean('on');
+        abort_if($on && count($chosen) >= 200, 422);
+        $server->update(['client_files' => $on ? [...$chosen, $path] : $chosen]);
+        ActivityLog::record('file.client', $server, ['path' => $path, 'on' => $on]);
+
+        return back();
     }
 
     /**

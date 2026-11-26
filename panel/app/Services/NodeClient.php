@@ -294,6 +294,21 @@ class NodeClient
     }
 
     /**
+     * The files chosen for players, folders followed, each with its fingerprint.
+     *
+     * @return list<array{path: string, size: int, sha512: string}>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function clientFiles(Server $server): array
+    {
+        $paths = $server->client_files ?? [];
+
+        return $paths === [] ? [] : $this->send('POST', "/servers/{$server->slug}/client-files", ['paths' => $paths], timeout: 30)->json();
+    }
+
+    /**
      * Have the node download a jar from Modrinth into the mods folder.
      *
      * @throws ConnectionException

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ModController;
+use App\Http\Requests\FileRequest;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Services\Modpacks;
@@ -13,6 +14,7 @@ use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -29,14 +31,14 @@ class ClientController extends Controller implements HasMiddleware
     }
 
     /**
-     * The mods a player's game must have, and the pack's mods it must not.
+     * The mods a player's game must have, the pack's mods it must not, and the files chosen for it.
      */
     public function mods(Server $server): JsonResponse
     {
         $pack = $server->modpack === null ? null : Mods::runs($server)['files'];
         abort_if($server->modpack !== null && $pack === null, 409, (string) __('The modpack is not installed yet.'));
 
-        return response()->json(Mods::client($server, $pack));
+        return response()->json([...Mods::client($server, $pack), 'files' => (new NodeClient($server->node))->clientFiles($server)]);
     }
 
     /**
@@ -74,13 +76,28 @@ class ClientController extends Controller implements HasMiddleware
      */
     public function mod(Server $server, string $file): StreamedResponse
     {
-        $jar = (new NodeClient($server->node))->download($server, "mods/{$file}", stream: true);
-        $body = $jar->toPsrResponse()->getBody();
+        return self::pass($server, "mods/{$file}", 'application/java-archive');
+    }
+
+    /**
+     * One of the files chosen for players, and nothing else in the server's folder.
+     */
+    public function file(Server $server, string $path): StreamedResponse
+    {
+        abort_unless($server->sendsToPlayers($path) && Validator::make(['path' => $path], ['path' => [FileRequest::PATH]])->passes(), 404);
+
+        return self::pass($server, $path, 'application/octet-stream');
+    }
+
+    private static function pass(Server $server, string $path, string $type): StreamedResponse
+    {
+        $file = (new NodeClient($server->node))->download($server, $path, stream: true);
+        $body = $file->toPsrResponse()->getBody();
 
         return response()->streamDownload(function () use ($body): void {
             while (! $body->eof()) {
                 echo $body->read(65536);
             }
-        }, $file, ['Content-Type' => 'application/java-archive', 'Content-Length' => $jar->header('Content-Length')]);
+        }, basename($path), ['Content-Type' => $type, 'Content-Length' => $file->header('Content-Length')]);
     }
 }

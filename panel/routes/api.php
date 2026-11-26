@@ -53,6 +53,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api', RequireTwoFacto
             Route::post('servers/{server}/client-pack/files', [ClientController::class, 'files']);
             // The name becomes part of a path on the node.
             Route::get('servers/{server}/client-mods/{file}', [ClientController::class, 'mod'])->where('file', '[^/]+\\.jar');
+            Route::get('servers/{server}/client-files/{path}', [ClientController::class, 'file'])->where('path', '.+');
         });
     });
 

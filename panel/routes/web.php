@@ -79,6 +79,7 @@ Route::middleware(['auth', 'verified', RequireTwoFactor::class])->group(function
     Route::middleware('can:act,server,"files"')->group(function () {
         Route::get('servers/{server}/files', [FileController::class, 'index'])->name('servers.files');
         Route::put('servers/{server}/files/content', [FileController::class, 'save'])->name('servers.files.save');
+        Route::put('servers/{server}/files/client', [FileController::class, 'client'])->name('servers.files.client');
         Route::post('servers/{server}/files/folder', [FileController::class, 'folder'])->name('servers.files.folder');
         Route::post('servers/{server}/files/rename', [FileController::class, 'rename'])->name('servers.files.rename');
         Route::delete('servers/{server}/files', [FileController::class, 'destroy'])->name('servers.files.destroy');

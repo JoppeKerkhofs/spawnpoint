@@ -1262,6 +1262,7 @@ async fn main() {
         .route("/servers/{slug}/files/mkdir", post(files::mkdir))
         .route("/servers/{slug}/files/rename", post(files::rename))
         .route("/servers/{slug}/mods", get(files::list_mods).post(files::install_mod))
+        .route("/servers/{slug}/client-files", post(files::client_files))
         .route("/servers/{slug}/backups", get(backups::list).post(backups::create))
         .route("/servers/{slug}/backups/running", axum::routing::delete(backups::cancel))
         .route("/servers/{slug}/backups/{name}", axum::routing::delete(backups::delete))

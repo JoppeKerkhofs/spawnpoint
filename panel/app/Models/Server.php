@@ -31,6 +31,7 @@ use Illuminate\Support\Str;
  * @property array<string, mixed> $settings Game settings; servers saved before a setting existed lack its key.
  * @property array{project: string, name: string, icon: string|null, version?: string|null, version_name?: string|null}|null $modpack
  * @property string|null $icon The uploaded picture: a 64x64 PNG as base64.
+ * @property list<string>|null $client_files The files and folders a player's launcher copies.
  * @property bool $bluemap_enabled
  * @property bool $is_default
  * @property bool $pack_check
@@ -41,7 +42,7 @@ use Illuminate\Support\Str;
  * @property Carbon $eula_accepted_at
  * @property-read Node $node
  */
-#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'pack_check', 'pack_auto_update', 'pack_latest', 'backup_keep', 'backup_retention_days', 'eula_accepted_at', 'icon'])]
+#[Fillable(['node_id', 'owner_id', 'name', 'slug', 'hostname', 'server_type', 'mc_version', 'java_version', 'memory_mb', 'settings', 'modpack', 'bluemap_enabled', 'is_default', 'pack_check', 'pack_auto_update', 'pack_latest', 'backup_keep', 'backup_retention_days', 'eula_accepted_at', 'icon', 'client_files'])]
 // The picture travels as "picture" (forUser), not as raw base64 in every list.
 #[Hidden(['icon'])]
 class Server extends Model
@@ -66,6 +67,9 @@ class Server extends Model
 
     // What a viewer can be allowed on a shared server, beyond seeing it and watching its console.
     public const array PERMISSIONS = ['logs', 'commands', 'power', 'files', 'backups', 'configure'];
+
+    // Where a file for players may lie, below the folder itself: a launcher takes nothing else.
+    public const array CLIENT_ROOTS = ['config', 'defaultconfigs', 'kubejs', 'scripts'];
 
     public const array DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard'];
 
@@ -174,6 +178,14 @@ class Server extends Model
     /**
      * Both proxies on the panel's host follow where a server is and what it is called.
      */
+    /**
+     * Whether players get this file: it was chosen, or lies in a folder that was.
+     */
+    public function sendsToPlayers(string $path): bool
+    {
+        return array_any($this->client_files ?? [], fn (string $chosen): bool => $path === $chosen || str_starts_with($path, "{$chosen}/"));
+    }
+
     protected static function booted(): void
     {
         static::saved(function (self $server): void {
@@ -196,6 +208,7 @@ class Server extends Model
             'memory_mb' => 'integer',
             'settings' => 'array',
             'modpack' => 'array',
+            'client_files' => 'array',
             'bluemap_enabled' => 'boolean',
             'is_default' => 'boolean',
             'pack_check' => 'boolean',
