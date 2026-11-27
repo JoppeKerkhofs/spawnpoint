@@ -351,9 +351,9 @@ class NodeClient
     /**
      * Sign a request the way the Rust service verifies it (service/src/main.rs).
      */
-    public static function signature(string $token, int $timestamp, string $method, string $path, string $body): string
+    public static function signature(string $token, int $timestamp, string $nonce, string $method, string $path, string $body): string
     {
-        return hash_hmac('sha256', "{$timestamp}\n{$method}\n{$path}\n{$body}", $token);
+        return hash_hmac('sha256', "{$timestamp}\n{$nonce}\n{$method}\n{$path}\n{$body}", $token);
     }
 
     /**
@@ -618,13 +618,16 @@ class NodeClient
     {
         $body = $data === null ? $body : json_encode($data, JSON_THROW_ON_ERROR);
         $timestamp = now()->getTimestamp();
+        // Makes this request's signature its own, so the node can refuse one it has seen before.
+        $nonce = bin2hex(random_bytes(16));
 
         return Http::baseUrl($this->node->base_url)
             ->connectTimeout(2)
             ->timeout($timeout)
             ->withHeaders([
                 'X-Timestamp' => (string) $timestamp,
-                'X-Signature' => self::signature($this->node->token, $timestamp, $method, $path, $body),
+                'X-Nonce' => $nonce,
+                'X-Signature' => self::signature($this->node->token, $timestamp, $nonce, $method, $path, $body),
             ])
             ->withBody($body, 'application/json')
             ->send($method, $path)

@@ -29,12 +29,19 @@ class SendWebhook implements ShouldQueue
         $webhook = Webhook::query()->find($this->webhookId);
 
         // Checked again at send time: the name may resolve somewhere else than when it was saved.
-        if ($webhook === null || ! $webhook->is_active || ! Webhook::isSafeUrl($webhook->url)) {
+        $address = $webhook?->is_active ? Webhook::safeAddress($webhook->url) : null;
+
+        if ($webhook === null || $address === null) {
             return;
         }
 
+        $host = (string) parse_url($webhook->url, PHP_URL_HOST);
+        $port = parse_url($webhook->url, PHP_URL_PORT) ?: 443;
+
         try {
+            // A name is sent to the address that was checked, with no lookup of its own.
             $status = Http::connectTimeout(3)->timeout(10)->withoutRedirecting()
+                ->withOptions(trim($host, '[]') === $address ? [] : ['curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$address}"]]])
                 ->post($webhook->url, $webhook->payload($this->message, $this->details))
                 ->status();
         } catch (ConnectionException) {

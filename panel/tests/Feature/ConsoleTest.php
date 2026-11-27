@@ -51,6 +51,7 @@ test('logs are listed and searched through the node', function () {
         && $request->header('X-Signature') === [NodeClient::signature(
             $server->node->token,
             (int) $request->header('X-Timestamp')[0],
+            $request->header('X-Nonce')[0],
             'GET',
             '/servers/survival/logs/2026-11-13-1.log.gz?q=joined%20the%20game',
             '',

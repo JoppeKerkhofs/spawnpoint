@@ -26,9 +26,9 @@ container. This file explains how it fits together and what is easy to get wrong
 servers; the panel sends it signed HTTP requests. There is always a `local` node, registered by
 `panel:setup` from the environment on every start; more are added on the Nodes page.
 
-**Signing.** Every panel-to-node request carries `X-Timestamp` and `X-Signature`:
-HMAC-SHA256 with the node's token over `"{timestamp}\n{METHOD}\n{path_and_query}\n{body}"`,
-60 seconds of clock skew allowed. `NodeClient::query()` builds the query string exactly as it is
+**Signing.** Every panel-to-node request carries `X-Timestamp`, `X-Nonce` and `X-Signature`:
+HMAC-SHA256 with the node's token over `"{timestamp}\n{nonce}\n{METHOD}\n{path_and_query}\n{body}"`,
+60 seconds of clock skew allowed. The nonce is random, and a node accepts a signature once. `NodeClient::query()` builds the query string exactly as it is
 signed. Over http the traffic is signed but not encrypted, so such nodes belong on a private
 network. With `SPAWNPOINT_TLS_CERT` and `SPAWNPOINT_TLS_KEY` the node serves the same port over
 TLS (`axum-server`) and its address in the panel becomes `https://`; `Node::upstream()` then

@@ -58,6 +58,7 @@ test('saving sends the exact text as a signed raw body', function () {
         && $request->header('X-Signature') === [NodeClient::signature(
             $this->server->node->token,
             (int) $request->header('X-Timestamp')[0],
+            $request->header('X-Nonce')[0],
             'PUT',
             '/servers/survival/files/content?path=server.properties',
             "pvp=false\n",
