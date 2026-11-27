@@ -36,8 +36,9 @@ class BackupController extends Controller
             'states' => Inertia::defer(fn () => NodeClient::recentStates($request->user())),
             'backups' => $backups ?? [],
             'imports' => $imports ?? [],
-            // A closure, so an upload can ask for a fresh token first.
-            'upload' => fn () => ['url' => $client->fileUrl($server, 'upload')],
+            // A closure, so an upload can ask for a fresh token first. Not a files token: the
+            // backups permission is no permission to write the server's files.
+            'upload' => fn () => ['url' => $client->fileUrl($server, 'upload', 'import')],
             'schedules' => $server->schedules()->orderBy('time')->get(['id', 'action', 'time', 'weekday', 'command', 'is_active']),
             'error' => $error ?? null,
             'timezone' => config('app.timezone'),

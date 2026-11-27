@@ -27,6 +27,8 @@ use crate::{claims, unix_now, valid_slug, AppState};
 // Larger files are downloaded and uploaded, not edited.
 const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+// The name the Backups page uploads a world under, before asking for the import.
+const IMPORT_NAME: &str = "world-import.zip";
 // What players get is configuration: a larger file, or more of them, is left out.
 const MAX_CLIENT_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CLIENT_FILES: usize = 2000;
@@ -367,7 +369,9 @@ pub async fn upload_preflight() -> Response {
 }
 
 async fn store(target: &FsPath, body: Body) -> Result<(), StatusCode> {
-    let mut file = tokio::fs::File::create(target).await.map_err(io_status)?;
+    // A mod could have left a link under this name pointing outside the folder: create_new never writes through one.
+    let _ = tokio::fs::remove_file(target).await;
+    let mut file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(target).await.map_err(io_status)?;
     let mut chunks = body.into_data_stream();
     let mut written = 0u64;
 
@@ -383,14 +387,20 @@ async fn store(target: &FsPath, body: Body) -> Result<(), StatusCode> {
     file.flush().await.map_err(io_status)
 }
 
+// A "files" token that may write uploads anywhere in the folder. An "import" token, which the
+// Backups page gets, carries only the world zip to the top of the folder.
+fn may_upload(key: &[u8], token: &str, slug: &str, path: &str, name: &str, now: u64) -> bool {
+    claims(key, "files", token, slug, now).is_some_and(|claims| claims.write)
+        || (path.is_empty() && name == IMPORT_NAME && claims(key, "import", token, slug, now).is_some())
+}
+
 pub async fn upload(State(state): State<AppState>, Path(slug): Path<String>, Query(query): Params, body: Body) -> Response {
-    let allowed = claims(&state.token, "files", param(&query, "token"), &slug, unix_now()).is_some_and(|claims| claims.write);
-    if !allowed {
+    let (path, name) = (param(&query, "path"), param(&query, "name"));
+    if !may_upload(&state.token, param(&query, "token"), &slug, path, name, unix_now()) {
         return cross_origin(StatusCode::UNAUTHORIZED);
     }
 
-    let name = param(&query, "name");
-    let target = match resolve(&state, &slug, &format!("{}/{name}", param(&query, "path"))) {
+    let target = match resolve(&state, &slug, &format!("{path}/{name}")) {
         Ok(target) if valid_component(name) && !target.is_dir() && target.parent().is_some_and(FsPath::is_dir) => target,
         Ok(_) => return cross_origin(StatusCode::CONFLICT),
         Err(status) => return cross_origin(status),
@@ -448,6 +458,8 @@ pub async fn send_file(path: &FsPath, name: &str) -> Result<Response, StatusCode
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
     use std::os::unix::fs::symlink;
 
     #[test]
@@ -482,6 +494,43 @@ mod tests {
         assert_eq!(resolve(&state, "absent", ""), Err(StatusCode::NOT_FOUND));
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_upload_never_writes_through_a_link_left_under_its_temporary_name() {
+        let base = std::env::temp_dir().join(format!("spawnpoint-upload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("secret"), "token").unwrap();
+        let partial = base.join(".x.uploading");
+        symlink(base.join("secret"), &partial).unwrap();
+
+        assert_eq!(store(&partial, Body::from("evil")).await, Ok(()));
+        assert_eq!(std::fs::read_to_string(base.join("secret")).unwrap(), "token");
+        assert!(partial.symlink_metadata().unwrap().is_file());
+        assert_eq!(std::fs::read_to_string(&partial).unwrap(), "evil");
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn an_import_token_uploads_the_world_zip_and_nothing_else() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let token = |purpose: &str, write: bool| {
+            let payload = hex::encode(format!(r#"{{"slug":"survival","exp":2000,"write":{write}}}"#));
+            let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+            mac.update(format!("{purpose}\n{payload}").as_bytes());
+            format!("{payload}.{}", hex::encode(mac.finalize().into_bytes()))
+        };
+        let (files, read, import) = (token("files", true), token("files", false), token("import", true));
+
+        assert!(may_upload(key, &files, "survival", "plugins", "a.jar", 1000));
+        assert!(!may_upload(key, &read, "survival", "plugins", "a.jar", 1000));
+        assert!(may_upload(key, &import, "survival", "", "world-import.zip", 1000));
+        assert!(!may_upload(key, &import, "survival", "", "a.jar", 1000));
+        assert!(!may_upload(key, &import, "survival", "plugins", "world-import.zip", 1000));
+        assert!(!may_upload(key, &import, "creative", "", "world-import.zip", 1000));
+        assert!(!may_upload(key, &import, "survival", "", "world-import.zip", 2001));
     }
 
     #[test]

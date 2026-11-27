@@ -769,7 +769,7 @@ pub struct Claims {
 }
 
 // A browser token is hex(json claims) + "." + hex(hmac of purpose + "\n" + hex claims), minted by the panel.
-// The purpose ("console" or "files") keeps a token for one from working on the other.
+// The purpose ("console", "files" or "import") keeps a token for one from working on the other.
 pub fn claims(key: &[u8], purpose: &str, token: &str, slug: &str, now: u64) -> Option<Claims> {
     let (payload, signature) = token.split_once('.')?;
     let mut mac = Hmac::<Sha256>::new_from_slice(key).ok()?;

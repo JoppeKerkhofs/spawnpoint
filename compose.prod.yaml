@@ -25,7 +25,7 @@ x-logging: &logging
 
 # The web server, the queue worker and the scheduler are the same image with the same settings.
 x-panel: &panel
-  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.9.8}
+  image: ghcr.io/joppekerkhofs/spawnpoint:${PANEL_VERSION:-1.9.9}
   restart: unless-stopped
   logging: *logging
   security_opt:
@@ -165,11 +165,15 @@ services:
   # The only container with the Docker socket and the server folders. It has no published
   # port: the panel reaches it over the `panel` network, and every request must be signed.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.9.8}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.9.9}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
     logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    # It writes only to the folders mounted below, so a write that escapes one cannot replace a tool it runs.
+    read_only: true
     environment:
       SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to a random string of at least 32 characters}
       SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}
