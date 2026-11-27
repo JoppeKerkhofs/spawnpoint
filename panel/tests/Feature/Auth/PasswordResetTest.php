@@ -25,6 +25,18 @@ test('reset password link can be requested', function () {
     Notification::assertSentTo($user, ResetPassword::class);
 });
 
+test('the reset link goes by the configured address, whatever host asked for it', function () {
+    Notification::fake();
+    config(['app.url' => 'https://panel.example.com']);
+
+    $user = User::factory()->create();
+
+    $this->withHeader('Host', 'evil.example')->post(route('password.email'), ['email' => $user->email]);
+
+    Notification::assertSentTo($user, ResetPassword::class, fn ($notification) => $notification->toMail($user)->actionUrl
+        === "https://panel.example.com/reset-password/{$notification->token}?email=".urlencode($user->email));
+});
+
 test('reset password screen can be rendered', function () {
     Notification::fake();
 

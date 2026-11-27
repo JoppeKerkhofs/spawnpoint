@@ -22,11 +22,15 @@ x-logging: &logging
 services:
   # The only container with the Docker socket and the server folders.
   node:
-    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.9.8}
+    image: ghcr.io/joppekerkhofs/spawnpoint-node:${PANEL_VERSION:-1.9.9}
     container_name: spawnpoint-node
     init: true
     restart: unless-stopped
     logging: *logging
+    security_opt:
+      - no-new-privileges:true
+    # It writes only to the folders mounted below, so a write that escapes one cannot replace a tool it runs.
+    read_only: true
     environment:
       SPAWNPOINT_TOKEN: ${SPAWNPOINT_TOKEN:?Set SPAWNPOINT_TOKEN to the token the panel showed when the node was added}
       SPAWNPOINT_DATA_DIR: ${SPAWNPOINT_DATA_DIR:-/srv/mc}

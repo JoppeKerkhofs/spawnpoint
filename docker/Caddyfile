@@ -7,6 +7,13 @@
 	root * /app/public
 	encode zstd br gzip
 
+	# No other site may show the panel in a frame, where a click could be steered to a button here.
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+
 	# The browser talks to a node only for what a token authorises: the live console, uploads
 	# and downloads. The address is /node/<number of the node>/..., and the panel says where
 	# that node is. A node's signed API is never reachable through here.

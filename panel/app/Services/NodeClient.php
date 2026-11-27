@@ -185,10 +185,11 @@ class NodeClient
      * Get the address the browser uploads to or downloads from, with a token that is valid for five minutes.
      *
      * @param  'upload'|'download'  $action
+     * @param  'files'|'import'  $purpose  An import token only uploads the world zip of the Backups page.
      */
-    public function fileUrl(Server $server, string $action): string
+    public function fileUrl(Server $server, string $action, string $purpose = 'files'): string
     {
-        $token = self::token('files', $this->node->token, $server->slug, now()->getTimestamp() + 300, $action === 'upload');
+        $token = self::token($purpose, $this->node->token, $server->slug, now()->getTimestamp() + 300, $action === 'upload');
 
         return "{$this->publicUrl()}/servers/{$server->slug}/{$action}?token={$token}";
     }
@@ -196,7 +197,7 @@ class NodeClient
     /**
      * Mint a browser token the way the Rust service verifies it (service/src/main.rs).
      *
-     * @param  'console'|'files'  $purpose  A token for one purpose is refused for the other.
+     * @param  'console'|'files'|'import'  $purpose  A token for one purpose is refused for the other.
      */
     public static function token(string $purpose, string $key, string $slug, int $expiresAt, bool $write): string
     {

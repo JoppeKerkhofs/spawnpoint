@@ -32,6 +32,14 @@ test('the backups page lists backups and importable worlds from the node', funct
         );
 });
 
+test('the backups page uploads a world with a token that cannot write other files', function () {
+    Http::fake(['node.test:8080/*' => Http::response([])]);
+
+    $this->get(route('servers.backups', $this->server))
+        ->assertInertia(fn (Assert $page) => $page->where('upload.url', 'http://node.test:8080/servers/survival/upload?token='
+            .NodeClient::token('import', $this->server->node->token, 'survival', now()->getTimestamp() + 300, true)));
+});
+
 test('a manual backup passes the retention count to the node', function () {
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
 

@@ -36,7 +36,7 @@ keeps the scheme, so the browser relay uses TLS too. The panel must trust the ce
 
 **Browser tokens.** The console WebSocket and file transfers go from the browser to the node
 with a short-lived token: `hex(json{slug,exp,write}) + "." + hex(hmac(purpose + "\n" + payload))`,
-purpose `console` (60 s) or `files` (300 s). `NodeClient::token()` mints it, `claims()` in
+purpose `console` (60 s), `files` (300 s) or `import` (300 s, only the world zip of the Backups page). `NodeClient::token()` mints it, `claims()` in
 `service/src/main.rs` checks it.
 
 **The relay.** Browsers never reach a node directly. They use `/node/<node id>/servers/...`,
