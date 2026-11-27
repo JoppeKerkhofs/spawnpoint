@@ -35,16 +35,11 @@ refuse each other, in both directions.
 
 ## To do by hand
 
-- Set `TRUSTED_PROXIES` in `.env.compose` to the reverse proxy's own address or its Docker network
-  range, then restart the panel. The default trusts every private address, so a machine on the
-  local network can claim any visitor address and dodge the login throttle.
 - Check in the package settings on GitHub whether the published images are public or private.
 
 ## Left for later
 
 - Pin the Docker actions in `.github/workflows/ci.yml` by commit instead of by tag.
-- Two email addresses are in the public commit history. Removing them means rewriting history and
-  a forced push.
 - The launcher's macOS release waits for Apple signing secrets. Setting the repository variable
   `MACOS_RELEASE_RUNNER` in the launcher's repository turns it on.
 
