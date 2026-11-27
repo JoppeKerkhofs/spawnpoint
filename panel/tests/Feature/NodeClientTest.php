@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('signature matches the vector the rust service is tested against', function () {
-    expect(NodeClient::signature('0123456789abcdef0123456789abcdef', 1000, 'POST', '/servers?x=1', '{}'))
-        ->toBe('57e5b9892cd325a986ffcf28a917d5ba90799aa4e9ca4c683bc6b8e7cc6e7fbf');
+    expect(NodeClient::signature('0123456789abcdef0123456789abcdef', 1000, 'abc', 'POST', '/servers?x=1', '{}'))
+        ->toBe('23a5f3276a56a047d90705b0518ed75cfdfb2b9134884f4efed622389a06ac4a');
 });
 
 test('requests to a node are signed with its token over the exact body sent', function () {
@@ -19,11 +19,16 @@ test('requests to a node are signed with its token over the exact body sent', fu
     Http::fake(['node.test:8080/*' => Http::response(status: 202)]);
 
     (new NodeClient($server->node))->apply($server);
+    (new NodeClient($server->node))->apply($server);
+
+    // Two requests that are the same to the second still differ, so the node can refuse a repeat.
+    expect(Http::recorded()->map(fn (array $pair) => $pair[0]->header('X-Signature')[0])->unique())->toHaveCount(2);
 
     Http::assertSent(fn (Request $request) => $request->header('X-Timestamp') === [(string) now()->getTimestamp()]
         && $request->header('X-Signature') === [NodeClient::signature(
             $server->node->token,
             now()->getTimestamp(),
+            $request->header('X-Nonce')[0],
             'PUT',
             "/servers/{$server->slug}",
             $request->body(),

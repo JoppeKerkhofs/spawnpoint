@@ -30,6 +30,8 @@ use crate::{
 
 // Left out of archives and kept through restores: the server recreates or re-downloads them.
 const EXCLUDED: [&str; 5] = ["logs", "cache", "libraries", "versions", ".import"];
+// An import stops when the disk has less than this left: more than it writes between two looks.
+const MIN_FREE_KB: u64 = 2 * 1024 * 1024;
 // A vanilla world keeps its dimensions inside "world"; Paper splits them into these folders.
 const WORLD_FOLDERS: [&str; 3] = ["world", "world_nether", "world_the_end"];
 
@@ -114,7 +116,8 @@ fn backup_path(state: &AppState, slug: &str, name: &str) -> Result<PathBuf, Stat
 }
 
 async fn run(program: &str, arguments: &[&OsStr], accepted: &[i32]) -> Result<(), String> {
-    let output = Command::new(program).args(arguments).output().await.map_err(|error| format!("{program}: {error}"))?;
+    // Killed when whoever waits for it gives up, as an import does once the disk fills.
+    let output = Command::new(program).args(arguments).kill_on_drop(true).output().await.map_err(|error| format!("{program}: {error}"))?;
 
     if output.status.code().is_some_and(|code| accepted.contains(&code)) {
         Ok(())
@@ -314,7 +317,22 @@ fn find_world(dir: &FsPath, depth: u8) -> Option<PathBuf> {
         .find_map(|entry| find_world(&entry.path(), depth - 1))
 }
 
-// ponytail: a zip is unpacked without a size cap, so a hostile archive can fill the disk; add a quota if untrusted users get this.
+// The kB still free according to `df -Pk`: the fourth number of its second line.
+fn free_kb(df: &str) -> Option<u64> {
+    df.lines().nth(1)?.split_whitespace().nth(3)?.parse().ok()
+}
+
+// Returns once the disk a folder is on has less than MIN_FREE_KB left.
+async fn low_on_space(dir: &FsPath) {
+    loop {
+        let df = Command::new("df").arg("-Pk").arg(dir).output().await;
+        if df.ok().and_then(|df| free_kb(&String::from_utf8_lossy(&df.stdout))).is_some_and(|free| free < MIN_FREE_KB) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
 async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool, start_after: bool) -> Result<(), String> {
     let was_running = stop(&state, &slug).await?;
     archive(&state, &slug, Retention::default(), Some("Before a world import")).await?;
@@ -325,8 +343,13 @@ async fn import(state: AppState, slug: String, source: PathBuf, is_zip: bool, st
     std::fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
 
     let unpacked = if is_zip {
-        // unzip refuses entries that would land outside the folder it is given.
-        run("unzip", &["-q".as_ref(), "-o".as_ref(), source.as_ref(), "-d".as_ref(), staging.as_ref()], &[0, 1]).await
+        // unzip refuses entries that would land outside the folder it is given. What a zip says
+        // about its size cannot be believed, so the disk itself is watched while it unpacks.
+        let arguments: [&OsStr; 5] = ["-q".as_ref(), "-o".as_ref(), source.as_ref(), "-d".as_ref(), staging.as_ref()];
+        tokio::select! {
+            unpacked = run("unzip", &arguments, &[0, 1]) => unpacked,
+            () = low_on_space(&staging) => Err("The disk is almost full, so the import was stopped.".to_owned()),
+        }
     } else {
         run("cp", &["-a".as_ref(), source.as_ref(), staging.join("world").as_ref()], &[0]).await
     };
@@ -670,6 +693,14 @@ pub async fn import_world(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn free_space_is_read_from_what_df_prints() {
+        let df = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda1 102400000 60000000 42400000 59% /srv/mc\n";
+
+        assert_eq!(free_kb(df), Some(42_400_000));
+        assert_eq!(free_kb("df: /nowhere: No such file or directory\n"), None);
+    }
 
     #[test]
     fn backups_go_to_the_fallback_folder_while_the_backup_folder_is_unreachable() {

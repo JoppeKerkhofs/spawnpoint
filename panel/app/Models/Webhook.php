@@ -79,18 +79,30 @@ class Webhook extends Model
      */
     public static function isSafeUrl(string $url): bool
     {
+        return self::safeAddress($url) !== null;
+    }
+
+    /**
+     * The address on the public internet that a webhook's host stands for, or null when it is
+     * not safe to send to. The message goes to this address: a second lookup could answer another.
+     */
+    public static function safeAddress(string $url): ?string
+    {
         $host = parse_url($url, PHP_URL_HOST);
 
         if (parse_url($url, PHP_URL_SCHEME) !== 'https' || ! is_string($host)) {
-            return false;
+            return null;
         }
 
         $host = trim($host, '[]');
         $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false ? [$host] : (gethostbynamel($host) ?: []);
 
-        return $addresses !== [] && collect($addresses)->every(
-            fn (string $address): bool => filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false,
+        // The global range also leaves out what the private and reserved ranges miss, such as 100.64.0.0/10.
+        $public = collect($addresses)->every(
+            fn (string $address): bool => filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE) !== false,
         );
+
+        return $public ? ($addresses[0] ?? null) : null;
     }
 
     /**

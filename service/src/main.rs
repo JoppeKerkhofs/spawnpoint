@@ -111,6 +111,8 @@ pub struct AppState {
     booted: Arc<Mutex<HashMap<String, (String, u64)>>>,
     // The latest average milliseconds per game tick of each server that reports it.
     mspt: Arc<Mutex<HashMap<String, f64>>>,
+    // The signatures accepted in the last minutes, with when, so that none counts twice.
+    seen: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 #[cfg(test)]
@@ -132,6 +134,7 @@ impl AppState {
             cancels: Default::default(),
             booted: Default::default(),
             mspt: Default::default(),
+            seen: Default::default(),
         }
     }
 }
@@ -1177,15 +1180,24 @@ async fn read_log(
     })
 }
 
-fn mac(token: &[u8], timestamp: &str, method: &str, path: &str, body: &[u8]) -> Hmac<Sha256> {
+fn mac(token: &[u8], timestamp: &str, nonce: &str, method: &str, path: &str, body: &[u8]) -> Hmac<Sha256> {
     let mut mac = Hmac::<Sha256>::new_from_slice(token).expect("hmac accepts any key length");
-    mac.update(format!("{timestamp}\n{method}\n{path}\n").as_bytes());
+    mac.update(format!("{timestamp}\n{nonce}\n{method}\n{path}\n").as_bytes());
     mac.update(body);
     mac
 }
 
-// ponytail: no nonce, so a captured request can be replayed within MAX_SKEW_SECS; add one if the link leaves the host.
-fn verify(token: &[u8], timestamp: &str, method: &str, path: &str, body: &[u8], signature: &str, now: u64) -> bool {
+// Whether a signature is seen for the first time. The panel's random nonce gives every request
+// its own, so a second sight is a captured request sent again.
+fn first_use(seen: &Mutex<HashMap<String, u64>>, signature: &str, now: u64) -> bool {
+    let mut seen = seen.lock().unwrap();
+    // A timestamp may run a skew ahead and is believed a skew long, so twice that covers its life.
+    seen.retain(|_, at| now.abs_diff(*at) <= 2 * MAX_SKEW_SECS);
+
+    seen.insert(signature.to_owned(), now).is_none()
+}
+
+fn verify(token: &[u8], timestamp: &str, nonce: &str, method: &str, path: &str, body: &[u8], signature: &str, now: u64) -> bool {
     let Ok(sent_at) = timestamp.parse::<u64>() else {
         return false;
     };
@@ -1193,7 +1205,7 @@ fn verify(token: &[u8], timestamp: &str, method: &str, path: &str, body: &[u8], 
         return false;
     };
     now.abs_diff(sent_at) <= MAX_SKEW_SECS
-        && mac(token, timestamp, method, path, body).verify_slice(&signature).is_ok()
+        && mac(token, timestamp, nonce, method, path, body).verify_slice(&signature).is_ok()
 }
 
 async fn require_signature(State(state): State<AppState>, request: Request, next: Next) -> Result<Response, StatusCode> {
@@ -1202,7 +1214,10 @@ async fn require_signature(State(state): State<AppState>, request: Request, next
     let header = |name: &str| parts.headers.get(name).and_then(|value| value.to_str().ok()).unwrap_or_default();
     let path = parts.uri.path_and_query().map_or("/", |path| path.as_str());
 
-    if !verify(&state.token, header("x-timestamp"), parts.method.as_str(), path, &body, header("x-signature"), unix_now()) {
+    let (signature, now) = (header("x-signature"), unix_now());
+    if !verify(&state.token, header("x-timestamp"), header("x-nonce"), parts.method.as_str(), path, &body, signature, now)
+        || !first_use(&state.seen, signature, now)
+    {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -1249,6 +1264,7 @@ async fn main() {
         cancels: Default::default(),
         booted: Default::default(),
         mspt: Default::default(),
+        seen: Default::default(),
     };
     let app = Router::new()
         .route("/servers", get(list_servers))
@@ -1310,16 +1326,29 @@ mod tests {
     #[test]
     fn verify_accepts_only_a_fresh_untampered_signature() {
         let token = b"0123456789abcdef0123456789abcdef";
-        let signature = hex::encode(mac(token, "1000", "POST", "/servers?x=1", b"{}").finalize().into_bytes());
+        let signature = hex::encode(mac(token, "1000", "abc", "POST", "/servers?x=1", b"{}").finalize().into_bytes());
 
         // Same vector as tests/Feature/NodeClientTest.php, so both sides agree on the format.
-        assert_eq!(signature, "57e5b9892cd325a986ffcf28a917d5ba90799aa4e9ca4c683bc6b8e7cc6e7fbf");
-        assert!(verify(token, "1000", "POST", "/servers?x=1", b"{}", &signature, 1000 + MAX_SKEW_SECS));
-        assert!(!verify(token, "1000", "POST", "/servers?x=1", b"{}", &signature, 1001 + MAX_SKEW_SECS));
-        assert!(!verify(token, "1000", "POST", "/servers?x=2", b"{}", &signature, 1000));
-        assert!(!verify(token, "1000", "POST", "/servers?x=1", b"{ }", &signature, 1000));
-        assert!(!verify(b"another-token-another-token-0000", "1000", "POST", "/servers?x=1", b"{}", &signature, 1000));
-        assert!(!verify(token, "soon", "POST", "/servers?x=1", b"{}", "not-hex", 1000));
+        assert_eq!(signature, "23a5f3276a56a047d90705b0518ed75cfdfb2b9134884f4efed622389a06ac4a");
+        assert!(verify(token, "1000", "abc", "POST", "/servers?x=1", b"{}", &signature, 1000 + MAX_SKEW_SECS));
+        assert!(!verify(token, "1000", "abc", "POST", "/servers?x=1", b"{}", &signature, 1001 + MAX_SKEW_SECS));
+        assert!(!verify(token, "1000", "abd", "POST", "/servers?x=1", b"{}", &signature, 1000));
+        assert!(!verify(token, "1000", "abc", "POST", "/servers?x=2", b"{}", &signature, 1000));
+        assert!(!verify(token, "1000", "abc", "POST", "/servers?x=1", b"{ }", &signature, 1000));
+        assert!(!verify(b"another-token-another-token-0000", "1000", "abc", "POST", "/servers?x=1", b"{}", &signature, 1000));
+        assert!(!verify(token, "soon", "abc", "POST", "/servers?x=1", b"{}", "not-hex", 1000));
+    }
+
+    #[test]
+    fn a_signature_counts_once_for_as_long_as_it_would_be_believed() {
+        let seen = Mutex::default();
+
+        assert!(first_use(&seen, "aa", 1000));
+        assert!(!first_use(&seen, "aa", 1000 + 2 * MAX_SKEW_SECS));
+        assert!(first_use(&seen, "bb", 1000 + 2 * MAX_SKEW_SECS));
+        // By now its timestamp is too old to pass, so it need not be remembered.
+        assert!(first_use(&seen, "aa", 1001 + 4 * MAX_SKEW_SECS));
+        assert_eq!(seen.lock().unwrap().len(), 1);
     }
 
     #[test]

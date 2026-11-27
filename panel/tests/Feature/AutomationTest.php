@@ -22,6 +22,7 @@ test('a webhook must be an https address on the public internet', function (stri
     'this machine' => ['https://127.0.0.1/hook'],
     'the local network' => ['https://192.168.1.10/hook'],
     'cloud metadata' => ['https://169.254.169.254/latest'],
+    'a shared range such as a VPN uses' => ['https://100.64.0.1/hook'],
 ]);
 
 test('a webhook is stored without ever sending its address back to the browser', function () {

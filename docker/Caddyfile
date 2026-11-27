@@ -36,8 +36,14 @@
 	}
 
 	# The pages' WebSocket for live updates, served by the realtime container. Without that
-	# container this fails and the pages fall back to asking every few seconds.
-	handle /app/* {
+	# container this fails and the pages fall back to asking every few seconds. Anything else
+	# under this address is the panel's to answer, with its own "not found".
+	@realtime {
+		path /app/*
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @realtime {
 		reverse_proxy {$REVERB_UPSTREAM:realtime:8081}
 	}
 
